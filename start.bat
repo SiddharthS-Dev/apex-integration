@@ -42,9 +42,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem  A stale server on one of these ports would make the gateway proxy to the
-rem  wrong process, so refuse to start rather than half-work. In dev that means
-rem  all three; in prod only the gateway's, since no child servers run.
+rem  Clear our own leftovers first.
+rem
+rem  If the gateway window is closed or crashes, the two dev servers outlive it
+rem  and keep holding 5174/5175. Refusing to start in that state stranded you:
+rem  the browser said ERR_CONNECTION_REFUSED on 5173 and this script said the
+rem  ports were busy - with our own orphans. stop.mjs only ever touches
+rem  processes belonging to this folder, so this is safe to run every time.
+node "%~dp0apex\stop.mjs" --quiet
+
+rem  Anything still holding a port now belongs to someone else, so say whose it
+rem  is rather than killing it.
 set "CHECK_PORTS=%GATEWAY_PORT% %SHOWCASE_PORT% %VAULT_PORT%"
 if /i "%MODE%"=="prod" set "CHECK_PORTS=%GATEWAY_PORT%"
 
@@ -52,8 +60,11 @@ for %%P in (%CHECK_PORTS%) do (
     call :port_pid %%P
     if defined PID (
         echo.
-        echo   Port %%P is already in use by PID !PID!.
-        echo   Run stop.bat first, or serve on another port:  start.bat prod 4180
+        echo   Port %%P is in use by PID !PID!, which does not belong to this
+        echo   folder, so Apex will not touch it.
+        echo.
+        echo   Stop that program and run this again, or move Apex's ports in
+        echo   apex\projects.mjs. In prod you can pass one:  start.bat prod 4180
         echo.
         pause
         exit /b 1

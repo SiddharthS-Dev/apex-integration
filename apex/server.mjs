@@ -20,6 +20,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { GATEWAY_PORT, PROD_PORT, PROJECTS, projectFor } from './projects.mjs'
+import { CHILD_PORTS, stopApex } from './stop.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.dirname(HERE)
@@ -291,3 +292,36 @@ server.listen(PORT, () => {
     spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref()
   }
 })
+
+/*
+ * When the gateway goes, the child dev servers go with it.
+ *
+ * start.bat launches them in their own windows, so without this they outlive a
+ * Ctrl+C here and keep holding 5174/5175. The visible symptom is nasty: the
+ * browser gets ERR_CONNECTION_REFUSED on 5173 because nothing is listening
+ * there any more, while the next start.bat refuses to run because those two
+ * ports are taken — by our own orphans.
+ *
+ * Windows does not reliably deliver a signal when a console window is closed
+ * outright, so this cannot be the only defence; start.bat clears leftovers on
+ * the way up too. This just keeps the common exits tidy.
+ */
+let shuttingDown = false
+
+function shutdown(signal) {
+  if (shuttingDown) return
+  shuttingDown = true
+
+  if (MODE === 'dev') {
+    const { stopped } = stopApex(CHILD_PORTS, { exclude: [process.pid] })
+    if (stopped.length) console.log(`\n  Stopped ${stopped.length} dev server(s).`)
+  }
+
+  console.log('')
+  // 128 + signal number is the conventional exit code for a signalled process.
+  process.exit(signal === 'SIGINT' ? 130 : 0)
+}
+
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']) {
+  process.on(signal, () => shutdown(signal))
+}

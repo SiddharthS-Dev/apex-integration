@@ -152,9 +152,20 @@ the dashboard and the stop script all read from it.
 
 ## Troubleshooting
 
-**"Port 5173 is already serving something else."** Another dev server has it.
-Run `stop.bat`. If the port belongs to a different project, `stop.bat` will say
-so and leave it alone — stop that one yourself, or move it off the port.
+**The browser says ERR_CONNECTION_REFUSED on localhost:5173.** Nothing is
+listening there, so Apex is not running — start it with `start.bat`. (If Apex
+were up but a project were still booting, you would get its "Starting…" page
+instead, not a refusal.)
+
+This used to be a trap. Closing the gateway window left the two dev servers
+running on 5174/5175, so the browser refused on 5173 while `start.bat` refused
+to start — blocked by Apex's own orphans. Both ends are handled now: the
+gateway takes its children down when it exits, and `start.bat` clears any
+leftovers on the way up. Just run `start.bat` again.
+
+**"Port N is in use by PID X, which does not belong to this folder."** Another
+program has the port and Apex will not kill anything it does not own. Stop that
+program, or move Apex's ports in `apex/projects.mjs`.
 
 **A card stays on "Starting".** That project's dev server did not come up. Its
 window is minimised, titled `Apex - Innovation Showcase` or `Apex - SlidesVault`;
