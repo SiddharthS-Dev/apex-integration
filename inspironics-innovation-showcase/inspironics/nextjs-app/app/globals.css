@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #050816;
+  --cyan: #00E5FF;
+  --emer: #00FFB2;
+  --line: rgba(0, 229, 255, 0.16);
+}
+
+html, body {
+  background: var(--bg);
+  color: #eaf2ff;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* animated grid backdrop */
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(0, 229, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.04) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask-image: radial-gradient(circle at 50% 30%, #000 30%, transparent 85%);
+  mask-image: radial-gradient(circle at 50% 30%, #000 30%, transparent 85%);
+  animation: gridmove 24s linear infinite;
+}
+@keyframes gridmove {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 46px 46px, 46px 46px; }
+}
+
+/* 3D flip card */
+.flip-scene { perspective: 1500px; }
+.flip-inner { transform-style: preserve-3d; transition: transform 0.7s cubic-bezier(.2,.7,.2,1); }
+.flip-scene:hover .flip-inner, .flip-scene.flipped .flip-inner { transform: rotateY(180deg); }
+.flip-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.flip-back { transform: rotateY(180deg); }
+
+.glass { background: rgba(16,24,52,.55); backdrop-filter: blur(16px); }
+.scroll-thin::-webkit-scrollbar { width: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }

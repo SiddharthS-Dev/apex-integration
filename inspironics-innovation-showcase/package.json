@@ -1,0 +1,59 @@
+{
+  "name": "inspironics-innovation-showcase",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run lint:arch && npm run typecheck && npm run check:env && npm run test && npm run check:routes && vite build && npm run check:bundle",
+    "preview": "vite preview",
+    "enrich": "node scripts/buildEnrichment.mjs",
+    "check:routes": "node scripts/checkRoutes.mjs",
+    "check:env": "node scripts/checkEnv.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "test:flows": "node scripts/flows.mjs",
+    "test": "node --import ./tests/register.mjs --test \"tests/**/*.test.mjs\"",
+    "lint:arch": "node scripts/checkArchitecture.mjs",
+    "check:bundle": "node scripts/checkBundle.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  
+  "dependencies": {
+    "framer-motion": "^11.11.17",
+    "jspdf": "^2.5.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "three": "^0.170.0"
+  },
+
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "global-jsdom": "^25.0.0",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.4.49",
+    "puppeteer-core": "^23.11.1",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^6.0.0",
+    "vite": "^5.4.11"
+  },
+
+  "imports": {
+    "#features/auth": "./src/features/auth/index.js",
+    "#features/copilot": "./src/features/copilot/index.js",
+    "#features/ecosystem": "./src/features/ecosystem/index.js",
+    "#features/ecosystem/model": "./src/features/ecosystem/model/index.js",
+    "#features/report": "./src/features/report/index.js",
+    "#features/showcase": "./src/features/showcase/index.js",
+    "#features/showcase/model": "./src/features/showcase/model/index.js",
+    "#features/site": "./src/features/site/index.js",
+    "#shared/config": "./src/shared/config/index.js",
+    "#app/*": "./src/app/*",
+    "#features/*": "./src/features/*",
+    "#shared/*": "./src/shared/*"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "Inspironics Innovation Showcase",
+  "short_name": "Inspironics",
+  "description": "Interactive infographic architecture intelligence — 235 flip-card visualisations.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#050816",
+  "theme_color": "#050816",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%23050816'/%3E%3Cpath d='M96 24 156 54v84L96 168 36 138V54Z' fill='none' stroke='%2300E5FF' stroke-width='8'/%3E%3Ccircle cx='96' cy='96' r='14' fill='%2300FFB2'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%23050816'/%3E%3Cpath d='M256 64 416 144v224L256 448 96 368V144Z' fill='none' stroke='%2300E5FF' stroke-width='20'/%3E%3Ccircle cx='256' cy='256' r='38' fill='%2300FFB2'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "paths": {
+      "#app/*": [
+        "./src/app/*"
+      ],
+      "#features/*": [
+        "./src/features/*"
+      ],
+      "#shared/*": [
+        "./src/shared/*"
+      ],
+      "#features/auth": [
+        "./src/features/auth/index.js"
+      ],
+      "#features/copilot": [
+        "./src/features/copilot/index.js"
+      ],
+      "#features/ecosystem": [
+        "./src/features/ecosystem/index.js"
+      ],
+      "#features/ecosystem/model": [
+        "./src/features/ecosystem/model/index.js"
+      ],
+      "#features/report": [
+        "./src/features/report/index.js"
+      ],
+      "#features/showcase": [
+        "./src/features/showcase/index.js"
+      ],
+      "#features/showcase/model": [
+        "./src/features/showcase/model/index.js"
+      ],
+      "#features/site": [
+        "./src/features/site/index.js"
+      ],
+      "#shared/config": [
+        "./src/shared/config/index.js"
+      ]
+    }
+  },
+  "include": [
+    "src",
+    "types"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "inspironics"
+  ]
+}

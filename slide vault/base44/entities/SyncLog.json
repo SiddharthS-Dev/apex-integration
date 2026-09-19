@@ -1,0 +1,18 @@
+{
+  "name": "SyncLog",
+  "type": "object",
+  "description": "One record per sync run.",
+  "properties": {
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": { "type": "string", "format": "date-time" },
+    "status": { "type": "string", "enum": ["running", "success", "error"], "default": "running" },
+    "trigger": { "type": "string", "enum": ["startup", "scheduled", "manual"], "default": "manual" },
+    "new_count": { "type": "number", "default": 0 },
+    "updated_count": { "type": "number", "default": 0 },
+    "deleted_count": { "type": "number", "default": 0 },
+    "total_files": { "type": "number", "default": 0 },
+    "error": { "type": "string" },
+    "details": { "type": "string", "description": "JSON string: root_folder, discovered, indexed, remaining, errors[]" }
+  },
+  "required": ["started_at"]
+}

@@ -1,0 +1,31 @@
+{
+  "name": "PresentationAnalytics",
+  "type": "object",
+  "description": "One record per presentation, created on first view.",
+  "properties": {
+    "presentation_id": { "type": "string" },
+    "presentation_title": { "type": "string" },
+    "total_views": { "type": "number", "default": 0 },
+    "unique_views": { "type": "number", "default": 0 },
+    "viewer_ids": { "type": "array", "items": { "type": "string" }, "description": "Unique viewer user IDs" },
+    "online_views": { "type": "number", "default": 0 },
+    "offline_views": { "type": "number", "default": 0 },
+    "avg_reading_time": { "type": "number", "default": 0, "description": "Seconds" },
+    "completion_pct": { "type": "number", "default": 0 },
+    "bookmarks": { "type": "number", "default": 0 },
+    "favorites": { "type": "number", "default": 0 },
+    "last_viewed_date": { "type": "string", "format": "date-time" },
+    "last_viewed_by": { "type": "string", "description": "User ID" },
+    "last_viewed_by_name": { "type": "string" },
+    "trend_score": { "type": "number", "default": 0, "description": "recent views x 2 + growth x 30 + avg_reading_time / 60" },
+    "daily_breakdown": {
+      "type": "array",
+      "description": "Rolling 60-day window",
+      "items": {
+        "type": "object",
+        "properties": { "date": { "type": "string" }, "count": { "type": "number" } }
+      }
+    }
+  },
+  "required": ["presentation_id"]
+}

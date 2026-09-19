@@ -1,0 +1,155 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ---- Dark mode (default) ---- */
+  :root,
+  .dark {
+    --background: 230 35% 6%;
+    --foreground: 220 20% 96%;
+    --card: 230 32% 9%;
+    --card-foreground: 220 20% 96%;
+    --popover: 230 32% 9%;
+    --popover-foreground: 220 20% 96%;
+    --primary: 245 80% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 230 25% 14%;
+    --secondary-foreground: 220 20% 96%;
+    --muted: 230 25% 14%;
+    --muted-foreground: 220 14% 60%;
+    --accent: 280 85% 65%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 56%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 230 25% 16%;
+    --input: 230 25% 16%;
+    --ring: 245 80% 62%;
+    --radius: 0.85rem;
+
+    --chart-1: 245 80% 62%;
+    --chart-2: 280 85% 65%;
+    --chart-3: 190 85% 55%;
+    --chart-4: 35 92% 58%;
+    --chart-5: 160 75% 45%;
+
+    --sidebar-background: 230 32% 9%;
+    --sidebar-foreground: 220 20% 96%;
+    --sidebar-primary: 245 80% 62%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 230 25% 14%;
+    --sidebar-accent-foreground: 220 20% 96%;
+    --sidebar-border: 230 25% 16%;
+    --sidebar-ring: 245 80% 62%;
+
+    --font-heading: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-body: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-display: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  /* ---- Light mode ---- */
+  :root:not(.dark) {
+    --background: 0 0% 99%;
+    --foreground: 230 25% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 230 25% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 230 25% 12%;
+    --primary: 245 70% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 230 20% 96%;
+    --secondary-foreground: 230 25% 12%;
+    --muted: 230 20% 96%;
+    --muted-foreground: 230 10% 45%;
+    --accent: 280 70% 58%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 230 20% 90%;
+    --input: 230 20% 90%;
+    --ring: 245 70% 55%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 230 25% 12%;
+    --sidebar-accent: 230 20% 96%;
+    --sidebar-accent-foreground: 230 25% 12%;
+    --sidebar-border: 230 20% 90%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-body);
+    background-image: radial-gradient(
+      ellipse 80% 50% at 50% -20%,
+      rgba(124, 58, 237, 0.15),
+      transparent
+    );
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-card/60 backdrop-blur-xl ring-1 ring-border;
+  }
+
+  .glass-strong {
+    @apply bg-card/80 backdrop-blur-2xl ring-1 ring-border;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scroll-row {
+    @apply flex gap-4 overflow-x-auto pb-4 -mx-1 px-1 snap-x snap-mandatory;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Thin themed scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* ---- Content security: block printing the app ---- */
+@media print {
+  body {
+    display: none !important;
+  }
+}

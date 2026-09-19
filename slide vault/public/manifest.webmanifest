@@ -1,0 +1,12 @@
+{
+  "name": "Inspironics SlidesVault",
+  "short_name": "SlidesVault",
+  "description": "Presentation Knowledge Hub — discover, stream and read presentations offline.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0a0c17",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "./logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

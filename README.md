@@ -1,0 +1,166 @@
+# Apex
+
+The Inspironics home dashboard. One address, one port, both products:
+
+| Path         | Project                        | Lives in                          |
+| ------------ | ------------------------------ | --------------------------------- |
+| `/`          | Apex dashboard                 | `apex/`                           |
+| `/showcase/` | Inspironics Innovation Showcase | `inspironics-innovation-showcase/` |
+| `/vault/`    | Inspironics SlidesVault        | `slide vault/`                    |
+
+---
+
+## Running it
+
+```
+start.bat              dev, on http://localhost:5173
+start.bat prod         builds both projects, then serves them on 4173
+start.bat prod 4180    the same, on a port of your choosing
+stop.bat               stops everything Apex started
+```
+
+Open the dashboard, click a card, and that project opens in the same window at
+the same address. The browser opens by itself once the gateway is listening.
+
+First run installs each project's dependencies, which takes a few minutes.
+After that, startup is a few seconds. The dashboard is reachable before the two
+dev servers finish booting, so a card may read **Starting** for a moment before
+it turns **Ready** — nothing to do, it polls and updates itself.
+
+Each project keeps its own sign-in. Signing in to one does not sign you in to
+the other.
+
+---
+
+## How it fits together
+
+The Showcase and SlidesVault are two complete single-page apps. They have their
+own routers, their own auth, and — the part that decided the design — two
+incompatible Tailwind themes: the Showcase is dark-only with `bg-ink` / cyan
+tokens, SlidesVault is a shadcn-style HSL palette with a light/dark toggle.
+Merged into one bundle, their `:root` variables and `body` rules would fight.
+
+So Apex does not merge them. It puts a small gateway in front:
+
+```
+                    browser  ──►  http://localhost:5173
+                                        │
+                              apex/server.mjs  (the gateway)
+                                        │
+              ┌─────────────────────────┼─────────────────────────┐
+              │                         │                         │
+        /  dashboard            /showcase/  ──►  vite :5174   /vault/  ──►  vite :5175
+     apex/public/index.html         (dev)                        (dev)
+                                dist/ (prod)                  dist/ (prod)
+```
+
+Each project still builds and ships its own bundle, so their CSS can never
+collide. What they share is an origin, which is what makes the dashboard feel
+like one product instead of three bookmarks.
+
+`apex/server.mjs` has **no dependencies** — Node builtins only. There is no
+third `node_modules` and nothing to install for the shell itself.
+
+### What each project needed
+
+Mounting an SPA under a path rather than at the site root takes two things:
+Vite must prefix the asset URLs, and the router must know it no longer owns `/`.
+
+- `vite.config.js` — `base` (`/showcase/`, `/vault/`), its own dev port, and
+  `hmr.clientPort: 5173` so hot reload still runs over the one open port.
+- The router — `basename` taken from `import.meta.env.BASE_URL`, so it tracks
+  `base` instead of hard-coding the mount.
+- Anything built from an absolute `/…` path at runtime — the Showcase's
+  `/images` and `/data/showcase.json`, SlidesVault's `/logo.svg` and its web
+  manifest. These are invisible to `base`, because Vite only rewrites what it
+  can see at build time.
+
+Both apps still run standalone. `baseUrl === '/'` is the standalone case, and
+the "← Apex" link in each app's header hides itself when there is no dashboard
+to go back to.
+
+### SlidesVault's catalog
+
+SlidesVault seeds from `slide vault/src/api/catalog.json`, a committed snapshot
+of the Base44 app's presentation library (195 records, 190 active). It used to
+seed a 32-deck demo catalog instead, which is why the dashboard disagreed with
+Base44. Refresh it with:
+
+```
+cd "slide vault" && npm run sync:catalog
+```
+
+`apex/smoke.mjs` asserts the running app holds exactly the number of active
+presentations in that file, so the two cannot drift apart unnoticed again.
+
+### The ports
+
+| Port | What                            |
+| ---- | ------------------------------- |
+| 5173 | the gateway — **the only one you open** |
+| 5174 | Showcase dev server              |
+| 5175 | SlidesVault dev server           |
+| 4173 | the gateway in prod mode         |
+
+5174 and 5175 are bound to `127.0.0.1` and are not meant to be visited
+directly. The gateway binds all interfaces, so Apex is also reachable from
+another device on your network.
+
+---
+
+## Checking it still works
+
+With Apex running:
+
+```
+node apex/smoke.mjs                              the integration itself
+node apex/smoke.mjs http://localhost:4180        against a prod build
+```
+
+It drives a real browser: loads the dashboard, clicks each card, and checks the
+project boots under its mount with no console errors — then signs in to
+SlidesVault, because the login gate is where a wrong mount really shows.
+
+The Showcase's own suites take a base URL, so they can be pointed through the
+gateway too:
+
+```
+cd inspironics-innovation-showcase
+node scripts/smoke.mjs http://localhost:5173/showcase
+node scripts/flows.mjs http://localhost:5173/showcase
+npm test
+```
+
+`scripts/smoke.mjs` skips its PDF step against a production build: that step
+imports the app's source modules, which only a dev server serves.
+
+---
+
+## Adding another project
+
+1. Add it to `PROJECTS` in `apex/projects.mjs` — `id`, `base`, `dir`, `devPort`.
+2. In its `vite.config.js`, set `base` to the same mount, give it that
+   `devPort` on `127.0.0.1`, and set `hmr.clientPort` to the gateway's port.
+3. Give its router a `basename` of `import.meta.env.BASE_URL`.
+4. Fix any absolute `/…` URLs it builds at runtime.
+5. Add a card to `apex/public/index.html` and launch it from `start.bat`.
+
+`apex/projects.mjs` is the source of truth for ports and mounts; the gateway,
+the dashboard and the stop script all read from it.
+
+---
+
+## Troubleshooting
+
+**"Port 5173 is already serving something else."** Another dev server has it.
+Run `stop.bat`. If the port belongs to a different project, `stop.bat` will say
+so and leave it alone — stop that one yourself, or move it off the port.
+
+**A card stays on "Starting".** That project's dev server did not come up. Its
+window is minimised, titled `Apex - Innovation Showcase` or `Apex - SlidesVault`;
+the error is in there.
+
+**A project 404s or loads unstyled.** Something is requesting an absolute path
+that ignores the mount. Look in the browser's network tab for a request to
+`/something` rather than `/showcase/something`, and route it through
+`import.meta.env.BASE_URL`.

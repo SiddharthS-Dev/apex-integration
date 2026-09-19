@@ -1,0 +1,18 @@
+{
+  "name": "DropboxConfig",
+  "type": "object",
+  "description": "Singleton Dropbox connection config. The newest record is the live one.",
+  "properties": {
+    "refresh_token": { "type": "string", "description": "Long-lived OAuth2 refresh token. Server-only, never returned to the frontend." },
+    "account_id": { "type": "string" },
+    "connected_account_name": { "type": "string" },
+    "connected_account_email": { "type": "string" },
+    "root_folder": { "type": "string", "description": "Dropbox folder path being synced" },
+    "connection_status": { "type": "string", "enum": ["connected", "disconnected", "error"], "default": "disconnected" },
+    "sync_status": { "type": "string", "enum": ["idle", "running", "success", "error"], "default": "idle" },
+    "last_sync": { "type": "string", "format": "date-time" },
+    "last_token_refresh": { "type": "string", "format": "date-time" },
+    "last_error": { "type": "string" }
+  },
+  "required": ["connection_status"]
+}

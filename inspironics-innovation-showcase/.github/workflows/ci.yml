@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Fastest first, so a broken boundary fails before the bundler runs.
+      - name: Architecture boundaries
+        run: npm run lint:arch
+
+      - name: Types (checkJs over src)
+        run: npm run typecheck
+
+      - name: Unit and component tests
+        run: npm test
+
+      - name: Ecosystem routes resolve
+        run: npm run check:routes
+
+      - name: Production build
+        run: npx vite build
+
+      - name: Initial payload budget
+        run: npm run check:bundle
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: dist
+          path: dist
+          retention-days: 7

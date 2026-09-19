@@ -1,0 +1,36 @@
+{
+  "name": "Presentation",
+  "type": "object",
+  "description": "One record per file discovered in the synced Dropbox folder.",
+  "properties": {
+    "title": { "type": "string", "description": "Display title (AI-derived for untitled files)" },
+    "description": { "type": "string", "description": "Short description / AI summary excerpt" },
+    "dropbox_id": { "type": "string", "description": "Dropbox file ID (stable across renames)" },
+    "dropbox_path": { "type": "string", "description": "Full path in Dropbox" },
+    "dropbox_rev": { "type": "string", "description": "Revision hash for change detection" },
+    "file_url": { "type": "string", "description": "Proxied/streamable PDF URL, cached after first generation" },
+    "thumbnail_url": { "type": "string", "description": "Thumbnail image URL" },
+    "file_type": { "type": "string", "enum": ["pdf", "pptx", "html", "docx", "xlsx", "mp4"], "default": "pdf" },
+    "file_size": { "type": "number", "description": "Size in bytes" },
+    "slide_count": { "type": "number", "default": 0 },
+    "author": { "type": "string" },
+    "primary_domain": {
+      "type": "string",
+      "enum": ["Engineering", "Products", "Business", "Human Resources", "Research & Innovation"]
+    },
+    "sub_domain": { "type": "string" },
+    "category": { "type": "string", "description": "Short category label (1-3 words)" },
+    "tags": { "type": "array", "items": { "type": "string" }, "description": "3-6 short tags" },
+    "keywords": { "type": "array", "items": { "type": "string" }, "description": "5-10 keywords" },
+    "learning_objectives": { "type": "array", "items": { "type": "string" }, "description": "2-4 objectives" },
+    "ai_summary": { "type": "string", "description": "2-sentence AI summary" },
+    "ai_confidence": { "type": "number", "description": "0-1 confidence score" },
+    "view_count": { "type": "number", "default": 0 },
+    "trend_score": { "type": "number", "default": 0 },
+    "modified_date": { "type": "string", "format": "date-time", "description": "From Dropbox metadata" },
+    "last_synced": { "type": "string", "format": "date-time" },
+    "sync_status": { "type": "string", "enum": ["synced", "pending", "error"], "default": "synced" },
+    "status": { "type": "string", "enum": ["active", "archived"], "default": "active", "description": "archived = removed from Dropbox" }
+  },
+  "required": ["title"]
+}
