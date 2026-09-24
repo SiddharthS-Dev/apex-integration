@@ -28,10 +28,13 @@ const norm = (s) => s.replace(/\\/g, '/').toLowerCase()
 const ROOT_KEY = norm(ROOT)
 
 /** Every port Apex might be holding. */
-export const ALL_PORTS = [GATEWAY_PORT, PROD_PORT, ...PROJECTS.map((p) => p.devPort)]
+export const ALL_PORTS = [GATEWAY_PORT, PROD_PORT, ...PROJECTS.map((p) => p.devPort), ...PROJECTS.filter((p) => p.api).map((p) => p.api.port)]
 
-/** Just the child dev servers — the gateway must never be asked to kill itself. */
-export const CHILD_PORTS = PROJECTS.map((p) => p.devPort)
+/** The projects' own API servers. They run in dev and prod alike. */
+export const API_PORTS = PROJECTS.filter((p) => p.api).map((p) => p.api.port)
+
+/** Just the child servers — the gateway must never be asked to kill itself. */
+export const CHILD_PORTS = [...PROJECTS.map((p) => p.devPort), ...API_PORTS]
 
 const run = (cmd, args) => {
   try {
