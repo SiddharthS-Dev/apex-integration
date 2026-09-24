@@ -3,36 +3,54 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#07070c" />
-    <meta name="description" content="Sign in to Apex — one sign-in for the Innovation Showcase and SlidesVault." />
+    <meta name="theme-color" content="#030712" />
+    <meta name="description" content="Sign in to Inspironics Apex — one sign-in for the Innovation Showcase and SlidesVault." />
     <title>Sign in · Apex</title>
     <link rel="icon" href="/logo.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <style>
-      /* Hand-written, like the dashboard: Apex has no build step and no
-         node_modules, so the sign-in page is one self-contained file. */
+      /*
+       * The Apex sign-in page.
+       *
+       * Hand-written, like the dashboard: Apex has no build step and no
+       * node_modules, so this is one self-contained file. Presentation only —
+       * the sign-in itself is the script block marked "sign-in", which posts to
+       * /auth/login exactly as before.
+       *
+       * Sections: tokens · backdrop · layout · brand · hero · features ·
+       * ecosystem · login card · responsive
+       */
+
+      /* -------------------------------------------------------- tokens -- */
       :root {
         color-scheme: dark;
-        --ink: #07070c;
-        --ink-deep: #050816;
-        --panel: rgba(14, 15, 24, 0.72);
-        --chalk: #f4f4f9;
-        --muted: #a1a1aa;
-        --faint: #71717a;
-        --line: rgba(255, 255, 255, 0.1);
-        --line-strong: rgba(255, 255, 255, 0.18);
-        --cyan: #00f0ff;
-        --mint: #00ffb2;
-        --violet: #7c6cf6;
-        --orchid: #c065f0;
+        --bg: #030712;
+        --bg-2: #050816;
+        --bg-3: #080b18;
+        --panel: #060a1c;
+        --glass: rgba(15, 23, 42, 0.6);
+        --glass-2: rgba(15, 23, 42, 0.42);
+        --field: rgba(3, 7, 18, 0.55);
+        --field-focus: rgba(3, 7, 18, 0.85);
+        --text: #f8fafc;
+        --text-2: #cbd5e1;
+        --muted: #94a3b8;
+        --faint: #64748b;
+        --border: rgba(148, 163, 184, 0.18);
+        --border-2: rgba(148, 163, 184, 0.28);
+        --cyan: #00e5ff;
+        --blue: #3b82f6;
+        --purple: #8b5cf6;
+        --magenta: #c026d3;
+        --teal: #14b8a6;
+        --green: #10b981;
         --danger: #fb7185;
         --warn: #fbbf24;
-        --ok: #34d399;
       }
 
       * {
@@ -41,306 +59,551 @@
 
       html,
       body {
-        height: 100%;
+        min-height: 100%;
       }
 
       body {
         margin: 0;
-        background: var(--ink);
-        background-image: linear-gradient(180deg, #050816 0%, #07070c 55%, #050816 100%);
-        color: var(--chalk);
+        background: var(--bg);
+        color: var(--text);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
         -webkit-font-smoothing: antialiased;
         overflow-x: hidden;
       }
 
-      .mono {
-        font-family: 'JetBrains Mono', ui-monospace, monospace;
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        border: 0;
       }
 
-      /* ------------------------------------------------------ backdrop -- */
-      #sky {
-        position: fixed;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        z-index: 0;
-      }
-
-      .grid-bg {
-        position: fixed;
-        inset: 0;
-        z-index: 0;
-        pointer-events: none;
-        background-image: linear-gradient(rgba(0, 240, 255, 0.045) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(0, 240, 255, 0.045) 1px, transparent 1px);
-        background-size: 46px 46px;
-        mask-image: radial-gradient(ellipse 90% 70% at 30% 20%, #000 30%, transparent 100%);
-        -webkit-mask-image: radial-gradient(ellipse 90% 70% at 30% 20%, #000 30%, transparent 100%);
-      }
-
-      .glow {
-        position: fixed;
-        z-index: 0;
-        pointer-events: none;
-        border-radius: 50%;
-        filter: blur(110px);
-        opacity: 0.38;
-        animation: drift 18s ease-in-out infinite alternate;
-      }
-      .glow--a {
-        top: -12rem;
-        left: -8rem;
-        width: 36rem;
-        height: 36rem;
-        background: radial-gradient(circle, var(--cyan), transparent 70%);
-      }
-      .glow--b {
-        bottom: -14rem;
-        right: -10rem;
-        width: 40rem;
-        height: 40rem;
-        background: radial-gradient(circle, var(--orchid), transparent 70%);
-        animation-delay: -9s;
-      }
-      @keyframes drift {
-        to {
-          transform: translate(4rem, 3rem) scale(1.08);
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(16px);
         }
       }
 
       /* -------------------------------------------------------- layout -- */
+      /*
+       * Two panes: the story on the left (its own, slightly lifted navy, with
+       * a curved light along its right edge) and the sign-in on the right.
+       */
       .page {
         position: relative;
-        z-index: 1;
-        min-height: 100%;
+        min-height: 100vh;
         display: grid;
-        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-        align-items: center;
-        gap: 4rem;
-        max-width: 1240px;
-        margin: 0 auto;
-        padding: 3rem 2.5rem;
+        grid-template-columns: minmax(0, 57fr) minmax(0, 43fr);
       }
 
-      /* --------------------------------------------------- story panel -- */
-      .brand {
+      .story {
+        position: relative;
+        overflow: hidden;
         display: flex;
-        width: fit-content;
+        flex-direction: column;
+        padding: 36px clamp(24px, 5.5vw, 88px) 34px;
+        background: radial-gradient(900px 560px at 18% 0%, rgba(30, 58, 138, 0.35), transparent 65%),
+          radial-gradient(700px 520px at 60% 100%, rgba(37, 99, 235, 0.18), transparent 70%),
+          linear-gradient(180deg, #060b22 0%, #050818 55%, #04071a 100%);
+      }
+      /* The sweep of light down the seam between the panes. */
+      .story::after {
+        content: '';
+        position: absolute;
+        top: -20%;
+        right: -38%;
+        width: 70%;
+        height: 140%;
+        border-radius: 50%;
+        border-left: 2px solid rgba(59, 130, 246, 0.35);
+        box-shadow: -30px 0 90px -20px rgba(59, 130, 246, 0.35), inset 40px 0 120px -40px rgba(99, 102, 241, 0.25);
+        filter: blur(1px);
+        pointer-events: none;
+      }
+      .story::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-image: linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
+        background-size: 44px 44px;
+        mask-image: radial-gradient(ellipse 80% 60% at 30% 30%, #000 20%, transparent 90%);
+        -webkit-mask-image: radial-gradient(ellipse 80% 60% at 30% 30%, #000 20%, transparent 90%);
+        pointer-events: none;
+      }
+
+      .auth {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        padding: 36px clamp(24px, 5vw, 76px) 34px;
+        background: radial-gradient(600px 500px at 100% 100%, rgba(139, 92, 246, 0.16), transparent 70%),
+          radial-gradient(500px 400px at 50% 0%, rgba(30, 64, 175, 0.12), transparent 70%), var(--bg-2);
+      }
+
+      #sky {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+
+      /* --------------------------------------------------------- brand -- */
+      .brand {
+        position: relative;
+        z-index: 2;
+        display: flex;
         align-items: center;
-        gap: 0.75rem;
-        text-decoration: none;
-        color: inherit;
+        gap: 14px;
+        width: fit-content;
       }
       .brand svg {
-        width: 38px;
-        height: 38px;
-        filter: drop-shadow(0 0 18px rgba(0, 240, 255, 0.35));
+        width: 44px;
+        height: 44px;
+        flex: none;
+        filter: drop-shadow(0 0 14px rgba(0, 229, 255, 0.55));
       }
       .brand__name {
         font-family: 'JetBrains Mono', ui-monospace, monospace;
-        font-size: 0.78rem;
+        font-size: 0.95rem;
         font-weight: 600;
-        letter-spacing: 0.26em;
+        letter-spacing: 0.24em;
         text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .brand__name b {
+        color: var(--cyan);
+        font-weight: 600;
+        padding: 0 0.35em;
       }
 
-      .eyebrow {
+      .tagline {
+        position: relative;
+        z-index: 2;
+        align-self: flex-end;
+        display: flex;
+        gap: 14px;
+        margin: 6px 0 0;
+        padding: 0;
+        list-style: none;
+        font-size: 0.86rem;
+        color: var(--text-2);
+      }
+      .tagline li + li::before {
+        content: '•';
+        margin-right: 14px;
+        color: var(--faint);
+      }
+
+      /* ---------------------------------------------------------- hero -- */
+      .hero {
+        position: relative;
+        z-index: 2;
+        margin-top: clamp(28px, 5.5vh, 56px);
+        animation: rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .pill {
         display: inline-flex;
         align-items: center;
-        gap: 0.55rem;
-        margin-top: 3.2rem;
-        padding: 0.4rem 0.8rem;
-        border: 1px solid var(--line);
+        gap: 10px;
+        padding: 7px 14px;
+        border: 1px solid rgba(0, 229, 255, 0.28);
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.03);
+        background: rgba(0, 229, 255, 0.05);
         font-family: 'JetBrains Mono', ui-monospace, monospace;
-        font-size: 0.68rem;
-        letter-spacing: 0.2em;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.22em;
         text-transform: uppercase;
-        color: var(--muted);
+        color: var(--text-2);
       }
-      .eyebrow i {
-        width: 7px;
-        height: 7px;
+      .pill i {
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
-        background: var(--mint);
-        box-shadow: 0 0 0 0 rgba(0, 255, 178, 0.6);
-        animation: pulse 2.2s ease-out infinite;
+        background: var(--green);
+        box-shadow: 0 0 10px var(--green);
+        animation: pulse 2.4s ease-out infinite;
       }
       @keyframes pulse {
-        to {
-          box-shadow: 0 0 0 10px rgba(0, 255, 178, 0);
+        0% {
+          box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
+        }
+        100% {
+          box-shadow: 0 0 0 9px rgba(16, 185, 129, 0);
         }
       }
-
-      .story h1 {
-        margin: 1.4rem 0 0;
-        font-size: clamp(2.3rem, 4.6vw, 3.9rem);
-        line-height: 1.02;
-        font-weight: 900;
-        letter-spacing: -0.035em;
+      .hero h1 {
+        margin: 20px 0 0;
+        font-size: clamp(2.3rem, 3.9vw, 3.6rem);
+        line-height: 1.04;
+        font-weight: 800;
+        letter-spacing: -0.03em;
       }
-      .story h1 em {
+      .hero h1 em {
         font-style: normal;
-        background: linear-gradient(95deg, var(--cyan), var(--mint) 35%, var(--violet) 70%, var(--orchid));
-        background-size: 220% 100%;
+        background: linear-gradient(95deg, var(--cyan) 0%, var(--blue) 55%, var(--purple) 85%, var(--magenta) 110%);
         -webkit-background-clip: text;
         background-clip: text;
         color: transparent;
-        animation: sheen 7s ease-in-out infinite alternate;
       }
-      @keyframes sheen {
-        to {
-          background-position: 100% 0;
-        }
-      }
-      .story .lede {
-        margin: 1.3rem 0 0;
-        max-width: 32rem;
-        font-size: 1.02rem;
-        line-height: 1.65;
+      .hero p {
+        margin: 20px 0 0;
+        max-width: 550px;
+        font-size: clamp(0.98rem, 1.15vw, 1.12rem);
+        line-height: 1.6;
         color: var(--muted);
       }
 
-      .products {
+      /* ------------------------------------------------------ features -- */
+      .features {
+        position: relative;
+        z-index: 2;
         display: grid;
-        gap: 0.8rem;
-        margin: 2.4rem 0 0;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin: clamp(22px, 4vh, 38px) 0 0;
         padding: 0;
         list-style: none;
-        max-width: 32rem;
+        max-width: 700px;
       }
-      .product {
-        --a: var(--cyan);
-        --b: var(--mint);
-        display: flex;
-        gap: 1rem;
-        align-items: center;
-        padding: 0.95rem 1.1rem;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.025);
-        transition: border-color 0.25s, transform 0.25s, background 0.25s;
+      .feature {
+        --accent: var(--cyan);
+        padding: 0 18px;
+        border-left: 1px solid var(--border);
+        animation: rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
       }
-      .product:hover {
-        transform: translateX(4px);
-        border-color: color-mix(in srgb, var(--a) 45%, transparent);
-        background: rgba(255, 255, 255, 0.045);
+      .feature:first-child {
+        padding-left: 0;
+        border-left: 0;
       }
-      .product--vault {
-        --a: var(--violet);
-        --b: var(--orchid);
+      .feature:nth-child(2) {
+        --accent: var(--purple);
+        animation-delay: 0.08s;
       }
-      .product__icon {
-        flex: none;
+      .feature:nth-child(3) {
+        --accent: var(--blue);
+        animation-delay: 0.16s;
+      }
+      .feature:nth-child(4) {
+        --accent: var(--teal);
+        animation-delay: 0.24s;
+      }
+      .feature__icon {
         display: grid;
         place-items: center;
-        width: 42px;
-        height: 42px;
+        width: 50px;
+        height: 50px;
         border-radius: 12px;
-        background: linear-gradient(135deg, color-mix(in srgb, var(--a) 22%, transparent), color-mix(in srgb, var(--b) 12%, transparent));
-        border: 1px solid color-mix(in srgb, var(--a) 35%, transparent);
-        color: var(--a);
+        color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 12%, transparent);
+        border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+        box-shadow: 0 0 22px -6px color-mix(in srgb, var(--accent) 75%, transparent),
+          inset 0 0 14px -6px color-mix(in srgb, var(--accent) 80%, transparent);
+        transition: box-shadow 0.25s ease, transform 0.25s ease;
       }
-      .product__icon svg {
-        width: 20px;
-        height: 20px;
+      .feature:hover .feature__icon {
+        transform: translateY(-2px);
+        box-shadow: 0 0 30px -4px color-mix(in srgb, var(--accent) 90%, transparent),
+          inset 0 0 14px -6px color-mix(in srgb, var(--accent) 80%, transparent);
       }
-      .product strong {
+      .feature__icon svg {
+        width: 24px;
+        height: 24px;
+      }
+      .feature strong {
         display: block;
-        font-size: 0.95rem;
+        margin-top: 14px;
+        font-size: 1.02rem;
         font-weight: 700;
       }
-      .product span {
+      .feature > span:last-child {
         display: block;
-        margin-top: 0.15rem;
-        font-size: 0.82rem;
+        margin-top: 4px;
+        font-size: 0.86rem;
+        line-height: 1.4;
         color: var(--muted);
       }
-      .product__state {
-        margin-left: auto;
-        flex: none;
-        font-family: 'JetBrains Mono', ui-monospace, monospace;
-        font-size: 0.64rem;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--faint);
-        transition: color 0.3s;
-      }
-      .product.is-open .product__state {
-        color: var(--ok);
-      }
 
-      .trust {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1.4rem;
-        margin-top: 2.4rem;
-        color: var(--faint);
-        font-size: 0.78rem;
-      }
-      .trust span {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.45rem;
-      }
-      .trust svg {
-        width: 15px;
-        height: 15px;
-        color: var(--mint);
-      }
-
-      /* ---------------------------------------------------------- card -- */
-      .card-wrap {
-        perspective: 1400px;
-        justify-self: end;
-        width: 100%;
-        max-width: 440px;
-      }
-      .card {
+      /* ----------------------------------------------------- ecosystem -- */
+      /*
+       * An isometric plane (a square tipped back and turned 40°), with the
+       * Apex core stacked at its centre, four glass tiles around it and two
+       * orbit rings. Text lies on the tiles, so it takes the plane's angle.
+       * Behind it, a faint dotted globe on a canvas. Decorative only.
+       */
+      .eco {
         position: relative;
-        padding: 2.4rem 2.2rem 2rem;
-        border-radius: 24px;
-        background: var(--panel);
-        border: 1px solid var(--line);
-        box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-        backdrop-filter: blur(22px) saturate(140%);
-        -webkit-backdrop-filter: blur(22px) saturate(140%);
-        transform-style: preserve-3d;
-        transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-        animation: rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+        z-index: 1;
+        flex: 1 1 auto;
+        min-height: 300px;
+        margin: 8px 0 0;
+        perspective: 1600px;
+        pointer-events: none;
       }
-      /* A slowly turning gradient hairline around the card. */
-      .card::before {
+      #globe {
+        position: absolute;
+        left: -22%;
+        bottom: -52%;
+        width: min(820px, 70vw);
+        aspect-ratio: 1;
+        opacity: 0.55;
+      }
+      .plane {
+        --s: 1;
+        position: absolute;
+        left: 50%;
+        top: 52%;
+        width: 560px;
+        height: 560px;
+        margin: -280px 0 0 -280px;
+        transform-style: preserve-3d;
+        transform: rotateX(54deg) rotateZ(-34deg) scale(var(--s));
+      }
+      .orbit {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        border-radius: 50%;
+        border: 1px solid rgba(0, 229, 255, 0.22);
+        transform-style: preserve-3d;
+        animation: orbit 90s linear infinite;
+      }
+      .orbit--outer {
+        width: 600px;
+        height: 600px;
+        margin: -300px 0 0 -300px;
+        border-color: rgba(59, 130, 246, 0.22);
+      }
+      .orbit--inner {
+        width: 380px;
+        height: 380px;
+        margin: -190px 0 0 -190px;
+        animation-duration: 60s;
+        animation-direction: reverse;
+      }
+      .orbit i {
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--cyan);
+        box-shadow: 0 0 12px var(--cyan);
+      }
+      .orbit i:nth-child(1) {
+        top: -4px;
+        left: calc(50% - 4px);
+      }
+      .orbit i:nth-child(2) {
+        bottom: 12%;
+        right: 6%;
+        background: var(--purple);
+        box-shadow: 0 0 12px var(--purple);
+      }
+      .orbit i:nth-child(3) {
+        top: 40%;
+        left: -4px;
+        width: 6px;
+        height: 6px;
+      }
+      @keyframes orbit {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* the core: three stacked slabs, the top one carrying the mark */
+      .core {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 190px;
+        height: 190px;
+        margin: -95px 0 0 -95px;
+        transform-style: preserve-3d;
+        animation: hover 6s ease-in-out infinite;
+      }
+      .slab {
+        position: absolute;
+        inset: 0;
+        border-radius: 26px;
+        border: 1px solid rgba(0, 229, 255, 0.35);
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(99, 102, 241, 0.16));
+        box-shadow: 0 0 40px -6px rgba(0, 229, 255, 0.45);
+      }
+      .slab--1 {
+        transform: translateZ(0);
+        inset: -22px;
+        border-color: rgba(59, 130, 246, 0.35);
+        background: linear-gradient(135deg, rgba(30, 64, 175, 0.22), rgba(139, 92, 246, 0.18));
+      }
+      .slab--2 {
+        transform: translateZ(18px);
+        inset: -8px;
+      }
+      .slab--3 {
+        transform: translateZ(36px);
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, rgba(8, 47, 73, 0.85), rgba(49, 46, 129, 0.8));
+        border: 1.5px solid transparent;
+        background-clip: padding-box;
+        box-shadow: 0 0 0 1.5px rgba(0, 229, 255, 0.75), 0 0 60px -4px rgba(0, 229, 255, 0.6),
+          inset 0 0 40px -10px rgba(139, 92, 246, 0.7);
+      }
+      .slab--3 svg {
+        width: 104px;
+        height: 104px;
+        transform: rotateZ(38deg) scaleY(1.7);
+        filter: drop-shadow(0 0 14px rgba(0, 229, 255, 0.9));
+        animation: glow 4s ease-in-out infinite;
+      }
+      @keyframes glow {
+        50% {
+          filter: drop-shadow(0 0 22px rgba(0, 229, 255, 1));
+        }
+      }
+      @keyframes hover {
+        50% {
+          transform: translateZ(10px);
+        }
+      }
+
+      /* the four capability tiles */
+      .node {
+        --accent: var(--cyan);
+        position: absolute;
+        width: 150px;
+        height: 112px;
+        font-size: 1.05rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        border-radius: 18px;
+        border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+        background: linear-gradient(135deg, rgba(30, 58, 138, 0.55), rgba(15, 23, 42, 0.55));
+        box-shadow: 0 0 36px -8px color-mix(in srgb, var(--accent) 70%, transparent),
+          inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        font-size: 1rem;
+        font-weight: 600;
+        transform-style: preserve-3d;
+        animation: bob 7s ease-in-out infinite;
+      }
+      .node svg {
+        width: 30px;
+        height: 30px;
+        color: var(--accent);
+        filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 80%, transparent));
+      }
+      /* The plane is turned -34deg, so its top edge shows up upper-left, its
+         right edge upper-right, its left edge lower-left, its bottom lower-right. */
+      .node--analytics {
+        top: -2%;
+        left: calc(50% - 75px);
+        --accent: #818cf8;
+      }
+      .node--ai {
+        top: calc(50% - 56px);
+        right: -6%;
+        --accent: var(--cyan);
+        animation-delay: -2s;
+      }
+      .node--apps {
+        top: calc(50% - 56px);
+        left: -6%;
+        --accent: #38bdf8;
+        animation-delay: -4s;
+      }
+      .node--devices {
+        bottom: -2%;
+        left: calc(50% - 75px);
+        --accent: #a78bfa;
+        animation-delay: -5.5s;
+      }
+      /* the tile's edge: the same shape, a little below, darker */
+      .node::before {
         content: '';
         position: absolute;
         inset: -1px;
         border-radius: inherit;
-        padding: 1px;
-        background: conic-gradient(from var(--spin, 0deg), transparent 0 60%, var(--cyan), var(--violet), var(--orchid), transparent 95%);
-        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-        -webkit-mask-composite: xor;
-        mask-composite: exclude;
-        opacity: 0.8;
-        animation: spin 8s linear infinite;
-        pointer-events: none;
+        transform: translateZ(-14px);
+        background: linear-gradient(135deg, rgba(49, 46, 129, 0.75), rgba(15, 23, 42, 0.8));
+        border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+        box-shadow: 0 0 30px -10px color-mix(in srgb, var(--accent) 80%, transparent);
       }
-      @property --spin {
-        syntax: '<angle>';
-        inherits: false;
-        initial-value: 0deg;
-      }
-      @keyframes spin {
-        to {
-          --spin: 360deg;
+      @keyframes bob {
+        0%,
+        100% {
+          transform: translateZ(26px);
+        }
+        50% {
+          transform: translateZ(40px);
         }
       }
-      @keyframes rise {
-        from {
-          opacity: 0;
-          transform: translateY(24px) scale(0.98);
-        }
+
+      .assure {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: 8px;
+        font-size: 0.84rem;
+        color: var(--muted);
+      }
+      .assure__icon {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        border: 1px solid var(--border-2);
+        background: var(--glass-2);
+        color: var(--text-2);
+      }
+      .assure__icon svg {
+        width: 24px;
+        height: 24px;
+      }
+      .assure strong {
+        display: block;
+        color: var(--text);
+        font-weight: 500;
+        font-size: 0.9rem;
+      }
+
+      /* ---------------------------------------------------- login card -- */
+      .card-wrap {
+        position: relative;
+        z-index: 2;
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 0;
+      }
+      .card {
+        position: relative;
+        width: 100%;
+        max-width: 520px;
+        padding: 44px 40px 30px;
+        border-radius: 22px;
+        background: var(--glass);
+        border: 1px solid var(--border);
+        box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9), 0 0 70px -30px rgba(59, 130, 246, 0.45),
+          0 0 90px -40px rgba(139, 92, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(22px) saturate(140%);
+        -webkit-backdrop-filter: blur(22px) saturate(140%);
+        animation: rise 0.9s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
       }
       .card.shake {
         animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97);
@@ -355,31 +618,49 @@
           transform: translateX(8px);
         }
       }
-
       .card h2 {
         margin: 0;
-        font-size: 1.6rem;
-        font-weight: 800;
+        font-size: clamp(1.8rem, 2.3vw, 2.15rem);
+        font-weight: 700;
         letter-spacing: -0.02em;
       }
+      .card h2 .wave {
+        display: inline-block;
+        transform-origin: 70% 80%;
+        animation: wave 2.4s ease-in-out 0.8s 2;
+      }
+      @keyframes wave {
+        0%,
+        60%,
+        100% {
+          transform: rotate(0);
+        }
+        15%,
+        45% {
+          transform: rotate(14deg);
+        }
+        30% {
+          transform: rotate(-8deg);
+        }
+      }
       .card .sub {
-        margin: 0.45rem 0 0;
+        margin: 10px 0 0;
         color: var(--muted);
-        font-size: 0.92rem;
+        font-size: 1rem;
       }
 
       .notice {
         display: none;
-        margin-top: 1.3rem;
-        padding: 0.75rem 0.9rem;
+        margin-top: 22px;
+        padding: 12px 14px;
         border-radius: 12px;
-        font-size: 0.85rem;
+        font-size: 0.87rem;
         line-height: 1.45;
         border: 1px solid;
       }
       .notice.show {
         display: flex;
-        gap: 0.6rem;
+        gap: 10px;
         align-items: flex-start;
       }
       .notice svg {
@@ -400,21 +681,19 @@
       }
 
       form {
-        margin-top: 1.6rem;
+        margin-top: 32px;
       }
-
       .field {
-        position: relative;
-        margin-bottom: 1.05rem;
+        margin-bottom: 24px;
       }
       .field label {
         display: flex;
         justify-content: space-between;
         align-items: baseline;
-        margin-bottom: 0.45rem;
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: #d4d4d8;
+        margin-bottom: 10px;
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: var(--text);
       }
       .control {
         position: relative;
@@ -423,83 +702,87 @@
       }
       .control > svg.lead {
         position: absolute;
-        left: 0.95rem;
-        width: 17px;
-        height: 17px;
-        color: var(--faint);
+        left: 18px;
+        width: 22px;
+        height: 22px;
+        color: var(--text-2);
         pointer-events: none;
         transition: color 0.2s;
       }
       .control input {
         width: 100%;
-        height: 50px;
-        padding: 0 3rem 0 2.75rem;
-        border-radius: 13px;
-        border: 1px solid var(--line-strong);
-        background: rgba(5, 8, 22, 0.6);
-        color: var(--chalk);
+        height: 54px;
+        padding: 0 56px 0 58px;
+        border-radius: 14px;
+        border: 1px solid var(--border-2);
+        background: var(--field);
+        color: var(--text);
         font: inherit;
-        font-size: 0.95rem;
+        font-size: 0.97rem;
         outline: none;
         transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
       }
+      /* only the password field has a button on its right */
+      .control input[type='email'] {
+        padding-right: 18px;
+      }
       .control input::placeholder {
-        color: #52525b;
+        color: var(--muted);
+        opacity: 0.85;
       }
       .control input:hover {
-        border-color: rgba(255, 255, 255, 0.28);
+        border-color: rgba(148, 163, 184, 0.42);
       }
       .control input:focus {
         border-color: var(--cyan);
-        background: rgba(5, 8, 22, 0.85);
-        box-shadow: 0 0 0 4px rgba(0, 240, 255, 0.12);
+        background: var(--field-focus);
+        box-shadow: 0 0 0 4px rgba(0, 229, 255, 0.1), 0 0 26px -8px rgba(0, 229, 255, 0.55);
       }
       .control:focus-within > svg.lead {
         color: var(--cyan);
       }
       .control input[aria-invalid='true'] {
-        border-color: rgba(251, 113, 133, 0.7);
+        border-color: rgba(251, 113, 133, 0.75);
         box-shadow: 0 0 0 4px rgba(251, 113, 133, 0.1);
       }
-      /* Chrome's autofill paints a light box; keep the dark field. */
       .control input:-webkit-autofill {
-        -webkit-text-fill-color: var(--chalk);
-        -webkit-box-shadow: 0 0 0 40px #0b0e1d inset;
-        caret-color: var(--chalk);
+        -webkit-text-fill-color: var(--text);
+        -webkit-box-shadow: 0 0 0 40px #070b1c inset;
+        caret-color: var(--text);
       }
 
       .reveal {
         position: absolute;
-        right: 0.45rem;
+        right: 8px;
         display: grid;
         place-items: center;
-        width: 38px;
-        height: 38px;
+        width: 42px;
+        height: 42px;
         border: 0;
-        border-radius: 10px;
+        border-radius: 11px;
         background: transparent;
-        color: var(--faint);
+        color: var(--text-2);
         cursor: pointer;
         transition: color 0.2s, background 0.2s;
       }
       .reveal:hover {
-        color: var(--chalk);
-        background: rgba(255, 255, 255, 0.06);
+        color: var(--cyan);
+        background: rgba(148, 163, 184, 0.08);
       }
       .reveal:focus-visible {
         outline: 2px solid var(--cyan);
         outline-offset: 1px;
       }
       .reveal svg {
-        width: 18px;
-        height: 18px;
+        width: 20px;
+        height: 20px;
       }
 
       .caps {
         display: none;
         align-items: center;
-        gap: 0.35rem;
-        font-size: 0.72rem;
+        gap: 5px;
+        font-size: 0.74rem;
         font-weight: 600;
         color: var(--warn);
       }
@@ -511,26 +794,27 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin: 0.3rem 0 1.4rem;
-        font-size: 0.83rem;
-        color: var(--muted);
+        gap: 12px;
+        margin: 0 0 28px;
+        font-size: 0.92rem;
+        color: var(--text-2);
       }
       .check {
         display: inline-flex;
         align-items: center;
-        gap: 0.55rem;
+        gap: 12px;
         cursor: pointer;
         user-select: none;
       }
       .check input {
         appearance: none;
         -webkit-appearance: none;
-        width: 17px;
-        height: 17px;
+        width: 20px;
+        height: 20px;
         margin: 0;
         border-radius: 5px;
-        border: 1px solid var(--line-strong);
-        background: rgba(5, 8, 22, 0.6);
+        border: 1px solid var(--border-2);
+        background: var(--field);
         display: grid;
         place-items: center;
         cursor: pointer;
@@ -538,10 +822,10 @@
       }
       .check input::after {
         content: '';
-        width: 9px;
+        width: 10px;
         height: 5px;
-        border-left: 2px solid #050816;
-        border-bottom: 2px solid #050816;
+        border-left: 2px solid #030712;
+        border-bottom: 2px solid #030712;
         transform: rotate(-45deg) translate(1px, -1px) scale(0);
         transition: transform 0.15s;
       }
@@ -558,50 +842,52 @@
       }
       .hint {
         color: var(--faint);
-        font-size: 0.78rem;
+        font-size: 0.84rem;
       }
 
       .submit {
         position: relative;
         width: 100%;
-        height: 52px;
+        height: 56px;
         border: 0;
-        border-radius: 14px;
+        border-radius: 999px;
         cursor: pointer;
         font: inherit;
-        font-size: 0.98rem;
-        font-weight: 700;
-        letter-spacing: 0.01em;
-        color: #041018;
-        background: linear-gradient(95deg, var(--cyan), var(--mint) 45%, #7cf7e4);
-        box-shadow: 0 12px 30px -10px rgba(0, 240, 255, 0.6);
+        font-size: 1.02rem;
+        font-weight: 600;
+        color: #04111f;
+        background: linear-gradient(95deg, var(--cyan) 0%, #38bdf8 35%, #818cf8 72%, #c084fc 100%);
+        box-shadow: 0 14px 34px -14px rgba(0, 229, 255, 0.7), 0 0 40px -18px rgba(192, 132, 252, 0.8);
         overflow: hidden;
-        transition: transform 0.15s, box-shadow 0.25s, filter 0.25s;
+        transition: transform 0.2s ease, box-shadow 0.25s ease, filter 0.25s ease;
       }
       .submit::after {
         content: '';
         position: absolute;
         inset: 0;
-        background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+        background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.4) 50%, transparent 70%);
         transform: translateX(-100%);
-        transition: transform 0.7s;
+        transition: transform 0.7s ease;
+      }
+      .submit:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.07);
+        box-shadow: 0 18px 42px -12px rgba(0, 229, 255, 0.85), 0 0 50px -16px rgba(192, 132, 252, 0.95);
       }
       .submit:hover::after {
         transform: translateX(100%);
       }
-      .submit:hover {
-        box-shadow: 0 16px 38px -10px rgba(0, 240, 255, 0.75);
-      }
       .submit:active {
-        transform: translateY(1px) scale(0.995);
+        transform: translateY(0) scale(0.99);
       }
       .submit:focus-visible {
-        outline: 2px solid var(--chalk);
+        outline: 2px solid var(--text);
         outline-offset: 3px;
       }
       .submit[disabled] {
         cursor: progress;
-        filter: saturate(0.7) brightness(0.9);
+        transform: none;
+        filter: saturate(0.75) brightness(0.92);
       }
       .submit .label,
       .submit .spinner {
@@ -610,11 +896,11 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 0.6rem;
+        gap: 12px;
       }
       .submit svg {
-        width: 18px;
-        height: 18px;
+        width: 20px;
+        height: 20px;
         transition: transform 0.25s;
       }
       .submit:hover .label svg {
@@ -633,8 +919,8 @@
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        border: 2.5px solid rgba(4, 16, 24, 0.25);
-        border-top-color: #041018;
+        border: 2.5px solid rgba(4, 17, 31, 0.25);
+        border-top-color: #04111f;
         animation: turn 0.7s linear infinite;
       }
       @keyframes turn {
@@ -643,14 +929,14 @@
         }
       }
       .submit.done {
-        background: linear-gradient(95deg, var(--ok), var(--mint));
+        background: linear-gradient(95deg, #34d399, var(--green));
       }
 
       /* The sign-in progress: one step per platform being opened. */
       .steps {
         display: grid;
-        gap: 0.55rem;
-        margin: 1.3rem 0 0;
+        gap: 9px;
+        margin: 18px 0 0;
         padding: 0;
         list-style: none;
         max-height: 0;
@@ -665,24 +951,23 @@
       .steps li {
         display: flex;
         align-items: center;
-        gap: 0.65rem;
-        font-size: 0.84rem;
+        gap: 10px;
+        font-size: 0.86rem;
         color: var(--faint);
         transition: color 0.3s;
       }
       .steps .dot {
         flex: none;
-        position: relative;
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        border: 1.5px solid var(--line-strong);
+        border: 1.5px solid var(--border-2);
         display: grid;
         place-items: center;
         transition: border-color 0.3s, background 0.3s;
       }
       .steps li.active {
-        color: var(--chalk);
+        color: var(--text);
       }
       .steps li.active .dot {
         border-color: var(--cyan);
@@ -690,85 +975,232 @@
         animation: turn 0.8s linear infinite;
       }
       .steps li.ok {
-        color: #d1fae5;
+        color: var(--text-2);
       }
       .steps li.ok .dot {
-        border-color: var(--ok);
-        background: var(--ok);
+        border-color: var(--green);
+        background: var(--green);
         animation: none;
       }
       .steps li.ok .dot::after {
         content: '';
         width: 7px;
         height: 4px;
-        border-left: 2px solid #052e1f;
-        border-bottom: 2px solid #052e1f;
+        border-left: 2px solid #022c22;
+        border-bottom: 2px solid #022c22;
         transform: rotate(-45deg) translate(1px, -1px);
       }
       .steps li.fail {
-        color: #fecdd3;
+        color: var(--danger);
       }
       .steps li.fail .dot {
         border-color: var(--danger);
         animation: none;
       }
 
-      .card-foot {
-        margin-top: 1.7rem;
-        padding-top: 1.2rem;
-        border-top: 1px solid var(--line);
+      .secure {
+        margin-top: 34px;
+        padding-top: 22px;
+        border-top: 1px solid var(--border);
         display: flex;
+        flex-wrap: wrap;
+        align-items: center;
         justify-content: space-between;
-        gap: 1rem;
-        font-size: 0.76rem;
-        color: var(--faint);
+        gap: 12px 16px;
       }
-      .card-foot code {
-        font-family: 'JetBrains Mono', ui-monospace, monospace;
+      .secure__main {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+      }
+      .secure__icon {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 1px solid var(--border-2);
+        background: rgba(59, 130, 246, 0.08);
+        color: var(--text-2);
+      }
+      .secure__icon svg {
+        width: 22px;
+        height: 22px;
+      }
+      .secure strong {
+        display: block;
+        white-space: nowrap;
+        font-size: 0.86rem;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .secure__main span span {
+        display: block;
+        white-space: nowrap;
+        margin-top: 3px;
+        font-size: 0.78rem;
         color: var(--muted);
       }
-
-      .sr-only {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        border: 0;
+      .help {
+        flex: none;
+        margin-left: auto;
+        white-space: nowrap;
+        text-align: right;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      .help b {
+        display: block;
+        color: #a78bfa;
+        font-weight: 600;
+      }
+      .origin {
+        display: block;
+        margin-top: 16px;
+        text-align: right;
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.72rem;
+        color: var(--faint);
       }
 
-      /* -------------------------------------------------------- mobile -- */
-      @media (max-width: 960px) {
-        .page {
-          grid-template-columns: minmax(0, 1fr);
-          gap: 2.2rem;
-          padding: 2rem 1rem 2.5rem;
-          align-items: start;
+      /* ---------------------------------------------------- responsive -- */
+      /* Short screens: the ecosystem shrinks with the height, not just the width. */
+      @media (max-height: 940px) {
+        .plane {
+          --s: 0.8;
         }
-        .card-wrap {
-          justify-self: stretch;
-          max-width: none;
+        .eco {
+          min-height: 250px;
         }
-        .eyebrow {
-          margin-top: 1.8rem;
+      }
+      @media (max-height: 820px) {
+        .plane {
+          --s: 0.66;
         }
-        .products,
-        .trust {
+        .eco {
+          min-height: 210px;
+        }
+        .hero {
+          margin-top: 22px;
+        }
+      }
+
+      @media (max-width: 1279px) {
+        .plane {
+          --s: 0.72;
+        }
+        .hint {
           display: none;
         }
-        .story .lede {
-          font-size: 0.95rem;
+        .features {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          row-gap: 22px;
+        }
+        .feature:nth-child(3) {
+          padding-left: 0;
+          border-left: 0;
         }
       }
-      @media (max-width: 420px) {
-        .card {
-          padding: 1.8rem 1.25rem 1.5rem;
+      @media (max-width: 1152px) {
+        .page {
+          grid-template-columns: minmax(0, 46fr) minmax(0, 54fr);
         }
-        .card-foot {
+        .auth {
+          padding-left: 24px;
+          padding-right: 24px;
+        }
+        .control input {
+          padding-left: 48px;
+        }
+        .control input[type='password'] {
+          padding-right: 50px;
+        }
+        .control > svg.lead {
+          left: 15px;
+        }
+        .eco {
+          min-height: 260px;
+        }
+        .plane {
+          --s: 0.5 !important;
+        }
+        .card {
+          padding: 34px 28px 24px;
+        }
+        .tagline {
+          display: none;
+        }
+      }
+
+      /*
+       * Phone: one column — the brand, then the sign-in, then a compact story
+       * (headline and features; the ecosystem visual is dropped).
+       */
+      @media (max-width: 767px) {
+        .page {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .auth {
+          order: 1;
+          padding: 22px 16px 8px;
+        }
+        .story {
+          order: 2;
+          padding: 28px 16px 32px;
+        }
+        .story .brand {
+          display: none;
+        }
+        .auth .brand {
+          display: flex !important;
+        }
+        .eco,
+        .story::after {
+          display: none;
+        }
+        .hero {
+          margin-top: 0;
+        }
+        .card-wrap {
+          padding: 18px 0 0;
+        }
+        .card {
+          padding: 28px 20px 22px;
+          border-radius: 20px;
+        }
+        .assure {
+          margin-top: 26px;
+        }
+      }
+      @media (max-width: 479px) {
+        .features {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .feature {
+          padding-left: 0;
+          border-left: 0;
+          display: grid;
+          grid-template-columns: 50px 1fr;
+          column-gap: 14px;
+          align-items: center;
+        }
+        .feature strong {
+          margin-top: 0;
+        }
+        .feature__icon {
+          grid-row: span 2;
+        }
+        .secure {
           flex-direction: column;
-          gap: 0.4rem;
+          align-items: flex-start;
+        }
+        .help {
+          text-align: left;
+        }
+        .row {
+          flex-wrap: wrap;
         }
       }
 
@@ -784,187 +1216,266 @@
     </style>
   </head>
   <body>
-    <canvas id="sky" aria-hidden="true"></canvas>
-    <div class="grid-bg" aria-hidden="true"></div>
-    <div class="glow glow--a" aria-hidden="true"></div>
-    <div class="glow glow--b" aria-hidden="true"></div>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <linearGradient id="apexMark" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#00e5ff" />
+          <stop offset="100%" stop-color="#8b5cf6" />
+        </linearGradient>
+        <symbol id="apex" viewBox="0 0 32 32">
+          <path d="M16 2.5 29 27H3L16 2.5Z" fill="none" stroke="url(#apexMark)" stroke-width="2.1" stroke-linejoin="round" />
+          <path d="M16 12.5 22 24H10l6-11.5Z" fill="url(#apexMark)" opacity=".85" />
+        </symbol>
+      </defs>
+    </svg>
 
     <main class="page">
-      <!-- ------------------------------------------------------ story -->
+      <!-- ============================================== the story (left) -->
       <section class="story" aria-labelledby="headline">
+        <canvas id="sky" aria-hidden="true"></canvas>
+
         <span class="brand" aria-label="Inspironics Apex">
-          <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-            <defs>
-              <linearGradient id="apexMark" x1="0" y1="0" x2="32" y2="32">
-                <stop offset="0%" stop-color="#00f0ff" />
-                <stop offset="100%" stop-color="#c065f0" />
-              </linearGradient>
-            </defs>
-            <path d="M16 2.5 29 27H3L16 2.5Z" stroke="url(#apexMark)" stroke-width="2.1" stroke-linejoin="round" />
-            <path d="M16 12.5 22 24H10l6-11.5Z" fill="url(#apexMark)" opacity=".85" />
-          </svg>
-          <span class="brand__name">Inspironics&nbsp;·&nbsp;Apex</span>
+          <svg aria-hidden="true"><use href="#apex" /></svg>
+          <span class="brand__name">Inspironics<b>•</b>Apex</span>
         </span>
 
-        <span class="eyebrow"><i></i>Secure workspace</span>
-        <h1 id="headline">One sign-in.<br /><em>Every platform.</em></h1>
-        <p class="lede">
-          Sign in once to reach the Innovation Showcase and SlidesVault — the same session opens both,
-          so you move between them without being asked again.
-        </p>
+        <div class="hero">
+          <span class="pill"><i></i>Innovation platform</span>
+          <h1 id="headline">Build what’s next<br />with <em>Inspironics Apex</em></h1>
+          <p>
+            Access your workspace, explore innovative solutions, and collaborate across teams — all in one place.
+          </p>
+        </div>
 
-        <ul class="products">
-          <li class="product" data-product="showcase">
-            <span class="product__icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                <rect x="14" y="3" width="7" height="7" rx="1.5" />
-                <rect x="3" y="14" width="7" height="7" rx="1.5" />
-                <rect x="14" y="14" width="7" height="7" rx="1.5" />
+        <ul class="features">
+          <li class="feature">
+            <span class="feature__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
               </svg>
             </span>
-            <div>
-              <strong>Innovation Showcase</strong>
-              <span>Blueprints, command decks and architecture systems</span>
-            </div>
-            <em class="product__state mono" aria-hidden="true">Locked</em>
+            <strong>Innovate</strong>
+            <span>Turn ideas into real solutions</span>
           </li>
-          <li class="product product--vault" data-product="vault">
-            <span class="product__icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="2.5" y="4" width="19" height="13" rx="2" />
-                <path d="M12 17v3M8.5 20h7" />
+          <li class="feature">
+            <span class="feature__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5" />
+                <circle cx="17" cy="9" r="2.6" /><path d="M16.5 14.6c2.7.2 4.4 1.9 5 4.9" />
               </svg>
             </span>
-            <div>
-              <strong>SlidesVault</strong>
-              <span>The presentation knowledge hub, online and offline</span>
-            </div>
-            <em class="product__state mono" aria-hidden="true">Locked</em>
+            <strong>Collaborate</strong>
+            <span>Work together across teams</span>
+          </li>
+          <li class="feature">
+            <span class="feature__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" />
+              </svg>
+            </span>
+            <strong>Secure</strong>
+            <span>Enterprise-grade protection</span>
+          </li>
+          <li class="feature">
+            <span class="feature__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4.5 4.5 0 0 1-.5 9.5H7Z" />
+              </svg>
+            </span>
+            <strong>Scale</strong>
+            <span>Built for what’s next</span>
           </li>
         </ul>
 
-        <div class="trust">
-          <span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
-            </svg>
-            HttpOnly session cookies
-          </span>
-          <span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <!-- The ecosystem: what one Apex sign-in connects. Decorative only. -->
+        <div class="eco" aria-hidden="true">
+          <canvas id="globe"></canvas>
+          <div class="plane">
+            <div class="orbit orbit--outer"><i></i><i></i><i></i></div>
+            <div class="orbit orbit--inner"><i></i><i></i></div>
+
+            <div class="node node--analytics">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 20v-4M9 20v-8M14 20v-12M19 20V4" />
+              </svg>
+              Analytics
+            </div>
+            <div class="node node--ai">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="6" y="6" width="12" height="12" rx="2" /><rect x="9.5" y="9.5" width="5" height="5" rx="1" />
+                <path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3" />
+              </svg>
+              AI &amp; Insights
+            </div>
+            <div class="node node--apps">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" />
+                <rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
+              </svg>
+              Applications
+            </div>
+            <div class="node node--devices">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="12" rx="2" /><path d="M12 16v4M8 20h8" />
+              </svg>
+              Devices
+            </div>
+
+            <div class="core">
+              <div class="slab slab--1"></div>
+              <div class="slab slab--2"></div>
+              <div class="slab slab--3"><svg aria-hidden="true"><use href="#apex" /></svg></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="assure">
+          <span class="assure__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" />
             </svg>
-            Checked by each platform
           </span>
-          <span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
-            </svg>
-            12-hour sessions
-          </span>
+          <span><strong>Your data. Your control.</strong>Checked by the Showcase and SlidesVault at every sign-in.</span>
         </div>
       </section>
 
-      <!-- ------------------------------------------------------- card -->
-      <div class="card-wrap">
-        <section class="card" id="card" aria-labelledby="title">
-          <h2 id="title">Welcome back</h2>
-          <p class="sub">Sign in with your Inspironics account to continue.</p>
+      <!-- ============================================= the sign-in (right) -->
+      <section class="auth" aria-label="Sign in">
+        <!-- On phones the story pane moves below, so the brand shows here. -->
+        <span class="brand" aria-label="Inspironics Apex" style="display: none">
+          <svg aria-hidden="true"><use href="#apex" /></svg>
+          <span class="brand__name">Inspironics<b>•</b>Apex</span>
+        </span>
 
-          <div class="notice notice--info" id="info" role="status">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16h.01" />
-            </svg>
-            <span id="info-text"></span>
-          </div>
-          <div class="notice notice--error" id="error" role="alert" aria-live="assertive">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" /><path d="m15 9-6 6M9 9l6 6" />
-            </svg>
-            <span id="error-text"></span>
-          </div>
+        <ul class="tagline" aria-hidden="true">
+          <li>Secure</li>
+          <li>Intelligent</li>
+          <li>Connected</li>
+        </ul>
 
-          <form id="form" novalidate>
-            <div class="field">
-              <label for="email">Email address</label>
-              <div class="control">
-                <svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
-                </svg>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  inputmode="email"
-                  autocomplete="username"
-                  placeholder="you@inspironics.net"
-                  spellcheck="false"
-                  required
-                />
-              </div>
+        <div class="card-wrap">
+          <section class="card" id="card" aria-labelledby="title">
+            <h2 id="title">Welcome back <span class="wave" aria-hidden="true">👋</span></h2>
+            <p class="sub">Sign in to continue to your Inspironics account.</p>
+
+            <div class="notice notice--info" id="info" role="status">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16h.01" />
+              </svg>
+              <span id="info-text"></span>
+            </div>
+            <div class="notice notice--error" id="error" role="alert" aria-live="assertive">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" /><path d="m15 9-6 6M9 9l6 6" />
+              </svg>
+              <span id="error-text"></span>
             </div>
 
-            <div class="field">
-              <label for="password">
-                <span>Password</span>
-                <span class="caps" id="caps" aria-live="polite">
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="m12 4 7 8h-4v6H9v-6H5l7-8Z" />
+            <form id="form" novalidate>
+              <div class="field">
+                <label for="email">Email address</label>
+                <div class="control">
+                  <svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
                   </svg>
-                  Caps Lock is on
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    inputmode="email"
+                    autocomplete="username"
+                    placeholder="you@company.com"
+                    spellcheck="false"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="password">
+                  <span>Password</span>
+                  <span class="caps" id="caps" aria-live="polite">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="m12 4 7 8h-4v6H9v-6H5l7-8Z" />
+                    </svg>
+                    Caps Lock is on
+                  </span>
+                </label>
+                <div class="control">
+                  <svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                  </svg>
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autocomplete="current-password"
+                    placeholder="Enter your password"
+                    required
+                  />
+                  <button class="reveal" id="reveal" type="button" aria-label="Show password" aria-pressed="false">
+                    <svg id="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- "Remember my email", not "Remember me": the checkbox only keeps
+                   the email address, it does not keep anyone signed in. There is
+                   no "Forgot password?", Microsoft or passkey option: Apex has
+                   none of them, so none is shown. -->
+              <div class="row">
+                <label class="check"><input type="checkbox" id="remember" /> Remember my email</label>
+                <span class="hint">Session lasts 12 hours</span>
+              </div>
+
+              <button class="submit" id="submit" type="submit">
+                <span class="label">
+                  Sign in
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 12h14M13 6l6 6-6 6" />
+                  </svg>
                 </span>
-              </label>
-              <div class="control">
-                <svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
-                </svg>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autocomplete="current-password"
-                  placeholder="Your password"
-                  required
-                />
-                <button class="reveal" id="reveal" type="button" aria-label="Show password" aria-pressed="false">
-                  <svg id="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />
+                <span class="spinner" aria-hidden="true"><i></i>Signing you in…</span>
+              </button>
+
+              <ol class="steps" id="steps" aria-live="polite">
+                <li data-step="verify"><span class="dot"></span>Checking your credentials</li>
+                <li data-step="showcase"><span class="dot"></span>Opening Innovation Showcase</li>
+                <li data-step="vault"><span class="dot"></span>Opening SlidesVault</li>
+              </ol>
+            </form>
+
+            <div class="secure">
+              <span class="secure__main">
+                <span class="secure__icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" />
                   </svg>
-                </button>
-              </div>
-            </div>
-
-            <div class="row">
-              <label class="check"><input type="checkbox" id="remember" /> Remember my email</label>
-              <span class="hint">Session lasts 12 hours</span>
-            </div>
-
-            <button class="submit" id="submit" type="submit">
-              <span class="label">
-                Sign in
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M5 12h14M13 6l6 6-6 6" />
-                </svg>
+                </span>
+                <!-- What is true of this deployment: HttpOnly cookies, 12-hour
+                     sessions (apex/auth.mjs). Not "encrypted" — over plain
+                     http on localhost, it is not. -->
+                <span>
+                  <strong>Protected by Apex security</strong>
+                  <span>HttpOnly cookies · 12-hour sessions</span>
+                </span>
               </span>
-              <span class="spinner" aria-hidden="true"><i></i>Signing you in…</span>
-            </button>
+              <span class="help"><b>Need help?</b>Ask your administrator</span>
+            </div>
+          </section>
+        </div>
 
-            <ol class="steps" id="steps" aria-live="polite">
-              <li data-step="verify"><span class="dot"></span>Checking your credentials</li>
-              <li data-step="showcase"><span class="dot"></span>Opening Innovation Showcase</li>
-              <li data-step="vault"><span class="dot"></span>Opening SlidesVault</li>
-            </ol>
-          </form>
-
-          <div class="card-foot">
-            <span>Trouble signing in? Contact your Apex administrator.</span>
-            <code id="origin"></code>
-          </div>
-        </section>
-      </div>
+        <code class="origin" id="origin"></code>
+      </section>
     </main>
 
+    <!-- ================================================================
+         sign-in — unchanged. Validation, POST /auth/login, the progress
+         steps, remember-email, Caps Lock, show/hide and the redirect are
+         exactly the previous page's.
+         ================================================================ -->
     <script>
       ;(() => {
         const $ = (id) => document.getElementById(id)
@@ -1121,101 +1632,231 @@
             showError(err.message === 'Failed to fetch' ? 'Apex is not reachable. Check that it is running.' : err.message)
           }
         })
+      })()
+    </script>
 
-        /* ------------------------------------------------- card parallax */
-        if (!reduced && matchMedia('(pointer: fine)').matches) {
-          const wrap = card.parentElement
-          wrap.addEventListener('pointermove', (e) => {
-            const r = wrap.getBoundingClientRect()
-            const x = (e.clientX - r.left) / r.width - 0.5
-            const y = (e.clientY - r.top) / r.height - 0.5
-            card.style.transform = `rotateX(${(-y * 5).toFixed(2)}deg) rotateY(${(x * 6).toFixed(2)}deg)`
-          })
-          wrap.addEventListener('pointerleave', () => (card.style.transform = ''))
-        }
-
-        /* ----------------------------------------- interactive constellation */
-        const canvas = $('sky')
-        const ctx = canvas.getContext('2d')
-        let w = 0
-        let h = 0
-        let dots = []
-        const mouse = { x: -9999, y: -9999 }
+    <!-- ================================================================
+         presentation — background network and the dotted globe behind the
+         ecosystem. Nothing here reads or touches the form.
+         ================================================================ -->
+    <script>
+      ;(() => {
+        const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
         const DPR = Math.min(window.devicePixelRatio || 1, 2)
 
-        function size() {
-          w = canvas.clientWidth
-          h = canvas.clientHeight
-          canvas.width = w * DPR
-          canvas.height = h * DPR
-          ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
-          const count = Math.round(Math.min(90, (w * h) / 16000))
+        /* --------------------------------------------- background network */
+        const sky = document.getElementById('sky')
+        const sctx = sky.getContext('2d')
+        let sw = 0
+        let sh = 0
+        let dots = []
+        const pointer = { x: -9999, y: -9999 }
+
+        function sizeSky() {
+          const r = sky.getBoundingClientRect()
+          sw = r.width
+          sh = r.height
+          sky.width = sw * DPR
+          sky.height = sh * DPR
+          sctx.setTransform(DPR, 0, 0, DPR, 0, 0)
+          const count = Math.round(Math.min(55, (sw * sh) / 24000))
           dots = Array.from({ length: count }, () => ({
-            x: Math.random() * w,
-            y: Math.random() * h,
-            vx: (Math.random() - 0.5) * 0.25,
-            vy: (Math.random() - 0.5) * 0.25,
-            r: Math.random() * 1.4 + 0.5,
-            hue: Math.random() < 0.55 ? '0,240,255' : '192,101,240',
+            x: Math.random() * sw,
+            y: Math.random() * sh,
+            vx: (Math.random() - 0.5) * 0.14,
+            vy: (Math.random() - 0.5) * 0.14,
+            r: Math.random() * 1.1 + 0.4,
+            hue: Math.random() < 0.3 ? '139,92,246' : '0,229,255',
           }))
         }
 
-        function frame() {
-          ctx.clearRect(0, 0, w, h)
-          for (const d of dots) {
-            d.x += d.vx
-            d.y += d.vy
-            if (d.x < 0 || d.x > w) d.vx *= -1
-            if (d.y < 0 || d.y > h) d.vy *= -1
-            // Dots lean gently towards the cursor.
-            const mx = mouse.x - d.x
-            const my = mouse.y - d.y
-            const md = Math.hypot(mx, my)
-            if (md < 180) {
-              d.x += mx * 0.004
-              d.y += my * 0.004
-            }
-          }
+        function drawSky() {
+          if (!sw) return
+          sctx.clearRect(0, 0, sw, sh)
           for (let i = 0; i < dots.length; i++) {
             const a = dots[i]
             for (let j = i + 1; j < dots.length; j++) {
               const b = dots[j]
-              const dist = Math.hypot(a.x - b.x, a.y - b.y)
-              if (dist < 120) {
-                ctx.strokeStyle = `rgba(${a.hue},${(1 - dist / 120) * 0.16})`
-                ctx.lineWidth = 1
-                ctx.beginPath()
-                ctx.moveTo(a.x, a.y)
-                ctx.lineTo(b.x, b.y)
-                ctx.stroke()
+              const d = Math.hypot(a.x - b.x, a.y - b.y)
+              if (d < 120) {
+                sctx.strokeStyle = `rgba(${a.hue},${(1 - d / 120) * 0.12})`
+                sctx.lineWidth = 1
+                sctx.beginPath()
+                sctx.moveTo(a.x, a.y)
+                sctx.lineTo(b.x, b.y)
+                sctx.stroke()
               }
             }
-            const near = Math.hypot(mouse.x - a.x, mouse.y - a.y)
-            if (near < 160) {
-              ctx.strokeStyle = `rgba(${a.hue},${(1 - near / 160) * 0.35})`
-              ctx.beginPath()
-              ctx.moveTo(a.x, a.y)
-              ctx.lineTo(mouse.x, mouse.y)
-              ctx.stroke()
+            const near = Math.hypot(pointer.x - a.x, pointer.y - a.y)
+            if (near < 140) {
+              sctx.strokeStyle = `rgba(${a.hue},${(1 - near / 140) * 0.25})`
+              sctx.beginPath()
+              sctx.moveTo(a.x, a.y)
+              sctx.lineTo(pointer.x, pointer.y)
+              sctx.stroke()
             }
-            ctx.fillStyle = `rgba(${a.hue},0.8)`
-            ctx.beginPath()
-            ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2)
-            ctx.fill()
+            sctx.fillStyle = `rgba(${a.hue},0.6)`
+            sctx.beginPath()
+            sctx.arc(a.x, a.y, a.r, 0, Math.PI * 2)
+            sctx.fill()
           }
-          if (!reduced) requestAnimationFrame(frame)
         }
 
-        size()
-        frame()
-        addEventListener('resize', size)
-        addEventListener('pointermove', (e) => {
-          mouse.x = e.clientX
-          mouse.y = e.clientY
+        sky.parentElement.addEventListener('pointermove', (e) => {
+          const r = sky.getBoundingClientRect()
+          pointer.x = e.clientX - r.left
+          pointer.y = e.clientY - r.top
         })
-        addEventListener('pointerleave', () => {
-          mouse.x = mouse.y = -9999
+        sky.parentElement.addEventListener('pointerleave', () => (pointer.x = pointer.y = -9999))
+
+        /* ---------------------------------------------------- dotted globe */
+        // A slowly turning dotted sphere with lat/long lines and a few arcs,
+        // seen from the top: it reads as a network surface under the ecosystem.
+        const gcan = document.getElementById('globe')
+        const gctx = gcan.getContext('2d')
+        let gs = 0
+
+        const N = 900
+        const golden = Math.PI * (3 - Math.sqrt(5))
+        const SPHERE = Array.from({ length: N }, (_, i) => {
+          const y = 1 - (i / (N - 1)) * 2
+          const r = Math.sqrt(1 - y * y)
+          const t = golden * i
+          return [Math.cos(t) * r, y, Math.sin(t) * r]
         })
+        const ll = (lat, lon) => {
+          const a = (lat * Math.PI) / 180
+          const b = (lon * Math.PI) / 180
+          return [Math.cos(a) * Math.cos(b), Math.sin(a), Math.cos(a) * Math.sin(b)]
+        }
+        const SITES = [[30, 20], [10, 70], [45, -20], [-10, 40], [20, 120], [55, 60]].map(([a, b]) => ll(a, b))
+        const ARCS = [[0, 1], [0, 2], [1, 3], [1, 4], [2, 5], [5, 4]]
+        const TILT = 0.55
+        let spin = 0
+
+        const project = ([x, y, z]) => {
+          const c = Math.cos(spin)
+          const s = Math.sin(spin)
+          const x1 = x * c - z * s
+          const z1 = x * s + z * c
+          const ct = Math.cos(TILT)
+          const st = Math.sin(TILT)
+          return [x1, y * ct - z1 * st, y * st + z1 * ct]
+        }
+        const slerp = (a, b, t) => {
+          const dot = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))
+          const th = Math.acos(dot)
+          if (th < 1e-4) return a
+          const s = Math.sin(th)
+          const wa = Math.sin((1 - t) * th) / s
+          const wb = Math.sin(t * th) / s
+          return [a[0] * wa + b[0] * wb, a[1] * wa + b[1] * wb, a[2] * wa + b[2] * wb]
+        }
+
+        function sizeGlobe() {
+          gs = gcan.getBoundingClientRect().width
+          gcan.width = gs * DPR
+          gcan.height = gs * DPR
+          gctx.setTransform(DPR, 0, 0, DPR, 0, 0)
+        }
+
+        function drawGlobe(time = 0) {
+          if (!gs || !gcan.offsetParent) return
+          const c = gctx
+          const m = gs / 2
+          const R = gs * 0.46
+          c.clearRect(0, 0, gs, gs)
+
+          const halo = c.createRadialGradient(m, m, R * 0.6, m, m, R * 1.1)
+          halo.addColorStop(0, 'rgba(37,99,235,0.18)')
+          halo.addColorStop(1, 'rgba(37,99,235,0)')
+          c.fillStyle = halo
+          c.fillRect(0, 0, gs, gs)
+
+          const ring = (at) => {
+            let prev = null
+            for (let k = 0; k <= 96; k++) {
+              const p = project(at(k / 96))
+              if (prev && (p[2] + prev[2]) / 2 > 0) {
+                c.strokeStyle = 'rgba(59,130,246,0.16)'
+                c.beginPath()
+                c.moveTo(m + prev[0] * R, m - prev[1] * R)
+                c.lineTo(m + p[0] * R, m - p[1] * R)
+                c.stroke()
+              }
+              prev = p
+            }
+          }
+          c.lineWidth = 1
+          for (const lat of [-45, -15, 15, 45, 70]) ring((t) => ll(lat, t * 360))
+          for (let lon = 0; lon < 180; lon += 30) ring((t) => ll(-90 + t * 360, lon))
+
+          for (const pt of SPHERE) {
+            const p = project(pt)
+            if (p[2] < 0) continue
+            c.fillStyle = `rgba(56,189,248,${0.1 + p[2] * 0.5})`
+            c.fillRect(m + p[0] * R - 0.8, m - p[1] * R - 0.8, 1.6, 1.6)
+          }
+
+          ARCS.forEach(([i, j], n) => {
+            let prev = null
+            const pts = []
+            for (let k = 0; k <= 32; k++) {
+              const t = k / 32
+              const s = slerp(SITES[i], SITES[j], t)
+              const lift = 1 + Math.sin(Math.PI * t) * 0.12
+              const p = project([s[0] * lift, s[1] * lift, s[2] * lift])
+              pts.push(p)
+              if (prev && p[2] > 0 && prev[2] > 0) {
+                c.strokeStyle = n % 2 ? 'rgba(139,92,246,0.45)' : 'rgba(0,229,255,0.45)'
+                c.beginPath()
+                c.moveTo(m + prev[0] * R, m - prev[1] * R)
+                c.lineTo(m + p[0] * R, m - p[1] * R)
+                c.stroke()
+              }
+              prev = p
+            }
+            const q = pts[Math.round(((((time / 3200 + n * 0.21) % 1) + 1) % 1) * 32)]
+            if (q && q[2] > 0) {
+              c.fillStyle = 'rgba(0,229,255,0.95)'
+              c.beginPath()
+              c.arc(m + q[0] * R, m - q[1] * R, 2, 0, Math.PI * 2)
+              c.fill()
+            }
+          })
+        }
+
+        /* ----------------------------------------------------------- loop */
+        sizeSky()
+        sizeGlobe()
+        addEventListener('resize', () => {
+          sizeSky()
+          sizeGlobe()
+          if (reduced) {
+            drawSky()
+            drawGlobe()
+          }
+        })
+
+        if (reduced) {
+          drawSky()
+          drawGlobe()
+          return
+        }
+
+        const tick = (time) => {
+          for (const d of dots) {
+            d.x += d.vx
+            d.y += d.vy
+            if (d.x < 0 || d.x > sw) d.vx *= -1
+            if (d.y < 0 || d.y > sh) d.vy *= -1
+          }
+          drawSky()
+          spin += 0.0012
+          drawGlobe(time)
+          requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
       })()
     </script>
   </body>
