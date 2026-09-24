@@ -19,8 +19,9 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { GATEWAY_PORT, PROD_PORT, PROJECTS, projectFor } from './projects.mjs'
-import { CHILD_PORTS, stopApex } from './stop.mjs'
+import { GATEWAY_PORT, PROD_PORT, PROJECTS, apiFor, projectFor } from './projects.mjs'
+import { API_PORTS, CHILD_PORTS, stopApex } from './stop.mjs'
+import { clearFailures, isLimited, noteFailure, safeNext, sessionOf, signIn, signOut } from './auth.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.dirname(HERE)
@@ -174,6 +175,67 @@ function proxyUpgrade(req, socket, head, project) {
   socket.on('error', () => upstream.destroy())
 }
 
+/* ------------------------------------------------------------------ api ---- */
+
+/**
+ * Streams a request through to a project's own API server, in dev and prod.
+ *
+ * The mount is stripped — '/vault/api/auth/me' reaches the server as
+ * '/api/auth/me' — so the API needs no idea it is mounted anywhere. What it
+ * does need to know is the public URL it lives at, for the OAuth redirects it
+ * issues; start.bat passes that in (APP_BASE_URL, DROPBOX_REDIRECT_URI).
+ *
+ * Bodies are piped, not buffered: this path carries whole presentations, and
+ * Range requests for them, straight from the content proxy.
+ */
+function proxyApi(req, res, project) {
+  const { api } = project
+  const upstreamPath = req.url.slice(project.base.length) || '/'
+
+  const upstream = http.request(
+    {
+      host: '127.0.0.1',
+      port: api.port,
+      method: req.method,
+      path: upstreamPath,
+      headers: {
+        ...req.headers,
+        host: `127.0.0.1:${api.port}`,
+        'x-forwarded-host': req.headers.host || '',
+        'x-forwarded-proto': 'http',
+        'x-forwarded-for': req.socket.remoteAddress || '',
+      },
+    },
+    (up) => {
+      res.writeHead(up.statusCode || 502, up.headers)
+      up.pipe(res)
+    }
+  )
+
+  upstream.on('error', (err) => {
+    if (res.headersSent) return res.destroy()
+    // The client is fetch() expecting JSON, so answer in the API's own error
+    // shape — the app then shows its normal "cannot reach the server" state.
+    const starting = err.code === 'ECONNREFUSED'
+    const body = JSON.stringify({
+      error: starting
+        ? `The ${project.name} API is not running yet (port ${api.port}). Give it a moment, or check its window.`
+        : `Apex could not reach the ${project.name} API: ${err.message}`,
+      code: starting ? 'API_STARTING' : 'API_UNREACHABLE',
+      retryable: true,
+    })
+    res.writeHead(starting ? 503 : 502, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': Buffer.byteLength(body),
+      'Cache-Control': 'no-store',
+    })
+    res.end(body)
+  })
+
+  req.on('aborted', () => upstream.destroy())
+  req.pipe(upstream)
+}
+
 /* ----------------------------------------------------------------- prod ---- */
 
 /** Serves a child's built dist/, falling back to its index.html for SPA routes. */
@@ -198,13 +260,144 @@ function serveBuilt(req, res, project, pathname) {
 
 /* -------------------------------------------------------------- dispatch --- */
 
+/* --------------------------------------------------------------- sign-in -- */
+
+/** Reachable without a session: the sign-in page and what it needs. */
+const PUBLIC_PATHS = new Set(['/login', '/auth/login', '/auth/logout', '/auth/me', '/logo.svg', '/favicon.ico'])
+
+function sendJson(res, status, body, headers = {}) {
+  const text = JSON.stringify(body)
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(text),
+    'Cache-Control': 'no-store',
+    ...headers,
+  })
+  res.end(text)
+}
+
+const redirect = (res, location, headers = {}) => {
+  res.writeHead(302, { Location: location, 'Cache-Control': 'no-store', ...headers })
+  res.end()
+}
+
+/** Reads a small JSON body; anything over 8 KB is not a sign-in form. */
+function readJson(req) {
+  return new Promise((resolve) => {
+    let text = ''
+    req.setEncoding('utf8')
+    req.on('data', (chunk) => {
+      text += chunk
+      if (text.length > 8192) req.destroy()
+    })
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(text || '{}'))
+      } catch {
+        resolve({})
+      }
+    })
+    req.on('error', () => resolve({}))
+  })
+}
+
+/** A page load, as opposed to a fetch or an asset — gets redirected rather than refused. */
+const isNavigation = (req) =>
+  req.method === 'GET' && (req.headers['sec-fetch-mode'] === 'navigate' || /text\/html/.test(req.headers.accept || ''))
+
+async function handleAuth(req, res, pathname, url) {
+  const ip = req.socket.remoteAddress || ''
+
+  if (pathname === '/login') {
+    // An app whose own session has lapsed sends the browser here with
+    // reauth=1. Everything is signed out first, so the form that follows
+    // issues all the sessions afresh — otherwise the still-valid Apex cookie
+    // would bounce straight back to the app, and round again.
+    if (url.searchParams.get('reauth')) {
+      const cleared = await signOut(req)
+      const next = safeNext(url.searchParams.get('next') || '/')
+      return redirect(res, `/login?next=${encodeURIComponent(next)}&expired=1`, { 'Set-Cookie': cleared })
+    }
+    if (sessionOf(req)) return redirect(res, safeNext(url.searchParams.get('next') || '/'))
+    if (sendFile(res, path.join(PUBLIC, 'login.html'))) return
+    return sendNotFound(res)
+  }
+
+  if (pathname === '/auth/me') {
+    const email = sessionOf(req)
+    return email ? sendJson(res, 200, { email }) : sendJson(res, 401, { error: 'Not signed in.' })
+  }
+
+  if (pathname === '/auth/logout') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Use POST.' })
+    return sendJson(res, 200, { ok: true }, { 'Set-Cookie': await signOut(req) })
+  }
+
+  if (pathname === '/auth/login') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Use POST.' })
+    // A browser always sends Origin on a cross-site POST; refuse one that is
+    // not this gateway, so no other site can sign a visitor in or out.
+    const origin = req.headers.origin
+    if (origin && origin !== `http://${req.headers.host}`) {
+      return sendJson(res, 403, { error: 'Cross-origin sign-in refused.' })
+    }
+    if (isLimited(ip)) {
+      return sendJson(res, 429, { error: 'Too many failed attempts. Wait a few minutes and try again.' })
+    }
+
+    const body = await readJson(req)
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    const password = typeof body.password === 'string' ? body.password : ''
+    if (!email || !password) return sendJson(res, 400, { error: 'Enter your email address and password.' })
+
+    const result = await signIn(email, password, req)
+    if (result.status !== 200) {
+      if (result.status === 401) noteFailure(ip)
+      return sendJson(res, result.status, { error: result.error })
+    }
+    clearFailures(ip)
+    return sendJson(res, 200, { ok: true, email, next: safeNext(body.next) }, { 'Set-Cookie': result.cookies })
+  }
+
+  return sendNotFound(res)
+}
+
+/* -------------------------------------------------------------- dispatch --- */
+
 const server = http.createServer((req, res) => {
   let pathname
+  let url
   try {
-    pathname = decodeURI(new URL(req.url, 'http://localhost').pathname)
+    url = new URL(req.url, 'http://localhost')
+    pathname = decodeURI(url.pathname)
   } catch {
     return sendNotFound(res)
   }
+
+  // A web-app manifest is fetched without cookies (the browser's default for
+  // <link rel="manifest">), and holds nothing but a name and an icon.
+  const isManifest = pathname.endsWith('.webmanifest')
+
+  if (isManifest) {
+    // falls through to the project it belongs to, unauthenticated
+  } else if (PUBLIC_PATHS.has(pathname)) {
+    if (pathname === '/login' || pathname.startsWith('/auth/')) {
+      return handleAuth(req, res, pathname, url).catch((err) => {
+        console.error('  sign-in error:', err)
+        if (!res.headersSent) sendJson(res, 500, { error: 'Sign-in failed. Try again.' })
+      })
+    }
+  } else if (!sessionOf(req)) {
+    // Nothing else is reachable without the Apex sign-in — not the dashboard,
+    // not either app, not their APIs.
+    if (isNavigation(req)) return redirect(res, `/login?next=${encodeURIComponent(req.url)}`)
+    return sendJson(res, 401, { error: 'Sign in to Apex first.', code: 'APEX_SIGNIN_REQUIRED' })
+  }
+
+  // Before projectFor(): '/vault/api' is inside the '/vault' mount, and must
+  // reach the API server rather than the SPA.
+  const apiProject = apiFor(pathname)
+  if (apiProject) return proxyApi(req, res, apiProject)
 
   const project = projectFor(pathname)
 
@@ -282,6 +475,7 @@ server.listen(PORT, () => {
   for (const p of PROJECTS) {
     const from = MODE === 'dev' ? `vite :${p.devPort}` : `${p.dir}/dist`
     console.log(`  ${p.base.slice(1).padEnd(12)} ${url}${p.base}/  <- ${from}`)
+    if (p.api) console.log(`  ${''.padEnd(12)} ${url}${p.api.base}/  <- api :${p.api.port}`)
   }
   console.log('')
 
@@ -294,7 +488,7 @@ server.listen(PORT, () => {
 })
 
 /*
- * When the gateway goes, the child dev servers go with it.
+ * When the gateway goes, the child servers (vite, and the vault API) go with it.
  *
  * start.bat launches them in their own windows, so without this they outlive a
  * Ctrl+C here and keep holding 5174/5175. The visible symptom is nasty: the
@@ -312,9 +506,11 @@ function shutdown(signal) {
   if (shuttingDown) return
   shuttingDown = true
 
-  if (MODE === 'dev') {
-    const { stopped } = stopApex(CHILD_PORTS, { exclude: [process.pid] })
-    if (stopped.length) console.log(`\n  Stopped ${stopped.length} dev server(s).`)
+  // The API servers run in prod too, so they are stopped in both modes; the
+  // vite dev servers exist only in dev.
+  {
+    const { stopped } = stopApex(MODE === 'dev' ? CHILD_PORTS : API_PORTS, { exclude: [process.pid] })
+    if (stopped.length) console.log(`\n  Stopped ${stopped.length} server(s).`)
   }
 
   console.log('')

@@ -1,0 +1,1222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#07070c" />
+    <meta name="description" content="Sign in to Apex — one sign-in for the Innovation Showcase and SlidesVault." />
+    <title>Sign in · Apex</title>
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Hand-written, like the dashboard: Apex has no build step and no
+         node_modules, so the sign-in page is one self-contained file. */
+      :root {
+        color-scheme: dark;
+        --ink: #07070c;
+        --ink-deep: #050816;
+        --panel: rgba(14, 15, 24, 0.72);
+        --chalk: #f4f4f9;
+        --muted: #a1a1aa;
+        --faint: #71717a;
+        --line: rgba(255, 255, 255, 0.1);
+        --line-strong: rgba(255, 255, 255, 0.18);
+        --cyan: #00f0ff;
+        --mint: #00ffb2;
+        --violet: #7c6cf6;
+        --orchid: #c065f0;
+        --danger: #fb7185;
+        --warn: #fbbf24;
+        --ok: #34d399;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--ink);
+        background-image: linear-gradient(180deg, #050816 0%, #07070c 55%, #050816 100%);
+        color: var(--chalk);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+
+      .mono {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+      }
+
+      /* ------------------------------------------------------ backdrop -- */
+      #sky {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 0;
+      }
+
+      .grid-bg {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background-image: linear-gradient(rgba(0, 240, 255, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 240, 255, 0.045) 1px, transparent 1px);
+        background-size: 46px 46px;
+        mask-image: radial-gradient(ellipse 90% 70% at 30% 20%, #000 30%, transparent 100%);
+        -webkit-mask-image: radial-gradient(ellipse 90% 70% at 30% 20%, #000 30%, transparent 100%);
+      }
+
+      .glow {
+        position: fixed;
+        z-index: 0;
+        pointer-events: none;
+        border-radius: 50%;
+        filter: blur(110px);
+        opacity: 0.38;
+        animation: drift 18s ease-in-out infinite alternate;
+      }
+      .glow--a {
+        top: -12rem;
+        left: -8rem;
+        width: 36rem;
+        height: 36rem;
+        background: radial-gradient(circle, var(--cyan), transparent 70%);
+      }
+      .glow--b {
+        bottom: -14rem;
+        right: -10rem;
+        width: 40rem;
+        height: 40rem;
+        background: radial-gradient(circle, var(--orchid), transparent 70%);
+        animation-delay: -9s;
+      }
+      @keyframes drift {
+        to {
+          transform: translate(4rem, 3rem) scale(1.08);
+        }
+      }
+
+      /* -------------------------------------------------------- layout -- */
+      .page {
+        position: relative;
+        z-index: 1;
+        min-height: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+        align-items: center;
+        gap: 4rem;
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 3rem 2.5rem;
+      }
+
+      /* --------------------------------------------------- story panel -- */
+      .brand {
+        display: flex;
+        width: fit-content;
+        align-items: center;
+        gap: 0.75rem;
+        text-decoration: none;
+        color: inherit;
+      }
+      .brand svg {
+        width: 38px;
+        height: 38px;
+        filter: drop-shadow(0 0 18px rgba(0, 240, 255, 0.35));
+      }
+      .brand__name {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        margin-top: 3.2rem;
+        padding: 0.4rem 0.8rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.03);
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.68rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .eyebrow i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--mint);
+        box-shadow: 0 0 0 0 rgba(0, 255, 178, 0.6);
+        animation: pulse 2.2s ease-out infinite;
+      }
+      @keyframes pulse {
+        to {
+          box-shadow: 0 0 0 10px rgba(0, 255, 178, 0);
+        }
+      }
+
+      .story h1 {
+        margin: 1.4rem 0 0;
+        font-size: clamp(2.3rem, 4.6vw, 3.9rem);
+        line-height: 1.02;
+        font-weight: 900;
+        letter-spacing: -0.035em;
+      }
+      .story h1 em {
+        font-style: normal;
+        background: linear-gradient(95deg, var(--cyan), var(--mint) 35%, var(--violet) 70%, var(--orchid));
+        background-size: 220% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        animation: sheen 7s ease-in-out infinite alternate;
+      }
+      @keyframes sheen {
+        to {
+          background-position: 100% 0;
+        }
+      }
+      .story .lede {
+        margin: 1.3rem 0 0;
+        max-width: 32rem;
+        font-size: 1.02rem;
+        line-height: 1.65;
+        color: var(--muted);
+      }
+
+      .products {
+        display: grid;
+        gap: 0.8rem;
+        margin: 2.4rem 0 0;
+        padding: 0;
+        list-style: none;
+        max-width: 32rem;
+      }
+      .product {
+        --a: var(--cyan);
+        --b: var(--mint);
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        padding: 0.95rem 1.1rem;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.025);
+        transition: border-color 0.25s, transform 0.25s, background 0.25s;
+      }
+      .product:hover {
+        transform: translateX(4px);
+        border-color: color-mix(in srgb, var(--a) 45%, transparent);
+        background: rgba(255, 255, 255, 0.045);
+      }
+      .product--vault {
+        --a: var(--violet);
+        --b: var(--orchid);
+      }
+      .product__icon {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, color-mix(in srgb, var(--a) 22%, transparent), color-mix(in srgb, var(--b) 12%, transparent));
+        border: 1px solid color-mix(in srgb, var(--a) 35%, transparent);
+        color: var(--a);
+      }
+      .product__icon svg {
+        width: 20px;
+        height: 20px;
+      }
+      .product strong {
+        display: block;
+        font-size: 0.95rem;
+        font-weight: 700;
+      }
+      .product span {
+        display: block;
+        margin-top: 0.15rem;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+      .product__state {
+        margin-left: auto;
+        flex: none;
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.64rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--faint);
+        transition: color 0.3s;
+      }
+      .product.is-open .product__state {
+        color: var(--ok);
+      }
+
+      .trust {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.4rem;
+        margin-top: 2.4rem;
+        color: var(--faint);
+        font-size: 0.78rem;
+      }
+      .trust span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+      }
+      .trust svg {
+        width: 15px;
+        height: 15px;
+        color: var(--mint);
+      }
+
+      /* ---------------------------------------------------------- card -- */
+      .card-wrap {
+        perspective: 1400px;
+        justify-self: end;
+        width: 100%;
+        max-width: 440px;
+      }
+      .card {
+        position: relative;
+        padding: 2.4rem 2.2rem 2rem;
+        border-radius: 24px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(22px) saturate(140%);
+        -webkit-backdrop-filter: blur(22px) saturate(140%);
+        transform-style: preserve-3d;
+        transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        animation: rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      /* A slowly turning gradient hairline around the card. */
+      .card::before {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        padding: 1px;
+        background: conic-gradient(from var(--spin, 0deg), transparent 0 60%, var(--cyan), var(--violet), var(--orchid), transparent 95%);
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        opacity: 0.8;
+        animation: spin 8s linear infinite;
+        pointer-events: none;
+      }
+      @property --spin {
+        syntax: '<angle>';
+        inherits: false;
+        initial-value: 0deg;
+      }
+      @keyframes spin {
+        to {
+          --spin: 360deg;
+        }
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(24px) scale(0.98);
+        }
+      }
+      .card.shake {
+        animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+      }
+      @keyframes shake {
+        20%,
+        60% {
+          transform: translateX(-8px);
+        }
+        40%,
+        80% {
+          transform: translateX(8px);
+        }
+      }
+
+      .card h2 {
+        margin: 0;
+        font-size: 1.6rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+      .card .sub {
+        margin: 0.45rem 0 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .notice {
+        display: none;
+        margin-top: 1.3rem;
+        padding: 0.75rem 0.9rem;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        line-height: 1.45;
+        border: 1px solid;
+      }
+      .notice.show {
+        display: flex;
+        gap: 0.6rem;
+        align-items: flex-start;
+      }
+      .notice svg {
+        flex: none;
+        width: 17px;
+        height: 17px;
+        margin-top: 1px;
+      }
+      .notice--error {
+        color: #fecdd3;
+        background: rgba(251, 113, 133, 0.1);
+        border-color: rgba(251, 113, 133, 0.35);
+      }
+      .notice--info {
+        color: #fde68a;
+        background: rgba(251, 191, 36, 0.08);
+        border-color: rgba(251, 191, 36, 0.3);
+      }
+
+      form {
+        margin-top: 1.6rem;
+      }
+
+      .field {
+        position: relative;
+        margin-bottom: 1.05rem;
+      }
+      .field label {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 0.45rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #d4d4d8;
+      }
+      .control {
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .control > svg.lead {
+        position: absolute;
+        left: 0.95rem;
+        width: 17px;
+        height: 17px;
+        color: var(--faint);
+        pointer-events: none;
+        transition: color 0.2s;
+      }
+      .control input {
+        width: 100%;
+        height: 50px;
+        padding: 0 3rem 0 2.75rem;
+        border-radius: 13px;
+        border: 1px solid var(--line-strong);
+        background: rgba(5, 8, 22, 0.6);
+        color: var(--chalk);
+        font: inherit;
+        font-size: 0.95rem;
+        outline: none;
+        transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+      }
+      .control input::placeholder {
+        color: #52525b;
+      }
+      .control input:hover {
+        border-color: rgba(255, 255, 255, 0.28);
+      }
+      .control input:focus {
+        border-color: var(--cyan);
+        background: rgba(5, 8, 22, 0.85);
+        box-shadow: 0 0 0 4px rgba(0, 240, 255, 0.12);
+      }
+      .control:focus-within > svg.lead {
+        color: var(--cyan);
+      }
+      .control input[aria-invalid='true'] {
+        border-color: rgba(251, 113, 133, 0.7);
+        box-shadow: 0 0 0 4px rgba(251, 113, 133, 0.1);
+      }
+      /* Chrome's autofill paints a light box; keep the dark field. */
+      .control input:-webkit-autofill {
+        -webkit-text-fill-color: var(--chalk);
+        -webkit-box-shadow: 0 0 0 40px #0b0e1d inset;
+        caret-color: var(--chalk);
+      }
+
+      .reveal {
+        position: absolute;
+        right: 0.45rem;
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: var(--faint);
+        cursor: pointer;
+        transition: color 0.2s, background 0.2s;
+      }
+      .reveal:hover {
+        color: var(--chalk);
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .reveal:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 1px;
+      }
+      .reveal svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .caps {
+        display: none;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--warn);
+      }
+      .caps.show {
+        display: inline-flex;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 0.3rem 0 1.4rem;
+        font-size: 0.83rem;
+        color: var(--muted);
+      }
+      .check {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        cursor: pointer;
+        user-select: none;
+      }
+      .check input {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 17px;
+        height: 17px;
+        margin: 0;
+        border-radius: 5px;
+        border: 1px solid var(--line-strong);
+        background: rgba(5, 8, 22, 0.6);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        transition: background 0.2s, border-color 0.2s;
+      }
+      .check input::after {
+        content: '';
+        width: 9px;
+        height: 5px;
+        border-left: 2px solid #050816;
+        border-bottom: 2px solid #050816;
+        transform: rotate(-45deg) translate(1px, -1px) scale(0);
+        transition: transform 0.15s;
+      }
+      .check input:checked {
+        background: var(--cyan);
+        border-color: var(--cyan);
+      }
+      .check input:checked::after {
+        transform: rotate(-45deg) translate(1px, -1px) scale(1);
+      }
+      .check input:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 2px;
+      }
+      .hint {
+        color: var(--faint);
+        font-size: 0.78rem;
+      }
+
+      .submit {
+        position: relative;
+        width: 100%;
+        height: 52px;
+        border: 0;
+        border-radius: 14px;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.98rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        color: #041018;
+        background: linear-gradient(95deg, var(--cyan), var(--mint) 45%, #7cf7e4);
+        box-shadow: 0 12px 30px -10px rgba(0, 240, 255, 0.6);
+        overflow: hidden;
+        transition: transform 0.15s, box-shadow 0.25s, filter 0.25s;
+      }
+      .submit::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+        transform: translateX(-100%);
+        transition: transform 0.7s;
+      }
+      .submit:hover::after {
+        transform: translateX(100%);
+      }
+      .submit:hover {
+        box-shadow: 0 16px 38px -10px rgba(0, 240, 255, 0.75);
+      }
+      .submit:active {
+        transform: translateY(1px) scale(0.995);
+      }
+      .submit:focus-visible {
+        outline: 2px solid var(--chalk);
+        outline-offset: 3px;
+      }
+      .submit[disabled] {
+        cursor: progress;
+        filter: saturate(0.7) brightness(0.9);
+      }
+      .submit .label,
+      .submit .spinner {
+        position: relative;
+        z-index: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
+      }
+      .submit svg {
+        width: 18px;
+        height: 18px;
+        transition: transform 0.25s;
+      }
+      .submit:hover .label svg {
+        transform: translateX(3px);
+      }
+      .spinner {
+        display: none !important;
+      }
+      .submit.busy .label {
+        display: none;
+      }
+      .submit.busy .spinner {
+        display: inline-flex !important;
+      }
+      .spinner i {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2.5px solid rgba(4, 16, 24, 0.25);
+        border-top-color: #041018;
+        animation: turn 0.7s linear infinite;
+      }
+      @keyframes turn {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .submit.done {
+        background: linear-gradient(95deg, var(--ok), var(--mint));
+      }
+
+      /* The sign-in progress: one step per platform being opened. */
+      .steps {
+        display: grid;
+        gap: 0.55rem;
+        margin: 1.3rem 0 0;
+        padding: 0;
+        list-style: none;
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+        transition: max-height 0.45s ease, opacity 0.35s ease;
+      }
+      .steps.show {
+        max-height: 12rem;
+        opacity: 1;
+      }
+      .steps li {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        font-size: 0.84rem;
+        color: var(--faint);
+        transition: color 0.3s;
+      }
+      .steps .dot {
+        flex: none;
+        position: relative;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 1.5px solid var(--line-strong);
+        display: grid;
+        place-items: center;
+        transition: border-color 0.3s, background 0.3s;
+      }
+      .steps li.active {
+        color: var(--chalk);
+      }
+      .steps li.active .dot {
+        border-color: var(--cyan);
+        border-top-color: transparent;
+        animation: turn 0.8s linear infinite;
+      }
+      .steps li.ok {
+        color: #d1fae5;
+      }
+      .steps li.ok .dot {
+        border-color: var(--ok);
+        background: var(--ok);
+        animation: none;
+      }
+      .steps li.ok .dot::after {
+        content: '';
+        width: 7px;
+        height: 4px;
+        border-left: 2px solid #052e1f;
+        border-bottom: 2px solid #052e1f;
+        transform: rotate(-45deg) translate(1px, -1px);
+      }
+      .steps li.fail {
+        color: #fecdd3;
+      }
+      .steps li.fail .dot {
+        border-color: var(--danger);
+        animation: none;
+      }
+
+      .card-foot {
+        margin-top: 1.7rem;
+        padding-top: 1.2rem;
+        border-top: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        font-size: 0.76rem;
+        color: var(--faint);
+      }
+      .card-foot code {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        color: var(--muted);
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        border: 0;
+      }
+
+      /* -------------------------------------------------------- mobile -- */
+      @media (max-width: 960px) {
+        .page {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 2.2rem;
+          padding: 2rem 1rem 2.5rem;
+          align-items: start;
+        }
+        .card-wrap {
+          justify-self: stretch;
+          max-width: none;
+        }
+        .eyebrow {
+          margin-top: 1.8rem;
+        }
+        .products,
+        .trust {
+          display: none;
+        }
+        .story .lede {
+          font-size: 0.95rem;
+        }
+      }
+      @media (max-width: 420px) {
+        .card {
+          padding: 1.8rem 1.25rem 1.5rem;
+        }
+        .card-foot {
+          flex-direction: column;
+          gap: 0.4rem;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="sky" aria-hidden="true"></canvas>
+    <div class="grid-bg" aria-hidden="true"></div>
+    <div class="glow glow--a" aria-hidden="true"></div>
+    <div class="glow glow--b" aria-hidden="true"></div>
+
+    <main class="page">
+      <!-- ------------------------------------------------------ story -->
+      <section class="story" aria-labelledby="headline">
+        <span class="brand" aria-label="Inspironics Apex">
+          <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="apexMark" x1="0" y1="0" x2="32" y2="32">
+                <stop offset="0%" stop-color="#00f0ff" />
+                <stop offset="100%" stop-color="#c065f0" />
+              </linearGradient>
+            </defs>
+            <path d="M16 2.5 29 27H3L16 2.5Z" stroke="url(#apexMark)" stroke-width="2.1" stroke-linejoin="round" />
+            <path d="M16 12.5 22 24H10l6-11.5Z" fill="url(#apexMark)" opacity=".85" />
+          </svg>
+          <span class="brand__name">Inspironics&nbsp;·&nbsp;Apex</span>
+        </span>
+
+        <span class="eyebrow"><i></i>Secure workspace</span>
+        <h1 id="headline">One sign-in.<br /><em>Every platform.</em></h1>
+        <p class="lede">
+          Sign in once to reach the Innovation Showcase and SlidesVault — the same session opens both,
+          so you move between them without being asked again.
+        </p>
+
+        <ul class="products">
+          <li class="product" data-product="showcase">
+            <span class="product__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                <rect x="14" y="14" width="7" height="7" rx="1.5" />
+              </svg>
+            </span>
+            <div>
+              <strong>Innovation Showcase</strong>
+              <span>Blueprints, command decks and architecture systems</span>
+            </div>
+            <em class="product__state mono" aria-hidden="true">Locked</em>
+          </li>
+          <li class="product product--vault" data-product="vault">
+            <span class="product__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2.5" y="4" width="19" height="13" rx="2" />
+                <path d="M12 17v3M8.5 20h7" />
+              </svg>
+            </span>
+            <div>
+              <strong>SlidesVault</strong>
+              <span>The presentation knowledge hub, online and offline</span>
+            </div>
+            <em class="product__state mono" aria-hidden="true">Locked</em>
+          </li>
+        </ul>
+
+        <div class="trust">
+          <span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+            </svg>
+            HttpOnly session cookies
+          </span>
+          <span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" />
+            </svg>
+            Checked by each platform
+          </span>
+          <span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+            </svg>
+            12-hour sessions
+          </span>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------- card -->
+      <div class="card-wrap">
+        <section class="card" id="card" aria-labelledby="title">
+          <h2 id="title">Welcome back</h2>
+          <p class="sub">Sign in with your Inspironics account to continue.</p>
+
+          <div class="notice notice--info" id="info" role="status">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16h.01" />
+            </svg>
+            <span id="info-text"></span>
+          </div>
+          <div class="notice notice--error" id="error" role="alert" aria-live="assertive">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" /><path d="m15 9-6 6M9 9l6 6" />
+            </svg>
+            <span id="error-text"></span>
+          </div>
+
+          <form id="form" novalidate>
+            <div class="field">
+              <label for="email">Email address</label>
+              <div class="control">
+                <svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
+                </svg>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  inputmode="email"
+                  autocomplete="username"
+                  placeholder="you@inspironics.net"
+                  spellcheck="false"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="password">
+                <span>Password</span>
+                <span class="caps" id="caps" aria-live="polite">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m12 4 7 8h-4v6H9v-6H5l7-8Z" />
+                  </svg>
+                  Caps Lock is on
+                </span>
+              </label>
+              <div class="control">
+                <svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                </svg>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autocomplete="current-password"
+                  placeholder="Your password"
+                  required
+                />
+                <button class="reveal" id="reveal" type="button" aria-label="Show password" aria-pressed="false">
+                  <svg id="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="row">
+              <label class="check"><input type="checkbox" id="remember" /> Remember my email</label>
+              <span class="hint">Session lasts 12 hours</span>
+            </div>
+
+            <button class="submit" id="submit" type="submit">
+              <span class="label">
+                Sign in
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+              </span>
+              <span class="spinner" aria-hidden="true"><i></i>Signing you in…</span>
+            </button>
+
+            <ol class="steps" id="steps" aria-live="polite">
+              <li data-step="verify"><span class="dot"></span>Checking your credentials</li>
+              <li data-step="showcase"><span class="dot"></span>Opening Innovation Showcase</li>
+              <li data-step="vault"><span class="dot"></span>Opening SlidesVault</li>
+            </ol>
+          </form>
+
+          <div class="card-foot">
+            <span>Trouble signing in? Contact your Apex administrator.</span>
+            <code id="origin"></code>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      ;(() => {
+        const $ = (id) => document.getElementById(id)
+        const form = $('form')
+        const email = $('email')
+        const password = $('password')
+        const submit = $('submit')
+        const card = $('card')
+        const steps = $('steps')
+        const params = new URLSearchParams(location.search)
+        const next = params.get('next') || '/'
+        const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+        const REMEMBER_KEY = 'apex.signin.email'
+
+        $('origin').textContent = location.host
+
+        // Storage can be blocked (private windows, strict settings); the page
+        // must work without it, so every access is guarded.
+        const store = {
+          get: () => {
+            try {
+              return localStorage.getItem(REMEMBER_KEY) || ''
+            } catch {
+              return ''
+            }
+          },
+          set: (v) => {
+            try {
+              v ? localStorage.setItem(REMEMBER_KEY, v) : localStorage.removeItem(REMEMBER_KEY)
+            } catch {}
+          },
+        }
+
+        const remembered = store.get()
+        if (remembered) {
+          email.value = remembered
+          $('remember').checked = true
+          password.focus()
+        } else {
+          email.focus()
+        }
+
+        if (params.get('expired')) {
+          $('info-text').textContent = 'Your session ended. Sign in again to pick up where you left off.'
+          $('info').classList.add('show')
+        }
+
+        /* ----------------------------------------------- field behaviour */
+        const showError = (message) => {
+          $('error-text').textContent = message
+          $('error').classList.add('show')
+          $('info').classList.remove('show')
+          if (!reduced) {
+            card.classList.remove('shake')
+            void card.offsetWidth // restart the animation
+            card.classList.add('shake')
+          }
+        }
+        const clearError = () => {
+          $('error').classList.remove('show')
+          email.removeAttribute('aria-invalid')
+          password.removeAttribute('aria-invalid')
+        }
+        email.addEventListener('input', clearError)
+        password.addEventListener('input', clearError)
+
+        $('reveal').addEventListener('click', () => {
+          const show = password.type === 'password'
+          password.type = show ? 'text' : 'password'
+          $('reveal').setAttribute('aria-pressed', String(show))
+          $('reveal').setAttribute('aria-label', show ? 'Hide password' : 'Show password')
+          $('eye').innerHTML = show
+            ? '<path d="M3 3l18 18"/><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a9.9 9.9 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'
+            : '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
+          password.focus()
+        })
+
+        const caps = (e) => {
+          if (typeof e.getModifierState === 'function') $('caps').classList.toggle('show', e.getModifierState('CapsLock'))
+        }
+        password.addEventListener('keydown', caps)
+        password.addEventListener('keyup', caps)
+        password.addEventListener('blur', () => $('caps').classList.remove('show'))
+
+        /* ------------------------------------------------------ progress */
+        const step = (name, state) => {
+          const li = steps.querySelector(`[data-step="${name}"]`)
+          li.classList.remove('active', 'ok', 'fail')
+          if (state) li.classList.add(state)
+        }
+        const resetSteps = () => ['verify', 'showcase', 'vault'].forEach((n) => step(n, null))
+        const wait = (ms) => new Promise((r) => setTimeout(r, reduced ? 0 : ms))
+
+        /* ------------------------------------------------------- submit */
+        let busy = false
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault()
+          if (busy) return
+          clearError()
+
+          const addr = email.value.trim()
+          if (!addr || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(addr)) {
+            email.setAttribute('aria-invalid', 'true')
+            email.focus()
+            return showError('Enter a valid email address.')
+          }
+          if (!password.value) {
+            password.setAttribute('aria-invalid', 'true')
+            password.focus()
+            return showError('Enter your password.')
+          }
+
+          busy = true
+          submit.disabled = true
+          submit.classList.add('busy')
+          resetSteps()
+          steps.classList.add('show')
+          step('verify', 'active')
+
+          try {
+            const res = await fetch('/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({ email: addr, password: password.value, next }),
+            })
+            const body = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(body.error || `Sign-in failed (${res.status}).`)
+
+            // Every platform has accepted by the time this returns; the steps
+            // just show it, one after the other.
+            store.set($('remember').checked ? addr : '')
+            step('verify', 'ok')
+            for (const name of ['showcase', 'vault']) {
+              step(name, 'active')
+              await wait(260)
+              step(name, 'ok')
+              document.querySelector(`[data-product="${name}"]`)?.classList.add('is-open')
+              const state = document.querySelector(`[data-product="${name}"] .product__state`)
+              if (state) state.textContent = 'Open'
+            }
+            submit.classList.remove('busy')
+            submit.classList.add('done')
+            submit.querySelector('.label').innerHTML = 'Signed in — opening Apex'
+            await wait(380)
+            location.replace(body.next || next)
+          } catch (err) {
+            step('verify', 'fail')
+            busy = false
+            submit.disabled = false
+            submit.classList.remove('busy')
+            password.select()
+            password.setAttribute('aria-invalid', 'true')
+            showError(err.message === 'Failed to fetch' ? 'Apex is not reachable. Check that it is running.' : err.message)
+          }
+        })
+
+        /* ------------------------------------------------- card parallax */
+        if (!reduced && matchMedia('(pointer: fine)').matches) {
+          const wrap = card.parentElement
+          wrap.addEventListener('pointermove', (e) => {
+            const r = wrap.getBoundingClientRect()
+            const x = (e.clientX - r.left) / r.width - 0.5
+            const y = (e.clientY - r.top) / r.height - 0.5
+            card.style.transform = `rotateX(${(-y * 5).toFixed(2)}deg) rotateY(${(x * 6).toFixed(2)}deg)`
+          })
+          wrap.addEventListener('pointerleave', () => (card.style.transform = ''))
+        }
+
+        /* ----------------------------------------- interactive constellation */
+        const canvas = $('sky')
+        const ctx = canvas.getContext('2d')
+        let w = 0
+        let h = 0
+        let dots = []
+        const mouse = { x: -9999, y: -9999 }
+        const DPR = Math.min(window.devicePixelRatio || 1, 2)
+
+        function size() {
+          w = canvas.clientWidth
+          h = canvas.clientHeight
+          canvas.width = w * DPR
+          canvas.height = h * DPR
+          ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
+          const count = Math.round(Math.min(90, (w * h) / 16000))
+          dots = Array.from({ length: count }, () => ({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            vx: (Math.random() - 0.5) * 0.25,
+            vy: (Math.random() - 0.5) * 0.25,
+            r: Math.random() * 1.4 + 0.5,
+            hue: Math.random() < 0.55 ? '0,240,255' : '192,101,240',
+          }))
+        }
+
+        function frame() {
+          ctx.clearRect(0, 0, w, h)
+          for (const d of dots) {
+            d.x += d.vx
+            d.y += d.vy
+            if (d.x < 0 || d.x > w) d.vx *= -1
+            if (d.y < 0 || d.y > h) d.vy *= -1
+            // Dots lean gently towards the cursor.
+            const mx = mouse.x - d.x
+            const my = mouse.y - d.y
+            const md = Math.hypot(mx, my)
+            if (md < 180) {
+              d.x += mx * 0.004
+              d.y += my * 0.004
+            }
+          }
+          for (let i = 0; i < dots.length; i++) {
+            const a = dots[i]
+            for (let j = i + 1; j < dots.length; j++) {
+              const b = dots[j]
+              const dist = Math.hypot(a.x - b.x, a.y - b.y)
+              if (dist < 120) {
+                ctx.strokeStyle = `rgba(${a.hue},${(1 - dist / 120) * 0.16})`
+                ctx.lineWidth = 1
+                ctx.beginPath()
+                ctx.moveTo(a.x, a.y)
+                ctx.lineTo(b.x, b.y)
+                ctx.stroke()
+              }
+            }
+            const near = Math.hypot(mouse.x - a.x, mouse.y - a.y)
+            if (near < 160) {
+              ctx.strokeStyle = `rgba(${a.hue},${(1 - near / 160) * 0.35})`
+              ctx.beginPath()
+              ctx.moveTo(a.x, a.y)
+              ctx.lineTo(mouse.x, mouse.y)
+              ctx.stroke()
+            }
+            ctx.fillStyle = `rgba(${a.hue},0.8)`
+            ctx.beginPath()
+            ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2)
+            ctx.fill()
+          }
+          if (!reduced) requestAnimationFrame(frame)
+        }
+
+        size()
+        frame()
+        addEventListener('resize', size)
+        addEventListener('pointermove', (e) => {
+          mouse.x = e.clientX
+          mouse.y = e.clientY
+        })
+        addEventListener('pointerleave', () => {
+          mouse.x = mouse.y = -9999
+        })
+      })()
+    </script>
+  </body>
+</html>

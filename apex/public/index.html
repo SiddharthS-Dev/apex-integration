@@ -107,6 +107,77 @@
         gap: 0.75rem;
       }
 
+      /* The signed-in account and the one sign-out for every platform. */
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .account {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.3rem 0.35rem 0.3rem 0.4rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.03);
+        font-size: 0.8rem;
+      }
+      .account[hidden] {
+        display: none;
+      }
+      .account__avatar {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--showcase-a), var(--vault-b));
+        color: #050816;
+        font-weight: 800;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+      }
+      .account__email {
+        color: var(--chalk);
+        max-width: 16rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .signout {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        height: 30px;
+        padding: 0 0.8rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 0.76rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: color 0.2s, border-color 0.2s, background 0.2s;
+      }
+      .signout:hover {
+        color: var(--chalk);
+        border-color: rgba(251, 113, 133, 0.5);
+        background: rgba(251, 113, 133, 0.08);
+      }
+      .signout svg {
+        width: 14px;
+        height: 14px;
+      }
+      @media (max-width: 520px) {
+        .account__email {
+          display: none;
+        }
+      }
+
       .brand svg {
         width: 34px;
         height: 34px;
@@ -415,6 +486,7 @@
     <div class="glow glow--b" aria-hidden="true"></div>
 
     <main class="shell">
+      <div class="topbar">
       <header class="brand">
         <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
           <defs>
@@ -428,6 +500,18 @@
         </svg>
         <span class="brand__name">Inspironics&nbsp;·&nbsp;Apex</span>
       </header>
+
+        <div class="account" id="account" hidden>
+          <span class="account__avatar" id="avatar" aria-hidden="true"></span>
+          <span class="account__email" id="who"></span>
+          <button class="signout" id="signout" type="button" title="Sign out of Apex and both platforms">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 17l5-5-5-5M20 12H9M12 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" />
+            </svg>
+            Sign out
+          </button>
+        </div>
+      </div>
 
       <section class="hero">
         <span class="eyebrow"><i></i>Home dashboard</span>
@@ -509,13 +593,33 @@
       </div>
 
       <footer>
-        <span>Each project keeps its own sign-in.</span>
+        <span>One sign-in covers every project.</span>
         <span>Served by the Apex gateway on <code id="origin"></code></span>
       </footer>
     </main>
 
     <script>
       document.getElementById('origin').textContent = location.host
+
+      /* Who is signed in, and the one sign-out for every platform. */
+      fetch('/auth/me', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((me) => {
+          if (!me) return
+          document.getElementById('who').textContent = me.email
+          document.getElementById('avatar').textContent = me.email.slice(0, 2)
+          document.getElementById('account').hidden = false
+        })
+        .catch(() => {})
+
+      document.getElementById('signout').addEventListener('click', async (e) => {
+        e.currentTarget.disabled = true
+        try {
+          await fetch('/auth/logout', { method: 'POST' })
+        } finally {
+          location.replace('/login')
+        }
+      })
 
       /*
        * Probe each mount so a card can say whether its app is up. In dev the
