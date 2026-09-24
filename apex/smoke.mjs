@@ -17,9 +17,30 @@ import { GATEWAY_PORT } from './projects.mjs'
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 
+/**
+ * The Apex sign-in is the apps' shared bootstrap administrator, so the smoke
+ * test reads it from the same files the APIs do rather than hard-coding it.
+ */
+const readEnv = async (...parts) =>
+  Object.fromEntries(
+    (await readFile(path.join(ROOT, ...parts), 'utf8'))
+      .split(/\r?\n/)
+      .filter((l) => /^[A-Z0-9_]+=/.test(l))
+      .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()])
+  )
+const VAULT_ENV = await readEnv('slide vault', 'apps', 'api', '.env')
+const SHOWCASE_ENV = await readEnv('inspironics-innovation-showcase', 'apps', 'api', '.env')
+
+/** The one Apex sign-in: the standard administrator both apps share. */
+const ADMIN = { email: VAULT_ENV.BOOTSTRAP_ADMIN_EMAIL, password: VAULT_ENV.BOOTSTRAP_ADMIN_PASSWORD }
+if (ADMIN.email !== SHOWCASE_ENV.BOOTSTRAP_ADMIN_EMAIL) {
+  console.error('\n  The two apps have different BOOTSTRAP_ADMIN_EMAIL values; the single sign-in needs one account.\n')
+  process.exit(1)
+}
+
 // Apex deliberately has no node_modules of its own, so it borrows the browser
 // driver the Showcase already depends on.
-const require = createRequire(path.join(ROOT, 'inspironics-innovation-showcase', 'package.json'))
+const require = createRequire(path.join(ROOT, 'inspironics-innovation-showcase', 'apps', 'web', 'package.json'))
 const puppeteer = require('puppeteer-core')
 
 const BASE = process.argv[2] || `http://localhost:${GATEWAY_PORT}`
@@ -38,6 +59,9 @@ const IGNORE = [
   /React Router Future Flag/i,
   /Download the React DevTools/i,
   /favicon/i,
+  // Signed out, the vault asks the API who is signed in and the API answers
+  // 401 — that is the answer, not a failure, but Chrome logs every 4xx fetch.
+  /status of 401 \(Unauthorized\)/i,
 ]
 
 const browser = await puppeteer.launch({
@@ -57,6 +81,14 @@ page.on('console', (m) => {
   }
 })
 page.on('pageerror', (e) => fail(`[${where}] pageerror: ${e.message}`))
+// The vault's governing rule: the browser never talks to Dropbox. Every byte
+// and every token goes through /vault/api, so any request to a Dropbox host
+// from the page is a leak, whatever it was for.
+page.on('request', (r) => {
+  if (/(^|\.)dropbox(usercontent|api)?\.com$/i.test(new URL(r.url()).hostname)) {
+    fail(`[${where}] the browser contacted Dropbox directly: ${r.url().slice(0, 120)}`)
+  }
+})
 page.on('requestfailed', (r) => {
   if (!IGNORE.some((re) => re.test(r.url()))) {
     fail(`[${where}] request failed: ${r.url()} (${r.failure()?.errorText})`)
@@ -70,16 +102,52 @@ const rendered = () =>
   page.evaluate(() => (document.querySelector('#root')?.innerText || '').trim().length)
 
 try {
-  /* ------------------------------------------------------------ dashboard */
+  /* -------------------------------------------------- the Apex sign-in */
+  // Nothing is reachable before signing in: opening Apex lands on /login.
   await page.goto(`${BASE}/`, { waitUntil: 'networkidle2' })
+  new URL(page.url()).pathname === '/login'
+    ? ok('opening Apex while signed out lands on /login')
+    : fail(`signed out, / led to ${new URL(page.url()).pathname}`)
 
+  const locked = await page.evaluate(async () => (await fetch('/vault/api/presentations')).status)
+  locked === 401 ? ok('the APIs refuse requests before the Apex sign-in') : fail(`/vault/api answered ${locked} signed out`)
+
+  // A wrong password is refused on the page, without leaving it.
+  await page.type('#email', ADMIN.email)
+  await page.type('#password', 'not-the-password')
+  await page.click('#submit')
+  await page
+    .waitForFunction(() => document.getElementById('error').classList.contains('show'), { timeout: 15000 })
+    .then(
+      () => ok('a wrong password shows an error on the sign-in page'),
+      () => fail('a wrong password showed no error')
+    )
+
+  // The real one, once, opens everything.
+  await page.$eval('#password', (el) => (el.value = ''))
+  await page.type('#password', ADMIN.password)
+  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }), page.click('#submit')]).then(
+    () => ok('signing in once through the Apex form succeeds'),
+    () => fail('the Apex sign-in never navigated away')
+  )
+
+  /* ------------------------------------------------------------ dashboard */
   const title = await page.title()
   title.includes('Apex') ? ok(`dashboard serves "${title}"`) : fail(`dashboard title was "${title}"`)
+
+  const who = await page
+    .waitForFunction(() => !document.getElementById('account').hidden && document.getElementById('who').textContent, {
+      timeout: 10000,
+    })
+    .then(
+      (h) => h.jsonValue(),
+      () => ''
+    )
+  who === ADMIN.email ? ok(`dashboard shows the signed-in account ${who}`) : fail(`dashboard account chip shows "${who}"`)
 
   const cards = await page.$$('[data-probe]')
   cards.length === 2 ? ok('dashboard shows both projects') : fail(`expected 2 cards, found ${cards.length}`)
 
-  // The cards poll their mount; both should settle on "Ready".
   await page.waitForFunction(
     () => [...document.querySelectorAll('.status')].every((s) => s.dataset.state === 'up'),
     { timeout: 20000 }
@@ -88,7 +156,7 @@ try {
     () => fail('a project never reported Ready on the dashboard')
   )
 
-  /* ------------------------------------------- click through to each app */
+  /* ------------------ each app opens already signed in — no second login */
   for (const project of [
     { id: 'showcase', mount: '/showcase/', expect: /Showcase/i },
     { id: 'vault', mount: '/vault/', expect: /SlidesVault/i },
@@ -100,99 +168,110 @@ try {
       page.waitForNavigation({ waitUntil: 'networkidle2' }),
       page.click(`a[data-probe="${project.mount}"]`),
     ])
+    await sleep(2500)
 
-    const url = new URL(page.url())
-    url.pathname.startsWith(project.mount)
-      ? ok(`clicking the card opens ${url.pathname}`)
-      : fail(`card led to ${url.pathname}, expected ${project.mount}`)
-
-    // Give the SPA a beat to mount and paint.
-    await sleep(1800)
+    const at = new URL(page.url()).pathname
+    at.startsWith(project.mount) && !at.endsWith('/login')
+      ? ok(`${project.id} opens signed in at ${at}, no second login`)
+      : fail(`${project.id} card ended on ${at}`)
 
     const t = await page.title()
     project.expect.test(t) ? ok(`${project.id} boots and titles itself "${t}"`) : fail(`${project.id} title was "${t}"`)
 
     const chars = await rendered()
-    chars > 200
-      ? ok(`${project.id} renders (${chars} chars in #root)`)
-      : fail(`${project.id} rendered almost nothing (${chars} chars) — check the base path`)
-
-    // A router whose basename disagreed with the mount would bounce us out.
-    const after = new URL(page.url())
-    after.pathname.startsWith(project.mount)
-      ? ok(`${project.id} router stays inside ${project.mount}`)
-      : fail(`${project.id} navigated away to ${after.pathname}`)
+    const hasForm = (await page.$('#root input[type="password"]')) !== null
+    chars > 200 && !hasForm
+      ? ok(`${project.id} renders its signed-in home (${chars} chars in #root)`)
+      : fail(`${project.id} shows ${hasForm ? 'a sign-in form' : `almost nothing (${chars} chars)`}`)
   }
 
-  /* ------------------------------------------------- sign in to the vault */
-  // Past the login gate is where a wrong mount really shows: the router, the
-  // lazy chunks and the logo all have to resolve under /vault/. (The Showcase
-  // covers its own equivalent in scripts/smoke.mjs.)
-  where = 'vault'
-  await page.goto(`${BASE}/vault/login`, { waitUntil: 'networkidle2' })
-
-  await page.type('input[type="email"]', 'avery.raman@inspironics.net')
-  await page.type('input[type="password"]', 'slidesvault')
-  await Promise.all([
-    page.waitForFunction(() => !location.pathname.endsWith('/login'), { timeout: 20000 }),
-    page.click('button[type="submit"]'),
-  ]).then(
-    () => ok('vault sign-in succeeds behind the gateway'),
-    () => fail('vault sign-in never left /vault/login')
-  )
-
+  /* ------------------------------------------ showcase: admin + Dropbox */
+  where = 'showcase'
+  await page.goto(`${BASE}/showcase/admin`, { waitUntil: 'networkidle2' })
   await sleep(2000)
-  const home = new URL(page.url())
-  home.pathname.startsWith('/vault/')
-    ? ok(`vault lands on ${home.pathname} after sign-in`)
-    : fail(`vault sign-in left the mount, landing on ${home.pathname}`)
+  const showcaseAdmin = new URL(page.url()).pathname
+  showcaseAdmin === '/showcase/admin'
+    ? ok('showcase admin console opens for the standard admin')
+    : fail(`showcase admin console bounced to ${showcaseAdmin}`)
+  const showcaseCallback = `${BASE}/showcase/api/dropbox/oauth/callback`
+  ;(await page.evaluate(() => document.body.innerText)).includes(showcaseCallback)
+    ? ok(`showcase admin shows the redirect URI ${showcaseCallback}`)
+    : fail(`showcase admin does not show ${showcaseCallback}`)
 
-  // The brand logo is a public/ asset, the class of URL that silently 404s when
-  // an app is mounted under a path it does not know about.
+  /* ---------------------------------------------- vault: library + Dropbox */
+  where = 'vault'
+  await page.goto(`${BASE}/vault/`, { waitUntil: 'networkidle2' })
+  await sleep(1500)
   const logoOk = await page.evaluate(() =>
     [...document.images].some((i) => i.src.includes('logo.svg') && i.naturalWidth > 0)
   )
   logoOk ? ok('vault logo loads from /vault/logo.svg') : fail('vault logo did not load')
 
-  // Exercise a lazy route: its chunk must be fetched from under the mount.
   await page.goto(`${BASE}/vault/library`, { waitUntil: 'networkidle2' })
   await sleep(2500)
-  const libChars = await rendered()
-  libChars > 200
-    ? ok(`vault library renders (${libChars} chars in #root)`)
-    : fail(`vault library rendered almost nothing (${libChars} chars)`)
-
-  /* ------------------------------------------- the catalog is the real one */
-  // The local backend once seeded a 32-deck demo catalog while the real library
-  // held 190, and nothing failed — the app just quietly showed the wrong number.
-  // Pin the count to the committed snapshot so that cannot happen unnoticed.
-  const catalog = JSON.parse(
-    await readFile(path.join(ROOT, 'slide vault', 'src', 'api', 'catalog.json'), 'utf8')
-  )
-  const expected = catalog.filter((p) => p.status !== 'archived').length
-
-  const seeded = await page.evaluate(() => {
-    try {
-      const raw = localStorage.getItem('slidesvault:Presentation')
-      const rows = raw ? JSON.parse(raw) : []
-      return rows.filter((r) => r.status !== 'archived').length
-    } catch {
-      return -1
-    }
+  const api = await page.evaluate(async () => {
+    const r = await fetch('/vault/api/presentations?status=active&limit=1', { credentials: 'include' })
+    return { status: r.status, total: r.ok ? (await r.json()).total : -1 }
   })
-
-  seeded === expected
-    ? ok(`vault seeds the real catalog (${seeded} active presentations)`)
-    : fail(`vault holds ${seeded} active presentations, expected ${expected} from catalog.json`)
-
+  api.status === 200
+    ? ok(`vault API answers through the gateway (${api.total} active presentations)`)
+    : fail(`GET /vault/api/presentations returned ${api.status}`)
   const shown = await page.evaluate(() => {
     const m = document.body.innerText.match(/([\d,]+)\s+presentations?/i)
     return m ? Number(m[1].replace(/,/g, '')) : -1
   })
+  shown === api.total
+    ? ok(`library reports ${shown} presentations, as the API does`)
+    : fail(`library reports ${shown} presentations, the API says ${api.total}`)
 
-  shown === expected
-    ? ok(`library reports ${shown} presentations`)
-    : fail(`library reports ${shown} presentations, expected ${expected}`)
+  await page.goto(`${BASE}/vault/dropbox-settings`, { waitUntil: 'networkidle2' })
+  await sleep(2000)
+  const callback = `${BASE}/vault/api/dropbox/oauth/callback`
+  ;(await page.evaluate(() => document.body.innerText)).includes(callback)
+    ? ok(`dropbox settings shows the redirect URI ${callback}`)
+    : fail(`dropbox settings does not show ${callback}`)
+
+  /* ------------------------- signing out of one app signs out of Apex */
+  // The vault's own sign-out, then a page inside it: the app finds no session
+  // and hands the browser to the Apex sign-in, which ends every session — so
+  // the Showcase is locked again too.
+  await page.evaluate(async () => {
+    await fetch('/vault/api/auth/logout', { method: 'POST', credentials: 'include' })
+  })
+  await page.goto(`${BASE}/vault/library`, { waitUntil: 'networkidle2' })
+  await page.waitForFunction(() => location.pathname === '/login', { timeout: 15000 }).then(
+    () => ok("an app's lapsed session hands over to the Apex sign-in"),
+    () => fail(`after the vault signed out, ended on ${new URL(page.url()).pathname}`)
+  )
+  await page.goto(`${BASE}/showcase/`, { waitUntil: 'networkidle2' })
+  new URL(page.url()).pathname === '/login'
+    ? ok('...and the other app is signed out with it')
+    : fail(`the Showcase stayed open at ${new URL(page.url()).pathname}`)
+
+  /* ------------------------------------------- dashboard sign-out, too */
+  where = 'dashboard'
+  await page.waitForSelector('#password')
+  await page.$eval('#email', (el) => (el.value = ''))
+  await page.type('#email', ADMIN.email)
+  await page.type('#password', ADMIN.password)
+  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }), page.click('#submit')])
+  const back = new URL(page.url()).pathname
+  back === '/showcase/'
+    ? ok('signing in again returns to the page that asked (/showcase/)')
+    : fail(`signing in again landed on ${back}`)
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle2' })
+  await page.waitForSelector('#account:not([hidden]) #signout', { visible: true, timeout: 10000 })
+  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2' }), page.click('#signout')])
+  new URL(page.url()).pathname === '/login'
+    ? ok('the dashboard Sign out returns to /login')
+    : fail(`dashboard sign-out landed on ${new URL(page.url()).pathname}`)
+  const after = await page.evaluate(async () => [
+    (await fetch('/vault/api/auth/me')).status,
+    (await fetch('/showcase/api/auth/session')).status,
+  ])
+  after.every((s) => s === 401)
+    ? ok('after sign-out every API refuses again')
+    : fail(`after sign-out the APIs answered ${after.join(', ')}`)
 
   where = 'dashboard'
 } catch (err) {

@@ -5,8 +5,10 @@ The Inspironics home dashboard. One address, one port, both products:
 | Path         | Project                        | Lives in                          |
 | ------------ | ------------------------------ | --------------------------------- |
 | `/`          | Apex dashboard                 | `apex/`                           |
-| `/showcase/` | Inspironics Innovation Showcase | `inspironics-innovation-showcase/` |
-| `/vault/`    | Inspironics SlidesVault        | `slide vault/`                    |
+| `/showcase/` | Inspironics Innovation Showcase | `inspironics-innovation-showcase/apps/web` |
+| `/showcase/api` | Innovation Showcase API     | `inspironics-innovation-showcase/apps/api` |
+| `/vault/`    | Inspironics SlidesVault        | `slide vault/apps/web`            |
+| `/vault/api` | SlidesVault API                | `slide vault/apps/api`            |
 
 ---
 
@@ -27,8 +29,12 @@ After that, startup is a few seconds. The dashboard is reachable before the two
 dev servers finish booting, so a card may read **Starting** for a moment before
 it turns **Ready** — nothing to do, it polls and updates itself.
 
-Each project keeps its own sign-in. Signing in to one does not sign you in to
-the other.
+There is **one sign-in** for everything, at `/login`. Nothing — the dashboard,
+either app, or their APIs — is reachable before it. Signing in checks the email
+and password against both apps' own accounts and opens both at once, so
+neither app ever asks again; **Sign out** on the dashboard, or in either app,
+signs out of all of them. The standard account is `admin@inspironics.net`
+(`BOOTSTRAP_ADMIN_*` in each `apps/api/.env`). See `apex/auth.mjs`.
 
 ---
 
@@ -79,19 +85,79 @@ Both apps still run standalone. `baseUrl === '/'` is the standalone case, and
 the "← Apex" link in each app's header hides itself when there is no dashboard
 to go back to.
 
-### SlidesVault's catalog
+### Both projects run on Dropbox
 
-SlidesVault seeds from `slide vault/src/api/catalog.json`, a committed snapshot
-of the Base44 app's presentation library (195 records, 190 active). It used to
-seed a 32-deck demo catalog instead, which is why the dashboard disagreed with
-Base44. Refresh it with:
+The Showcase and SlidesVault are each the full standalone monorepo — `apps/web`
+(React), `apps/api` (the Dropbox integration layer) and `packages/shared` — and
+work the same way: Dropbox holds the files, the API syncs and indexes them and
+proxies every byte, and **the browser never talks to Dropbox**. Each API is
+reached through the gateway under its app's mount (`/showcase/api`,
+`/vault/api`) with the mount stripped, so the app, its API and its session
+cookie (`insp_session`, `sv_session`) share one origin.
+
+Both use the same Dropbox app, so register **both** redirect URIs in its App
+Console (OAuth 2 → Redirect URIs), character for character:
 
 ```
-cd "slide vault" && npm run sync:catalog
+http://localhost:5173/showcase/api/dropbox/oauth/callback
+http://localhost:5173/vault/api/dropbox/oauth/callback
 ```
 
-`apex/smoke.mjs` asserts the running app holds exactly the number of active
-presentations in that file, so the two cannot drift apart unnoticed again.
+Both sign in with the same standard administrator — `admin@inspironics.net`,
+set as `BOOTSTRAP_ADMIN_*` in each `apps/api/.env` (gitignored). Then **Admin
+console → Connect Dropbox** in the Showcase, or **Dropbox Settings → Connect**
+in the vault, pick the folder, and run a sync.
+
+Each child process is started by `apex/run.mjs`, which gives it exactly the
+environment `apex/projects.mjs` defines for it, computed from the gateway
+port. It exists because both APIs read `PORT` and `DROPBOX_REDIRECT_URI` and
+both web apps read `VITE_API_BASE_URL`: set globally in start.bat, one
+project's values would leak into the other's. `node apex/run.mjs redirects`
+prints the redirect URIs for the current port.
+
+### SlidesVault and Dropbox
+
+SlidesVault is the same monorepo as the standalone SlidesVault — `apps/web`
+(the React client), `apps/api` (the Dropbox integration layer) and
+`packages/shared` — and it works the same way. Dropbox holds the files; the
+API syncs, indexes and enriches them, and serves the catalog, thumbnails and
+file bytes. **The browser never talks to Dropbox**: every Dropbox call and
+every byte goes through the API, and `apex/smoke.mjs` fails if the page ever
+contacts a Dropbox host.
+
+Under Apex the API is reached through the gateway at `/vault/api`, so the app,
+the API and the `sv_session` cookie (SameSite=Lax) all share one origin —
+which is what lets the presentation `<iframe>` carry the session. The gateway
+strips `/vault` before forwarding, so the API still sees its own `/api/…`
+paths.
+
+#### Connecting Dropbox
+
+1. In the [Dropbox App Console](https://www.dropbox.com/developers/apps), open
+   the app and add this under **OAuth 2 → Redirect URIs**, character for
+   character:
+
+   ```
+   http://localhost:5173/vault/api/dropbox/oauth/callback
+   ```
+
+   Add it beside the standalone's `http://localhost:4000/…` URI — an app can
+   hold several. (For `start.bat prod` it is the same path on 4173, or on
+   whatever port you passed; start.bat prints the exact one on launch.)
+2. `start.bat`, open **SlidesVault**, sign in as the bootstrap admin from
+   `slide vault/apps/api/.env`.
+3. **Dropbox Settings → Connect**, approve at Dropbox, pick the sync folder,
+   **Run sync now**. The scheduler keeps it current every 30 minutes after that.
+
+The Dropbox app key and secret live in `slide vault/apps/api/.env` (gitignored).
+apex/run.mjs sets the URL settings in it — `PORT`, `APP_BASE_URL`,
+`DROPBOX_REDIRECT_URI` and friends — from the gateway port on every launch,
+so they never drift from where Apex is actually served. If the file is
+missing, start.bat creates it from `.env.example` and stops so you can fill in
+the Dropbox credentials and an encryption key.
+
+This install keeps its own database (`slide vault/apps/api/data/`), so it holds
+its own Dropbox connection, separate from the standalone SlidesVault's.
 
 ### The ports
 
@@ -100,10 +166,14 @@ presentations in that file, so the two cannot drift apart unnoticed again.
 | 5173 | the gateway — **the only one you open** |
 | 5174 | Showcase dev server              |
 | 5175 | SlidesVault dev server           |
+| 4176 | Showcase API (reached at `/showcase/api`) |
+| 4175 | SlidesVault API (reached at `/vault/api`) |
 | 4173 | the gateway in prod mode         |
 
-5174 and 5175 are bound to `127.0.0.1` and are not meant to be visited
-directly. The gateway binds all interfaces, so Apex is also reachable from
+5174 and 5175 are bound to `127.0.0.1`; the APIs on 4175 and 4176 listen on
+every interface. None of them is meant
+to be visited directly — the API's OAuth redirects and cookies only line up
+when it is reached through `/vault/api`. The gateway binds all interfaces, so Apex is also reachable from
 another device on your network.
 
 ---
