@@ -4,3 +4,6 @@ dist
 .env.local
 .DS_Store
 *.log
+apps/api/data/
+apps/api/.env
+apps/web/.env.local

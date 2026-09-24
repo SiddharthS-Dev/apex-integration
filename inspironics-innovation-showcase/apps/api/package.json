@@ -1,0 +1,23 @@
+{
+  "name": "@inspironics/api",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --disable-warning=ExperimentalWarning src/server.js",
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.mjs\"",
+    "migrate": "node --disable-warning=ExperimentalWarning src/db/migrate.js",
+    "create-admin": "node --disable-warning=ExperimentalWarning scripts/createAdmin.js"
+  },
+  "dependencies": {
+    "@inspironics/shared": "1.0.0",
+    "@anthropic-ai/sdk": "^0.128.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.2",
+    "jszip": "^3.10.1"
+  },
+  "optionalDependencies": {
+    "pg": "^8.13.1"
+  }
+}

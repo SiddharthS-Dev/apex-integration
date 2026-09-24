@@ -1,9 +1,14 @@
 # Architecture
 
-A single-page React app with no backend. The interesting parts are a 235-plate
-image corpus with derived aggregates, a Three.js city that acts as a navigation
-surface, and an auth flow that has to behave like a real one without a server to
-talk to.
+This document covers the web client, `apps/web`. It is a single-page React app
+that talks to one of two backends: the Inspironics API (`apps/api`, a
+Dropbox-synced catalog with server sessions — see the README and
+[ADR 0008](adr/0008-dropbox-backed-api.md)), or the bundled demo backend that
+runs entirely in the browser. The interesting parts are a plate corpus with
+derived aggregates, a Three.js city that acts as a navigation surface, and an
+auth flow that behaves the same against either backend.
+
+Paths below are relative to `apps/web`.
 
 ## Layers
 
@@ -73,7 +78,7 @@ feature simultaneously.
 
 ## Rules
 
-Enforced by `npm run lint:arch` ([scripts/checkArchitecture.mjs](../scripts/checkArchitecture.mjs)),
+Enforced by `npm run lint:arch` ([scripts/checkArchitecture.mjs](../apps/web/scripts/checkArchitecture.mjs)),
 which runs as part of `npm run build`:
 
 1. **`shared/` must not depend on `features/` or `app/`.** It is the bottom of
@@ -114,18 +119,34 @@ specifiers have explicit entries in the `imports` map.
 Convention: `.js` imports carry their extension (Node needs it), `.jsx` imports
 omit it (only the bundler ever loads them).
 
-## Auth without a backend
+## Two backends, two seams
 
-The reason auth is split three ways is that the store is temporary and the
-flows are not. `authService.js` contains no storage access and no crypto — the
-repository owns where state lives, `model/` owns the rules. Pointing the app at
-a real API is one new file:
+`env.backend` (`VITE_BACKEND`) picks the backend, and exactly two modules read
+it:
 
-```js
-export const api = createAuthService(createHttpAuthRepository('/api/auth'))
-```
+- **`features/auth/api/authService.js`** exports `api`: the HTTP service
+  (`httpAuthService.js`) for the API, or `createAuthService(localRepository)` for
+  the demo. Both have the same surface, so the context, the pages and the Google
+  button cannot tell them apart. With the API the session is an httpOnly cookie;
+  what sits in `localStorage` is only a mirror (name, role, expiry) that keeps
+  the synchronous `getSession()` and cross-tab sign-out working, and
+  `refresh()` re-checks it against the server on start-up and refocus.
+- **`features/showcase/model/showcaseData.js`** `loadShowcase()`: the plates
+  from `GET /api/entities/plates` (snapshotted to IndexedDB for offline), or the
+  static `showcase.json`. API records keep the static corpus's field names and
+  carry same-origin `thumbUrl` / `fullUrl` / `contentUrl`, so every component
+  renders them unchanged.
 
-[tests/authRepositorySeam.test.mjs](../tests/authRepositorySeam.test.mjs) runs
+All API calls go through `shared/lib/apiClient.js` — same origin, credentials
+included. The browser never contacts Dropbox.
+
+### The demo backend
+
+The local auth service is split three ways because its store is temporary and
+its flows are not: `authService.js` contains no storage access and no crypto —
+the repository owns where state lives, `model/` owns the rules.
+
+[tests/authRepositorySeam.test.mjs](../apps/web/tests/authRepositorySeam.test.mjs) runs
 every flow against an in-memory repository with no browser API present, which
 is the proof that the seam is real rather than aspirational.
 
@@ -138,7 +159,7 @@ refocus and across tabs. What is not: it is all still in `localStorage`, and
 ## Rendering budget
 
 The Three.js city is the heaviest thing here.
-[explorerQuality.js](../src/features/ecosystem/render/explorerQuality.js) defines
+[explorerQuality.js](../apps/web/src/features/ecosystem/render/explorerQuality.js) defines
 high/medium/low tiers plus off, auto-detects from the device, and remembers an
 explicit choice. Only the counts that cost frame time change, so the low tier is
 cheaper rather than unfinished. The scene also sits behind its own error

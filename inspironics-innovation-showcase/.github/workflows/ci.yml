@@ -18,28 +18,35 @@ jobs:
 
       - run: npm ci
 
+      - name: Shared contracts
+        run: npm test -w @inspironics/shared
+
+      - name: API tests
+        run: npm test -w @inspironics/api
+
       # Fastest first, so a broken boundary fails before the bundler runs.
-      - name: Architecture boundaries
-        run: npm run lint:arch
+      - name: Web architecture boundaries
+        run: npm run lint:arch -w @inspironics/web
 
-      - name: Types (checkJs over src)
-        run: npm run typecheck
+      - name: Web types (checkJs over src)
+        run: npm run typecheck -w @inspironics/web
 
-      - name: Unit and component tests
-        run: npm test
+      - name: Web unit and component tests
+        run: npm test -w @inspironics/web
 
       - name: Ecosystem routes resolve
-        run: npm run check:routes
+        run: npm run check:routes -w @inspironics/web
 
       - name: Production build
         run: npx vite build
+        working-directory: apps/web
 
       - name: Initial payload budget
-        run: npm run check:bundle
+        run: npm run check:bundle -w @inspironics/web
 
       - uses: actions/upload-artifact@v4
         if: success()
         with:
           name: dist
-          path: dist
+          path: apps/web/dist
           retention-days: 7

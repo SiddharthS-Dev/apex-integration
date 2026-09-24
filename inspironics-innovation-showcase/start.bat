@@ -2,45 +2,47 @@
 setlocal EnableExtensions EnableDelayedExpansion
 title Inspironics Innovation Showcase
 
-rem  Runs the showcase locally.
+rem  Runs the showcase locally: the API (Dropbox sync, auth, content proxy) and
+rem  the web app.
 rem
-rem    start.bat          dev server on http://localhost:5173
-rem    start.bat 5174     dev server on a different port
-rem    start.bat prod     production build, then serve it on 4173
+rem    start.bat          API on :4100 + web dev server on http://localhost:5180
+rem    start.bat prod     build the web app, then serve everything from the API
+rem                       on http://localhost:4100 (one origin, like production)
+rem    start.bat demo     web app only, on the bundled demo backend (no server,
+rem                       static corpus, browser-only accounts)
 rem
 rem  Leave this window open while you use the site.
 rem  Stop it with Ctrl+C here, or by running stop.bat.
 
 cd /d "%~dp0"
 
-set "PORT=5173"
 set "MODE=dev"
-
-if /i "%~1"=="prod" (
-    set "MODE=prod"
-    set "PORT=4173"
-) else if not "%~1"=="" (
-    set "PORT=%~1"
-)
+if /i "%~1"=="prod" set "MODE=prod"
+if /i "%~1"=="demo" set "MODE=demo"
 
 where node >nul 2>&1
 if errorlevel 1 (
     echo.
     echo   Node.js was not found on PATH.
-    echo   Install it from https://nodejs.org and run this again.
+    echo   Install Node 22.5 or newer from https://nodejs.org and run this again.
     echo.
     pause
     exit /b 1
 )
 
-call :port_pid %PORT%
-if defined PID (
-    echo.
-    echo   Port %PORT% is already in use by PID !PID!.
-    echo   Run stop.bat first, or pick another port:  start.bat 5174
-    echo.
-    pause
-    exit /b 1
+set "PORTS=4100 5180"
+if /i "%MODE%"=="prod" set "PORTS=4100"
+if /i "%MODE%"=="demo" set "PORTS=5180"
+for %%T in (%PORTS%) do (
+    call :port_pid %%T
+    if defined PID (
+        echo.
+        echo   Port %%T is already in use by PID !PID!.
+        echo   Run stop.bat first, or free the port and try again.
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
 if not exist "node_modules\" (
@@ -57,11 +59,21 @@ if not exist "node_modules\" (
     )
 )
 
+if not exist "apps\api\.env" if not "%MODE%"=="demo" (
+    copy /y "apps\api\.env.example" "apps\api\.env" >nul
+    echo.
+    echo   Created apps\api\.env from the example. Add DROPBOX_APP_KEY and
+    echo   DROPBOX_APP_SECRET there to connect Dropbox.
+)
+
 echo.
 echo   Inspironics Innovation Showcase
 echo   ---------------------------------------------------
 echo     mode  %MODE%
-echo     url   http://localhost:%PORT%
+if /i "%MODE%"=="dev"  echo     web   http://localhost:5180
+if /i "%MODE%"=="dev"  echo     api   http://localhost:4100
+if /i "%MODE%"=="prod" echo     url   http://localhost:4100
+if /i "%MODE%"=="demo" echo     url   http://localhost:5180   (demo backend)
 echo.
 echo   Keep this window open. Ctrl+C or stop.bat shuts it down.
 echo.
@@ -75,9 +87,14 @@ if /i "%MODE%"=="prod" (
         pause
         exit /b 1
     )
-    call npx vite preview --port %PORT% --strictPort --open
+    start "" "http://localhost:4100"
+    set "SERVE_WEB=true"
+    call npm start
+) else if /i "%MODE%"=="demo" (
+    set "VITE_BACKEND=local"
+    call npm run dev:web
 ) else (
-    call npx vite --port %PORT% --strictPort --open
+    call npm run dev
 )
 
 echo.

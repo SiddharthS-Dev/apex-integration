@@ -1,0 +1,14 @@
+{
+  "name": "@inspironics/shared",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Contracts the web client and the API both import. Imports nothing itself.",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\""
+  }
+}

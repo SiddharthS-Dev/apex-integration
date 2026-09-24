@@ -2,14 +2,14 @@
 setlocal EnableExtensions EnableDelayedExpansion
 title Stop Inspironics Innovation Showcase
 
-rem  Stops the local showcase server.
+rem  Stops the local showcase servers.
 rem
-rem    stop.bat           stops the dev (5173) and preview (4173) servers
-rem    stop.bat 5174      stops the server on a specific port
+rem    stop.bat           stops the API (4100) and web (5180) servers
+rem    stop.bat 5181      stops the server on a specific port
 
 cd /d "%~dp0"
 
-set "PORTS=5173 4173"
+set "PORTS=4100 5180"
 if not "%~1"=="" set "PORTS=%~1"
 
 set "KILLED= "
