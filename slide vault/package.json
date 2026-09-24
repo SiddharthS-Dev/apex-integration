@@ -1,35 +1,31 @@
 {
   "name": "inspironics-slidesvault",
-  "private": true,
   "version": "1.0.0",
+  "private": true,
   "type": "module",
-  "description": "Inspironics SlidesVault — Presentation Knowledge Hub",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "sync:catalog": "node scripts/fetchCatalog.mjs"
+  "description": "Inspironics SlidesVault — Presentation Knowledge Hub (monorepo)",
+  "engines": {
+    "node": ">=22.5.0"
   },
-  "dependencies": {
-    "@tanstack/react-query": "^5.59.0",
-    "clsx": "^2.1.1",
-    "framer-motion": "^11.11.0",
-    "jspdf": "^2.5.2",
-    "lucide-react": "^0.454.0",
-    "moment": "^2.30.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-markdown": "^9.0.1",
-    "react-router-dom": "^6.27.0",
-    "recharts": "^2.13.0",
-    "tailwind-merge": "^2.5.4"
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace @slidesvault/api",
+    "dev:web": "npm run dev --workspace @slidesvault/web",
+    "build": "npm run build --workspace @slidesvault/web",
+    "preview": "npm run preview --workspace @slidesvault/web",
+    "start": "npm run start --workspace @slidesvault/api",
+    "migrate": "npm run migrate --workspace @slidesvault/api",
+    "keygen": "npm run keygen --workspace @slidesvault/api",
+    "test": "npm run test --workspace @slidesvault/api",
+    "test:unit": "npm run test:unit --workspace @slidesvault/api",
+    "test:integration": "npm run test:integration --workspace @slidesvault/api",
+    "test:e2e": "npm run test:e2e --workspace @slidesvault/api"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.3",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.47",
-    "tailwindcss": "^3.4.14",
-    "tailwindcss-animate": "^1.0.7",
-    "vite": "^5.4.10"
+    "concurrently": "^9.1.0"
   }
 }

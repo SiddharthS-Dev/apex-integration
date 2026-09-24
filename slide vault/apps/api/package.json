@@ -1,0 +1,30 @@
+{
+  "name": "@slidesvault/api",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "SlidesVault API — enterprise Dropbox integration layer",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "migrate": "node scripts/migrate.js",
+    "keygen": "node scripts/keygen.js",
+    "test": "node --test --test-reporter=spec \"tests/**/*.test.js\"",
+    "test:unit": "node --test --test-reporter=spec \"tests/unit/*.test.js\"",
+    "test:integration": "node --test --test-reporter=spec \"tests/integration/*.test.js\"",
+    "test:e2e": "node --test --test-reporter=spec \"tests/e2e/*.test.js\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.2",
+    "jszip": "^3.10.1",
+    "@slidesvault/shared": "*"
+  },
+  "optionalDependencies": {
+    "pg": "^8.13.1"
+  }
+}

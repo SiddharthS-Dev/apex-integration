@@ -28,6 +28,13 @@ rem apart from any other app that happens to hold the same port.
 set "PROJECT=%~dp0"
 if "%PROJECT:~-1%"=="\" set "PROJECT=%PROJECT:~0,-1%"
 
+set "BASE44APP="
+if exist ".env" (
+  for /f "usebackq tokens=1,* delims==" %%K in (".env") do (
+    if /I "%%K"=="VITE_BASE44_APP_ID" if not "%%L"=="" set "BASE44APP=%%L"
+  )
+)
+
 echo.
 echo  Inspironics SlidesVault
 echo  Presentation Knowledge Hub
@@ -93,11 +100,16 @@ if /I "%MODE%"=="preview" (
 )
 
 rem --- launch ----------------------------------------------------------------
+rem The web app proxies /api to the API server, so both have to be up: opening
+rem the UI on its own leaves every request failing against a dead backend.
+echo  [*] Starting the API server on port 4000...
+start "SlidesVault API (port 4000)" /MIN cmd /c "npm run dev:api"
+
 echo  [*] Starting the %MODE% server...
 if /I "%MODE%"=="preview" (
-  start "SlidesVault preview server (port %PORT%)" /MIN cmd /c "npm run preview -- --port %PORT% --strictPort"
+  start "SlidesVault preview server (port %PORT%)" /MIN cmd /c "npm run preview --workspace @slidesvault/web -- --port %PORT% --strictPort"
 ) else (
-  start "SlidesVault dev server (port %PORT%)" /MIN cmd /c "npm run dev -- --port %PORT% --strictPort"
+  start "SlidesVault dev server (port %PORT%)" /MIN cmd /c "npm run dev --workspace @slidesvault/web -- --port %PORT% --strictPort"
 )
 
 rem --- wait for it to accept connections --------------------------------------
@@ -123,12 +135,18 @@ echo       PID  : %OWNERPID%
 if /I "%MODE%"=="preview" (
   echo       Stop : stop.bat preview
 ) else (
-  if "%PORT%"=="5173" ( echo       Stop : stop.bat ) else ( echo       Stop : stop.bat %PORT% )
+  if "%PORT%"=="5173" ( echo       Stop : stop.bat ) else ( echo       Stop : stop.bat %PORT%)
 )
 echo.
-echo       Sign in with a seeded demo account ^(password: slidesvault^)
-echo         admin  : avery.raman@inspironics.net
-echo         member : sana.kapoor@inspironics.net
+if defined BASE44APP (
+  echo       Backend: Base44 app %BASE44APP%
+  echo       Sign in with your Base44 account.
+) else (
+  echo       Backend: local demo catalog ^(no VITE_BASE44_APP_ID set^)
+  echo       Sign in with a seeded demo account ^(password: slidesvault^)
+  echo         admin  : avery.raman@inspironics.net
+  echo         member : sana.kapoor@inspironics.net
+)
 echo.
 
 start "" "http://localhost:%PORT%/"
@@ -152,10 +170,11 @@ rem ---------------------------------------------------------------------------
 set "OWNER=free"
 set "OWNERPID="
 set "OWNERNAME="
-set "PORTLIST=%TEMP%\slidesvault-port-%~1.txt"
+set "PORTLIST=%TEMP%\slidesvault-port-%~1-%RANDOM%%RANDOM%.txt"
 
 powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -in @((Get-NetTCPConnection -LocalPort %~1 -State Listen -ErrorAction SilentlyContinue).OwningProcess) } | ForEach-Object { '{0}|{1}|{2}' -f $_.ProcessId, $_.Name, ($_.CommandLine -replace '\s+', ' ') }" > "%PORTLIST%" 2>nul
 
+if not exist "%PORTLIST%" exit /b 0
 for /f "usebackq tokens=1,2,* delims=|" %%A in ("%PORTLIST%") do (
   if not defined OWNERPID (
     set "OWNERPID=%%A"

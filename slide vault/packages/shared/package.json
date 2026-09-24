@@ -1,0 +1,15 @@
+{
+  "name": "@slidesvault/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Domain contracts shared by the web app and the API.",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./domains": "./src/domains.js",
+    "./roles": "./src/roles.js",
+    "./files": "./src/files.js"
+  },
+  "sideEffects": false
+}

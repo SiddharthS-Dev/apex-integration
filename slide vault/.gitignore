@@ -1,6 +1,27 @@
-node_modules
-dist
+# Dependencies — npm workspaces hoist to the root node_modules, but a nested
+# one can still appear when a package pins an incompatible version.
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment — every .env is local. The .env.example files are committed.
 .env
 .env.local
+.env.*.local
 *.local
+
+# Runtime state: the SQLite database, the WAL sidecars and the object store.
+apps/api/data/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

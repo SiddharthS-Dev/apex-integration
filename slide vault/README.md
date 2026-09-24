@@ -7,37 +7,38 @@ classifies every deck with AI, streams them in a locked-down viewer, and works o
 
 ## Quick start
 
+On Windows, double-click **`start.bat`** — it installs dependencies on first run, starts the dev
+server and opens the browser. **`stop.bat`** shuts it down again.
+
+```bat
+start.bat              :: dev server on http://localhost:5173
+start.bat 3000         :: dev server on a different port
+start.bat preview      :: production build, served from dist/ on port 4173
+
+stop.bat               :: stop the dev server
+stop.bat 3000          :: stop the server on that port
+stop.bat preview       :: stop the preview server
+stop.bat all           :: stop every SlidesVault server started from this folder
+```
+
+Both scripts only ever touch processes launched from this folder, so a server another project
+happens to be running on the same port is reported and left alone.
+
+Or use npm directly:
+
 ```bash
-npm install
-npm run dev          # http://localhost:5173
-npm run build        # production bundle in dist/
+npm install          # one install covers every workspace
+npm run dev          # API on :4000 and the web app on :5173, together
+npm run dev:api      # just the API
+npm run dev:web      # just the web app
+npm run build        # production bundle in apps/web/dist/
 npm run preview      # serve the production build
 ```
 
-The app runs **without any cloud credentials**. With no `VITE_BASE44_APP_ID` set it uses a
-bundled local backend (`src/api/localClient.js`): the real 190-deck catalog, localStorage
+The app runs **without any cloud credentials**. With no backend configured it uses a
+bundled local backend (`apps/web/src/api/localClient.js`): a seeded 32-deck catalog, localStorage
 persistence, working analytics, RBAC, and a keyword-scored copilot. Presentations render as
 generated PDFs so the viewer, downloads and offline mode are all live.
-
-### The catalog
-
-`src/api/catalog.json` is a committed snapshot of the Base44 app's `Presentation`
-entity — 195 records, 190 of them active — and the local backend seeds from it.
-Refresh it whenever the Base44 library changes:
-
-```bash
-npm run sync:catalog
-```
-
-The entity endpoint is public, so this needs no credentials. A browser that
-already holds an older catalog reseeds itself automatically: `localClient.js`
-stamps the catalog it seeded and drops the presentation tables when that stamp
-moves. Accounts, sessions and saved searches survive.
-
-Author and slide count are empty on most real records and are shown as `—`
-rather than filled with invented values. Deck files themselves still come from
-Dropbox via the Base44 functions; in local mode the viewer renders a generated
-PDF built from each record's metadata.
 
 **Demo accounts** (password `slidesvault` for both, and the sign-in page can fill them in):
 
@@ -48,39 +49,94 @@ PDF built from each record's metadata.
 
 ---
 
-## Connecting the real backend
+## Connecting a real backend
 
-1. Create a Base44 app and deploy the entities in [`base44/entities/`](base44/entities/) and the
-   functions in [`base44/functions/`](base44/functions/).
+`src/api/base44Client.js` is the only place that knows which backend is in play; everything above
+it (`entities.js`, `functions.js`, `integrations.js`) has an identical API whichever it is.
+
+| Mode | Selected by | What it is |
+| ---- | ----------- | ---------- |
+| **API server** | `VITE_API_BASE_URL` | The enterprise Dropbox integration layer in [`server/`](server/) |
+| Base44 | `VITE_BASE44_APP_ID` | The serverless functions in [`base44/`](base44/) |
+| Local | neither | The bundled demo backend |
+
+### API server (recommended)
+
+A Node backend that owns the Dropbox connection end to end: OAuth with refresh tokens, encrypted
+credential storage, incremental sync, content extraction, AI title resolution with a vision
+fallback, preview generation, audit logging, metrics and a scheduler.
+
+```bash
+npm install                                  # from the repo root
+cp apps/api/.env.example apps/api/.env
+npm run keygen                               # paste the printed line into apps/api/.env
+#   … add DROPBOX_APP_KEY, DROPBOX_APP_SECRET, BOOTSTRAP_ADMIN_* …
+npm run dev:api                              # http://localhost:4000
+```
+
+Then set `VITE_API_BASE_URL=/` in `apps/web/.env`, start the web app, sign in
+as the admin, and open **Dropbox Settings**: register the redirect URI the page shows in the
+Dropbox App Console, connect the account, pick a folder, and run a sync. After that the scheduler
+keeps the library current on its own.
+
+See [`apps/api/README.md`](apps/api/README.md), and
+[`apps/api/docs/DEPLOYMENT.md`](apps/api/docs/DEPLOYMENT.md) for the full walk-through.
+
+### Base44
+
+1. Create a Base44 app and deploy the entities in [`legacy/base44/entities/`](legacy/base44/entities/) and the
+   functions in [`legacy/base44/functions/`](legacy/base44/functions/).
 2. Set the server-side secrets: `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_ROOT_FOLDER`.
 3. Copy `.env.example` to `.env` and set `VITE_BASE44_APP_ID`.
 4. `npm install @base44/sdk` — it is loaded lazily, so it is only needed in this mode.
 5. Sign in as an admin, open **Dropbox Settings**, register the redirect URI the page shows in the
    Dropbox App Console, connect the account, pick a folder and run a sync.
 
-`src/api/base44Client.js` is the only place that knows which backend is in play; everything above
-it (`entities.js`, `functions.js`, `integrations.js`) has an identical API either way.
-
 ---
 
 ## Architecture
 
 ```
-src/
-  api/          backend adapter — base44Client (chooser), localClient (offline backend),
-                entities / functions / integrations (stable API surface), seed catalog
-  lib/          domains (the 5-domain design system), offline-db (IndexedDB),
-                analytics, useTheme, AuthContext, useLibraryData, utils
-  components/   Layout, PresentationCard, SearchBar, AiCopilot, ScrollRow,
-                MostViewedSection, SkeletonCard, UserProfileChip, ui/ primitives
-  pages/        Home, Library, PresentationViewer, Dashboard, OfflineLibrary,
-                Admin, DropboxSettings, UserManual, auth screens, PageNotFound
-base44/
-  entities/     JSON schemas for Presentation, DropboxConfig, SyncLog,
-                PresentationAnalytics, LoginHistory
-  functions/    syncDropbox, dropboxAuth, getPresentationStream, trackView,
-                recordLogin, renameUntitledPresentations, getDownloadLinks
-  shared/       dropboxClient.ts — OAuth, token refresh, resilient request wrapper
+apps/
+  web/                    @slidesvault/web — the React + Vite client
+    src/
+      api/          backend adapter — apiClient (the API server), localClient
+                    (bundled offline backend), base44Client (legacy chooser),
+                    entities / functions / integrations, seed catalog
+      lib/          domains (palette over the shared taxonomy), offline-db
+                    (IndexedDB), analytics, useTheme, AuthContext,
+                    useLibraryData, utils
+      components/   Layout, PresentationCard, SearchBar, AiCopilot, ScrollRow,
+                    MostViewedSection, SkeletonCard, UserProfileChip, ui/
+      pages/        Home, Library, PresentationViewer, Dashboard,
+                    OfflineLibrary, Admin, DropboxSettings, UserManual,
+                    auth screens, PageNotFound
+    public/, index.html, vite.config.js, tailwind.config.js
+
+  api/                    @slidesvault/api — the Dropbox integration layer
+    src/
+      config/       one validated config object, built from the environment
+      http/         auth + RBAC, rate limiting, security headers, validation
+      routes/       auth, entities, system
+      integrations/ dropbox/ — auth, client, request executor, sync, content,
+                    folders, thumbnails, rename, health
+      domain/       storage/ — StorageProvider port, FileMetadata
+      services/     extraction, document analysis, title resolution, audit,
+                    scheduler, metrics, storage
+      db/           driver (sqlite | postgres), migrations, repositories/
+      container.js  dependency wiring
+    tests/          unit / integration / e2e, all against an in-memory Dropbox
+    docs/           architecture, security, API, schema, deployment
+    data/           SQLite database + object store (gitignored)
+
+packages/
+  shared/                 @slidesvault/shared — contracts both apps import
+    src/          domains (the taxonomy the classifier and the UI agree on),
+                  roles, files. Imports nothing, so bare Node and Vite can
+                  both consume it.
+
+legacy/
+  base44/         retired Base44 entities and functions, kept for reference
 ```
 
 ### Sync pipeline
@@ -115,9 +171,10 @@ open a presentation
 
 ## Security model
 
-- **Token handling** — only the Dropbox *refresh* token is persisted. Access tokens are minted per
-  request, held in isolate memory, auto-refreshed on 401, and never written to the database. The
-  status endpoint returns an explicit allow-list that cannot leak the refresh token.
+- **Token handling** — only the Dropbox *refresh* token is persisted, encrypted with AES-256-GCM
+  on the API server. Access tokens are minted per request, held in process memory, auto-refreshed
+  on 401, and never written to the database, an API response or a log. The status endpoint returns
+  an explicit allow-list that cannot leak the refresh token.
 - **Content** — the PDF viewer hides the browser toolbar (`#toolbar=0&navpanes=0`), disables the
   context menu and text selection, and `@media print { body { display: none } }` blocks printing
   the application.

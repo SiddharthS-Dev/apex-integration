@@ -1,0 +1,111 @@
+# Two ways to run the API, in one file.
+#
+#   docker compose up api
+#       SQLite on a volume. One instance, nothing else to run. This is the
+#       right choice for a single-server deployment.
+#
+#   docker compose --profile postgres up api-pg postgres
+#       PostgreSQL, for running several instances behind a load balancer. They
+#       share the connection, the catalog and the advisory locks, so exactly
+#       one of them syncs at a time and exactly one refreshes the token.
+#
+# Secrets come from apps/api/.env, or from the orchestrator.
+# None of them belong in this file.
+
+services:
+  api:
+    build: ./apps/api
+    image: slidesvault-api
+    restart: unless-stopped
+    ports:
+      - '${PORT:-4000}:4000'
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5173}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:4000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+
+      DB_DRIVER: sqlite
+      DB_FILE: /data/slidesvault.db
+      OBJECT_STORE_DIR: /data/objects
+
+      DROPBOX_APP_KEY: ${DROPBOX_APP_KEY:?set DROPBOX_APP_KEY}
+      DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET:?set DROPBOX_APP_SECRET}
+      DROPBOX_REDIRECT_URI: ${DROPBOX_REDIRECT_URI:?set DROPBOX_REDIRECT_URI}
+      # Losing this key makes every stored refresh token unreadable.
+      DROPBOX_TOKEN_ENCRYPTION_KEY: ${DROPBOX_TOKEN_ENCRYPTION_KEY:?run npm run keygen}
+
+      DROPBOX_SYNC_ENABLED: ${DROPBOX_SYNC_ENABLED:-true}
+      DROPBOX_SYNC_INTERVAL_MINUTES: ${DROPBOX_SYNC_INTERVAL_MINUTES:-30}
+      DROPBOX_MAX_CONCURRENT_FILES: ${DROPBOX_MAX_CONCURRENT_FILES:-8}
+
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+
+      AI_ENABLED: ${AI_ENABLED:-true}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-opus-5}
+    volumes:
+      - slidesvault-data:/data
+
+  # ----------------------------------------------------- multi-instance --
+  api-pg:
+    profiles: ['postgres']
+    build: ./apps/api
+    image: slidesvault-api
+    restart: unless-stopped
+    # Several replicas share one Postgres; the advisory locks in the database
+    # keep them from syncing or refreshing on top of each other.
+    deploy:
+      replicas: ${API_REPLICAS:-2}
+    ports:
+      - '${PORT:-4000}:4000'
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5173}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:4000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      TRUST_PROXY: '1'
+
+      DB_DRIVER: postgres
+      DATABASE_URL: postgres://slidesvault:${POSTGRES_PASSWORD:-slidesvault}@postgres:5432/slidesvault
+      OBJECT_STORE_DIR: /data/objects
+
+      DROPBOX_APP_KEY: ${DROPBOX_APP_KEY:?set DROPBOX_APP_KEY}
+      DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET:?set DROPBOX_APP_SECRET}
+      DROPBOX_REDIRECT_URI: ${DROPBOX_REDIRECT_URI:?set DROPBOX_REDIRECT_URI}
+      DROPBOX_TOKEN_ENCRYPTION_KEY: ${DROPBOX_TOKEN_ENCRYPTION_KEY:?run npm run keygen}
+
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      # Shared so any instance can serve a preview another one rendered.
+      - slidesvault-objects:/data/objects
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    profiles: ['postgres']
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: slidesvault
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slidesvault}
+      POSTGRES_DB: slidesvault
+    volumes:
+      - slidesvault-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U slidesvault']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  slidesvault-data:
+  slidesvault-objects:
+  slidesvault-pg:

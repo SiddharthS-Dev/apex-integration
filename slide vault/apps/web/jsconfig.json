@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    // No "baseUrl": it is deprecated and stops working in TypeScript 7.0.
+    // Since TS 5.x, "paths" entries resolve relative to this file's own
+    // directory, so the mapping below needs no base to hang off.
+    "paths": { "@/*": ["./src/*"] },
+    "jsx": "react-jsx",
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // Editor-only settings — Vite does the actual building.
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "vite.config.js"],
+  "exclude": ["node_modules", "dist"]
+}
