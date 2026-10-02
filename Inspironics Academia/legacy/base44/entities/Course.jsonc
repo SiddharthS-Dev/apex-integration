@@ -1,0 +1,102 @@
+// Course entity — A course generated from a playbook.
+{
+  "name": "Course",
+  "type": "object",
+  "description": "A course generated from a playbook.",
+  "properties": {
+    "playbook_id": {
+      "type": "string",
+      "description": "Source playbook id"
+    },
+    "title": {
+      "type": "string",
+      "description": "Course title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Course description"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "pending_review",
+        "published",
+        "archived"
+      ],
+      "description": "Course lifecycle status",
+      "default": "draft"
+    },
+    "module_count": {
+      "type": "number",
+      "description": "Number of modules",
+      "default": 0
+    },
+    "lesson_count": {
+      "type": "number",
+      "description": "Number of lessons",
+      "default": 0
+    },
+    "published": {
+      "type": "boolean",
+      "description": "Whether the course is visible to learners",
+      "default": false
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": [
+        "beginner",
+        "intermediate",
+        "advanced"
+      ],
+      "description": "Course difficulty",
+      "default": "beginner"
+    },
+    "version": {
+      "type": "string",
+      "description": "Course version (incremented on re-processing)",
+      "default": "1"
+    },
+    "access_level": {
+      "type": "string",
+      "enum": [
+        "free",
+        "premium"
+      ],
+      "description": "Access level",
+      "default": "free"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.status": "published"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

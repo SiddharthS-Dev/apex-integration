@@ -1,0 +1,69 @@
+// Certificate entity — A course completion certificate.
+{
+  "name": "Certificate",
+  "type": "object",
+  "description": "A course completion certificate.",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Learner user id"
+    },
+    "course_id": {
+      "type": "string",
+      "description": "Course id"
+    },
+    "course_title": {
+      "type": "string",
+      "description": "Course title at issue time"
+    },
+    "user_name": {
+      "type": "string",
+      "description": "Learner name at issue time"
+    },
+    "score": {
+      "type": "number",
+      "description": "Final score percentage",
+      "default": 0
+    },
+    "completion_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Completion date"
+    },
+    "certificate_id": {
+      "type": "string",
+      "description": "Unique public certificate id"
+    }
+  },
+  "required": [
+    "user_id",
+    "course_id"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "data.user_id": "{{user.id}}"
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

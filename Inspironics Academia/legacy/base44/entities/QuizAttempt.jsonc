@@ -1,0 +1,103 @@
+// QuizAttempt entity — A learner quiz/test attempt.
+{
+  "name": "QuizAttempt",
+  "type": "object",
+  "description": "A learner quiz/test attempt.",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Learner user id"
+    },
+    "course_id": {
+      "type": "string",
+      "description": "Course id"
+    },
+    "module_id": {
+      "type": "string",
+      "description": "Module id"
+    },
+    "lesson_id": {
+      "type": "string",
+      "description": "Lesson id"
+    },
+    "assessment_id": {
+      "type": "string",
+      "description": "Assessment id"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "lesson",
+        "chapter",
+        "final"
+      ],
+      "description": "Attempt type",
+      "default": "lesson"
+    },
+    "score": {
+      "type": "number",
+      "description": "Correct answers / marks earned",
+      "default": 0
+    },
+    "total": {
+      "type": "number",
+      "description": "Total questions / marks",
+      "default": 0
+    },
+    "percentage": {
+      "type": "number",
+      "description": "Score percentage",
+      "default": 0
+    },
+    "passed": {
+      "type": "boolean",
+      "description": "Whether the attempt passed",
+      "default": false
+    }
+  },
+  "required": [
+    "user_id",
+    "type"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "data.user_id": "{{user.id}}"
+    },
+    "update": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

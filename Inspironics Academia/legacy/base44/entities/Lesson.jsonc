@@ -1,0 +1,127 @@
+// Lesson entity — A lesson within a module, with AI-generated teaching content and media.
+{
+  "name": "Lesson",
+  "type": "object",
+  "description": "A lesson within a module, with AI-generated teaching content and media.",
+  "properties": {
+    "module_id": {
+      "type": "string",
+      "description": "Parent module id"
+    },
+    "title": {
+      "type": "string",
+      "description": "Lesson title"
+    },
+    "teaching_objective": {
+      "type": "string",
+      "description": "What the learner should be able to do after the lesson"
+    },
+    "video_title": {
+      "type": "string",
+      "description": "Title of the lesson video"
+    },
+    "video_url": {
+      "type": "string",
+      "description": "Generated video URL"
+    },
+    "audio_url": {
+      "type": "string",
+      "description": "Generated narration audio URL"
+    },
+    "video_type": {
+      "type": "string",
+      "enum": [
+        "concept",
+        "deep_dive",
+        "example",
+        "architecture",
+        "demonstration",
+        "revision"
+      ],
+      "description": "Video style",
+      "default": "concept"
+    },
+    "teaching_script": {
+      "type": "string",
+      "description": "Instructor-led narration script (plain text)"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Lesson summary"
+    },
+    "examples": {
+      "type": "string",
+      "description": "Worked examples (markdown / newline-separated)"
+    },
+    "key_points": {
+      "type": "string",
+      "description": "Key points (newline-separated)"
+    },
+    "duration_target": {
+      "type": "string",
+      "description": "Target duration, e.g. \"8-12 minutes\""
+    },
+    "source_playbook": {
+      "type": "string",
+      "description": "Title of the source playbook"
+    },
+    "source_chapter": {
+      "type": "string",
+      "description": "Source chapter title in the playbook"
+    },
+    "source_section": {
+      "type": "string",
+      "description": "Source section heading within the chapter"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "generating",
+        "pending_review",
+        "approved",
+        "rejected"
+      ],
+      "description": "Lesson lifecycle status",
+      "default": "pending"
+    },
+    "order": {
+      "type": "number",
+      "description": "Display order within the module",
+      "default": 0
+    }
+  },
+  "required": [
+    "module_id",
+    "title"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.status": "approved"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

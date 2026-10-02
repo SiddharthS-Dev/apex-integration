@@ -1,0 +1,20 @@
+{
+  "name": "inspironics-engineering-academy",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "npm run dev -w @academy/web",
+    "dev:api": "npm run dev -w @academy/api",
+    "build": "npm run build -w @academy/web",
+    "start": "npm start -w @academy/api"
+  }
+}

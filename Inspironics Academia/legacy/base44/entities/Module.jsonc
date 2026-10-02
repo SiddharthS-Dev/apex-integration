@@ -1,0 +1,56 @@
+// Module entity — A module within a course.
+{
+  "name": "Module",
+  "type": "object",
+  "description": "A module within a course.",
+  "properties": {
+    "course_id": {
+      "type": "string",
+      "description": "Parent course id"
+    },
+    "title": {
+      "type": "string",
+      "description": "Module title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Module description"
+    },
+    "order": {
+      "type": "number",
+      "description": "Display order",
+      "default": 0
+    },
+    "lesson_count": {
+      "type": "number",
+      "description": "Number of lessons",
+      "default": 0
+    },
+    "source_chapters": {
+      "type": "string",
+      "description": "Comma-separated source chapter titles"
+    }
+  },
+  "required": [
+    "course_id",
+    "title"
+  ],
+  "rls": {
+    "read": {},
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

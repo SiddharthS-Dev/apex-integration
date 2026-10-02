@@ -1,0 +1,11 @@
+// Base44 app configuration.
+// Note: these values are informational defaults — the authoritative settings
+// (auth providers, email verification, branding) are managed in the Base44 dashboard.
+{
+  "name": "Inspironics Engineering Academy",
+  "description": "Transforms company engineering playbooks into structured learning paths, AI-narrated video lessons, assessments and verifiable certificates.",
+  "auth": {
+    "methods": ["email_password", "google"],
+    "require_email_verification": true
+  }
+}

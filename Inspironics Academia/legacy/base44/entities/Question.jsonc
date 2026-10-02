@@ -1,0 +1,115 @@
+// Question entity — A multiple-choice question attached to a lesson and/or assessment.
+{
+  "name": "Question",
+  "type": "object",
+  "description": "A multiple-choice question attached to a lesson and/or assessment.",
+  "properties": {
+    "lesson_id": {
+      "type": "string",
+      "description": "Lesson id (for lesson quizzes)"
+    },
+    "assessment_id": {
+      "type": "string",
+      "description": "Assessment id (for tests)"
+    },
+    "question_text": {
+      "type": "string",
+      "description": "Question text"
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Answer options"
+    },
+    "correct_answer": {
+      "type": "string",
+      "description": "Correct answer (exactly one of the options)"
+    },
+    "explanation": {
+      "type": "string",
+      "description": "Explanation of the correct answer"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": [
+        "basic",
+        "intermediate",
+        "advanced"
+      ],
+      "description": "Difficulty",
+      "default": "basic"
+    },
+    "cognitive_level": {
+      "type": "string",
+      "enum": [
+        "recall",
+        "understanding",
+        "application",
+        "analysis"
+      ],
+      "description": "Bloom's cognitive level",
+      "default": "recall"
+    },
+    "source_playbook": {
+      "type": "string",
+      "description": "Title of the source playbook"
+    },
+    "source_chapter": {
+      "type": "string",
+      "description": "Source chapter title in the playbook"
+    },
+    "source_section": {
+      "type": "string",
+      "description": "Source section heading within the chapter"
+    },
+    "marks": {
+      "type": "number",
+      "description": "Marks awarded",
+      "default": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending_review",
+        "approved",
+        "rejected"
+      ],
+      "description": "Review status",
+      "default": "pending_review"
+    }
+  },
+  "required": [
+    "question_text"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.status": "approved"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,91 @@
+// Assessment entity — A module test, course assessment or certification exam.
+{
+  "name": "Assessment",
+  "type": "object",
+  "description": "A module test, course assessment or certification exam.",
+  "properties": {
+    "course_id": {
+      "type": "string",
+      "description": "Course id"
+    },
+    "module_id": {
+      "type": "string",
+      "description": "Module id (for module tests)"
+    },
+    "playbook_id": {
+      "type": "string",
+      "description": "Source playbook id"
+    },
+    "title": {
+      "type": "string",
+      "description": "Assessment title"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "module_test",
+        "course_assessment",
+        "certification"
+      ],
+      "description": "Assessment type",
+      "default": "course_assessment"
+    },
+    "question_count": {
+      "type": "number",
+      "description": "Number of questions",
+      "default": 0
+    },
+    "passing_score": {
+      "type": "number",
+      "description": "Passing percentage",
+      "default": 70
+    },
+    "duration_minutes": {
+      "type": "number",
+      "description": "Time limit in minutes",
+      "default": 60
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending_review",
+        "approved",
+        "published"
+      ],
+      "description": "Lifecycle status",
+      "default": "pending_review"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.status": "published"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

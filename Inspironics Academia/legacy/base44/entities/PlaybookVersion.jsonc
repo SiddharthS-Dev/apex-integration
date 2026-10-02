@@ -1,0 +1,76 @@
+// PlaybookVersion entity — Snapshot of a playbook taken on each extraction.
+{
+  "name": "PlaybookVersion",
+  "type": "object",
+  "description": "Snapshot of a playbook taken on each extraction.",
+  "properties": {
+    "playbook_id": {
+      "type": "string",
+      "description": "Parent playbook id"
+    },
+    "version_label": {
+      "type": "string",
+      "description": "Version label for this snapshot"
+    },
+    "title": {
+      "type": "string",
+      "description": "Playbook title at snapshot time"
+    },
+    "author": {
+      "type": "string",
+      "description": "Author at snapshot time"
+    },
+    "organization": {
+      "type": "string",
+      "description": "Organization at snapshot time"
+    },
+    "chapter_count": {
+      "type": "number",
+      "description": "Number of chapters in this snapshot",
+      "default": 0
+    },
+    "toc_summary": {
+      "type": "string",
+      "description": "Table of contents summary at snapshot time"
+    },
+    "file_name": {
+      "type": "string",
+      "description": "File name at snapshot time"
+    },
+    "file_size": {
+      "type": "number",
+      "description": "File size in bytes at snapshot time",
+      "default": 0
+    },
+    "chapters_snapshot": {
+      "type": "string",
+      "description": "JSON string: array of {title, number, summary, content}"
+    }
+  },
+  "required": [
+    "playbook_id",
+    "version_label"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+// Chapter entity — A chapter extracted from a playbook.
+{
+  "name": "Chapter",
+  "type": "object",
+  "description": "A chapter extracted from a playbook.",
+  "properties": {
+    "playbook_id": {
+      "type": "string",
+      "description": "Parent playbook id"
+    },
+    "title": {
+      "type": "string",
+      "description": "Chapter title"
+    },
+    "number": {
+      "type": "string",
+      "description": "Chapter number/label (e.g. \"1\", \"II\")"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Short summary of the chapter"
+    },
+    "content": {
+      "type": "string",
+      "description": "Verbatim chapter content (max 12,000 chars)"
+    },
+    "section_count": {
+      "type": "number",
+      "description": "Number of sections detected in the chapter",
+      "default": 0
+    }
+  },
+  "required": [
+    "playbook_id",
+    "title"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

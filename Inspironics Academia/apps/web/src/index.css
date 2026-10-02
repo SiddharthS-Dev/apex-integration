@@ -1,0 +1,202 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 243 75% 59%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 243 75% 96%;
+    --accent-foreground: 243 75% 40%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 243 75% 59%;
+    --chart-1: 243 75% 59%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.75rem;
+    --font-heading: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 210 40% 90%;
+    --sidebar-primary: 243 75% 59%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 20%;
+    --sidebar-ring: 243 75% 59%;
+  }
+
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 243 75% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 33% 15%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 15%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 243 50% 20%;
+    --accent-foreground: 243 75% 85%;
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 217 33% 18%;
+    --input: 217 33% 18%;
+    --ring: 243 75% 65%;
+    --chart-1: 243 75% 65%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 222 47% 5%;
+    --sidebar-foreground: 210 40% 90%;
+    --sidebar-primary: 243 75% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217 33% 15%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 18%;
+    --sidebar-ring: 243 75% 65%;
+  }
+
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground font-body antialiased; }
+  h1, h2, h3, h4, h5, h6 { @apply font-heading; }
+}
+
+/* Dashboard surfaces — tuned for the dark theme, with a matching light variant. */
+@layer components {
+  .dash {
+    --dash-panel: 0 0% 100%;
+    --dash-panel-2: 220 33% 98%;
+    --dash-line: 222 30% 90%;
+    --dash-glow: 252 85% 60%;
+    --dash-violet: 252 83% 62%;
+    --dash-cyan: 190 90% 42%;
+    --dash-green: 158 70% 40%;
+    --dash-orange: 24 95% 55%;
+  }
+  .dark .dash {
+    --dash-panel: 224 52% 9%;
+    --dash-panel-2: 224 48% 12%;
+    --dash-line: 226 36% 18%;
+    --dash-glow: 252 90% 66%;
+    --dash-violet: 252 90% 70%;
+    --dash-cyan: 190 90% 55%;
+    --dash-green: 158 64% 50%;
+    --dash-orange: 24 95% 58%;
+  }
+
+  .dash-panel {
+    @apply rounded-2xl border;
+    background: linear-gradient(180deg, hsl(var(--dash-panel-2) / 0.9), hsl(var(--dash-panel)));
+    border-color: hsl(var(--dash-line));
+    box-shadow: 0 1px 2px hsl(222 47% 11% / 0.04);
+  }
+  .dark .dash-panel {
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.03), 0 10px 30px -18px hsl(230 80% 3% / 0.9);
+  }
+
+  /* Interactive surface: lift + violet edge glow on hover/focus. */
+  .dash-hover {
+    @apply transition-[transform,box-shadow,border-color] duration-200 ease-out;
+  }
+  .dash-hover:hover,
+  .dash-hover:focus-visible {
+    transform: translateY(-2px);
+    border-color: hsl(var(--dash-glow) / 0.45);
+    box-shadow: 0 12px 28px -16px hsl(var(--dash-glow) / 0.55);
+  }
+  .dash-hover:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+  .dash-track { @apply relative h-1.5 w-full overflow-hidden rounded-full; background: hsl(var(--dash-line)); }
+}
+
+/* Playbook Hub — frosted glass cards with a state-coloured glow (--glow is an "r g b" triple). */
+@layer components {
+  .hub {
+    --hub-bg-1: 220 40% 97%;
+    --hub-bg-2: 225 35% 93%;
+    --glass: 0 0% 100% / 0.72;
+    --glass-line: 222 30% 82% / 0.7;
+  }
+  .dark .hub {
+    --hub-bg-1: 222 42% 7%;
+    --hub-bg-2: 222 24% 14%;
+    --glass: 222 45% 14% / 0.55;
+    --glass-line: 215 60% 80% / 0.12;
+  }
+  .glass {
+    @apply rounded-2xl border backdrop-blur-xl;
+    background: hsl(var(--glass));
+    border-color: hsl(var(--glass-line));
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06), 0 20px 45px -28px rgb(var(--glow, 99 102 241) / 0.55);
+  }
+  .glass-glow {
+    border-color: rgb(var(--glow) / 0.35);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.07), 0 0 0 1px rgb(var(--glow) / 0.08), 0 24px 60px -30px rgb(var(--glow) / 0.75);
+  }
+  .glass-lift {
+    @apply transition-[transform,box-shadow,border-color] duration-300 ease-out;
+  }
+  .glass-lift:hover,
+  .glass-lift:focus-within {
+    transform: translateY(-3px);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.08), 0 0 0 1px rgb(var(--glow) / 0.18), 0 30px 70px -28px rgb(var(--glow) / 0.95);
+  }
+  .neon-text { color: rgb(var(--glow)); text-shadow: 0 0 18px rgb(var(--glow) / 0.55); }
+  .dark .neon-text { color: rgb(var(--glow-light, var(--glow))); }
+  .tone-error { --glow: 244 63 94; --glow-light: 253 164 175; }
+  .tone-processing { --glow: 14 165 233; --glow-light: 125 211 252; }
+  .tone-success { --glow: 16 185 129; --glow-light: 110 231 183; }
+  .tone-idle { --glow: 139 92 246; --glow-light: 196 181 253; }
+  .tone-muted { --glow: 100 116 139; --glow-light: 148 163 184; }
+}
+
+/* Added briefly by applyTheme() so a theme switch fades instead of snapping. */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition: background-color 300ms ease, border-color 300ms ease, color 300ms ease, fill 300ms ease, stroke 300ms ease !important;
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(14 165 233 / 0.45); }
+  50% { box-shadow: 0 0 0 8px rgb(14 165 233 / 0); }
+}
+
+@keyframes wave {
+  0%, 100% { transform: rotate(0); }
+  20%, 60% { transform: rotate(14deg); }
+  40%, 80% { transform: rotate(-8deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-hover, .dash-hover:hover, .glass-lift, .glass-lift:hover { transform: none; transition: none; }
+}
+
+@media print {
+  .no-print { display: none !important; }
+}

@@ -1,0 +1,84 @@
+// Flashcard entity — A revision flashcard for a lesson.
+{
+  "name": "Flashcard",
+  "type": "object",
+  "description": "A revision flashcard for a lesson.",
+  "properties": {
+    "lesson_id": {
+      "type": "string",
+      "description": "Lesson id"
+    },
+    "front": {
+      "type": "string",
+      "description": "Front (prompt) of the card"
+    },
+    "back": {
+      "type": "string",
+      "description": "Back (answer) of the card"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": [
+        "basic",
+        "intermediate",
+        "advanced"
+      ],
+      "description": "Difficulty"
+    },
+    "source_playbook": {
+      "type": "string",
+      "description": "Title of the source playbook"
+    },
+    "source_chapter": {
+      "type": "string",
+      "description": "Source chapter title in the playbook"
+    },
+    "source_section": {
+      "type": "string",
+      "description": "Source section heading within the chapter"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending_review",
+        "approved",
+        "rejected"
+      ],
+      "description": "Review status"
+    }
+  },
+  "required": [
+    "lesson_id",
+    "front",
+    "back"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.status": "approved"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

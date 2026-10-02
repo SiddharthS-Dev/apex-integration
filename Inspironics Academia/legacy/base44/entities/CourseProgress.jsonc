@@ -1,0 +1,95 @@
+// CourseProgress entity — A learner's progress through a course.
+{
+  "name": "CourseProgress",
+  "type": "object",
+  "description": "A learner's progress through a course.",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Learner user id"
+    },
+    "course_id": {
+      "type": "string",
+      "description": "Course id"
+    },
+    "completed_lessons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Completed lesson ids"
+    },
+    "completed_chapters": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Module ids whose chapter test was passed"
+    },
+    "percentage": {
+      "type": "number",
+      "description": "Completion percentage",
+      "default": 0
+    },
+    "final_score": {
+      "type": "number",
+      "description": "Final test score percentage",
+      "default": 0
+    },
+    "final_passed": {
+      "type": "boolean",
+      "description": "Whether the final test was passed",
+      "default": false
+    },
+    "started": {
+      "type": "boolean",
+      "description": "Whether the learner has started the course",
+      "default": false
+    }
+  },
+  "required": [
+    "user_id",
+    "course_id"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "data.user_id": "{{user.id}}"
+    },
+    "update": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

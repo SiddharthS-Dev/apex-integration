@@ -1,0 +1,42 @@
+// Bookmark entity — A learner bookmark on a lesson.
+{
+  "name": "Bookmark",
+  "type": "object",
+  "description": "A learner bookmark on a lesson.",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Learner user id"
+    },
+    "lesson_id": {
+      "type": "string",
+      "description": "Lesson id"
+    },
+    "course_id": {
+      "type": "string",
+      "description": "Course id"
+    },
+    "note": {
+      "type": "string",
+      "description": "Optional note"
+    }
+  },
+  "required": [
+    "user_id",
+    "lesson_id"
+  ],
+  "rls": {
+    "read": {
+      "data.user_id": "{{user.id}}"
+    },
+    "create": {
+      "data.user_id": "{{user.id}}"
+    },
+    "update": {
+      "data.user_id": "{{user.id}}"
+    },
+    "delete": {
+      "data.user_id": "{{user.id}}"
+    }
+  }
+}

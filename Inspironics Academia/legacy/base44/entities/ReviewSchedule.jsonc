@@ -1,0 +1,67 @@
+// ReviewSchedule entity — SM-2 spaced-repetition schedule for a flashcard per learner.
+{
+  "name": "ReviewSchedule",
+  "type": "object",
+  "description": "SM-2 spaced-repetition schedule for a flashcard per learner.",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Learner user id"
+    },
+    "flashcard_id": {
+      "type": "string",
+      "description": "Flashcard id"
+    },
+    "lesson_id": {
+      "type": "string",
+      "description": "Lesson id"
+    },
+    "course_id": {
+      "type": "string",
+      "description": "Course id"
+    },
+    "ease_factor": {
+      "type": "number",
+      "description": "SM-2 ease factor",
+      "default": 2.5
+    },
+    "interval_days": {
+      "type": "number",
+      "description": "Current interval in days",
+      "default": 0
+    },
+    "reps": {
+      "type": "number",
+      "description": "Number of successful repetitions",
+      "default": 0
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Next review date"
+    },
+    "last_reviewed": {
+      "type": "string",
+      "format": "date",
+      "description": "Date last reviewed"
+    }
+  },
+  "required": [
+    "user_id",
+    "flashcard_id"
+  ],
+  "rls": {
+    "read": {
+      "data.user_id": "{{user.id}}"
+    },
+    "create": {
+      "data.user_id": "{{user.id}}"
+    },
+    "update": {
+      "data.user_id": "{{user.id}}"
+    },
+    "delete": {
+      "data.user_id": "{{user.id}}"
+    }
+  }
+}

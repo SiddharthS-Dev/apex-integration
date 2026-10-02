@@ -1,0 +1,94 @@
+// Playbook entity — An uploaded engineering playbook (PDF/DOCX) that is processed into courses.
+{
+  "name": "Playbook",
+  "type": "object",
+  "description": "An uploaded engineering playbook (PDF/DOCX) that is processed into courses.",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Playbook title"
+    },
+    "file_url": {
+      "type": "string",
+      "description": "Uploaded file URL or private file URI"
+    },
+    "file_name": {
+      "type": "string",
+      "description": "Original file name"
+    },
+    "file_type": {
+      "type": "string",
+      "description": "MIME type or extension of the uploaded file"
+    },
+    "file_size": {
+      "type": "number",
+      "description": "File size in bytes",
+      "default": 0
+    },
+    "version": {
+      "type": "string",
+      "description": "Playbook version as stated in the document"
+    },
+    "author": {
+      "type": "string",
+      "description": "Author of the playbook"
+    },
+    "organization": {
+      "type": "string",
+      "description": "Organization that owns the playbook"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "uploaded",
+        "processing",
+        "processed",
+        "needs_review",
+        "failed",
+        "published"
+      ],
+      "description": "Processing status",
+      "default": "uploaded"
+    },
+    "chapter_count": {
+      "type": "number",
+      "description": "Number of extracted chapters",
+      "default": 0
+    },
+    "toc_summary": {
+      "type": "string",
+      "description": "Table of contents summary (one entry per line)"
+    },
+    "progress": {
+      "type": "number",
+      "description": "Processing progress 0-100",
+      "default": 0
+    },
+    "error": {
+      "type": "string",
+      "description": "Last processing error message"
+    }
+  },
+  "required": [
+    "title",
+    "file_url"
+  ],
+  "rls": {
+    "read": {},
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
