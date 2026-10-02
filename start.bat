@@ -2,21 +2,22 @@
 setlocal EnableExtensions EnableDelayedExpansion
 title Apex - Inspironics
 
-rem  Runs Apex: the home dashboard plus both projects behind one address.
+rem  Runs Apex: the home dashboard plus all three projects behind one address.
 rem
 rem    start.bat            dev  - http://localhost:5173
-rem    start.bat prod       builds both projects, then serves them on 4173
+rem    start.bat prod       builds every project, then serves them on 4173
 rem    start.bat prod 4180  the same, on a port of your choosing
 rem
-rem  Five processes start in dev: a vite dev server and an API server for each
+rem  Seven processes start in dev: a vite dev server and an API server for each
 rem  project, and the Apex gateway that fronts them all. Only the gateway's port
-rem  is ever opened - it proxies /showcase and /vault through to the dev
-rem  servers, and /showcase/api and /vault/api through to the APIs. In prod the
-rem  gateway serves the two builds itself, and the APIs still run beside it.
+rem  is ever opened - it proxies /showcase, /vault and /academia through to the
+rem  dev servers, and /showcase/api, /vault/api and /academia/api through to the
+rem  APIs. In prod the gateway serves the builds itself, and the APIs still run
+rem  beside it.
 rem
 rem  Each child is started through apex\run.mjs, which gives it exactly its own
 rem  environment from apex\projects.mjs. Setting variables here would not work:
-rem  both APIs read PORT and DROPBOX_REDIRECT_URI, and both web apps read
+rem  every API reads PORT and DROPBOX_REDIRECT_URI, and the web apps read
 rem  VITE_API_BASE_URL, so one project's values would leak into the other's.
 rem
 rem  Leave this window open while you use Apex. Stop it with stop.bat.
@@ -25,11 +26,14 @@ cd /d "%~dp0"
 
 set "SHOWCASE_DIR=inspironics-innovation-showcase"
 set "VAULT_DIR=slide vault"
+set "ACADEMIA_DIR=Inspironics Academia"
 set "GATEWAY_PORT=5173"
 set "SHOWCASE_PORT=5174"
 set "VAULT_PORT=5175"
+set "ACADEMIA_PORT=5176"
 set "SHOWCASE_API_PORT=4176"
 set "VAULT_API_PORT=4175"
+set "ACADEMIA_API_PORT=4177"
 set "RUN=%~dp0apex\run.mjs"
 
 set "MODE=dev"
@@ -63,8 +67,8 @@ node "%~dp0apex\stop.mjs" --quiet
 
 rem  Anything still holding a port now belongs to someone else, so say whose it
 rem  is rather than killing it.
-set "CHECK_PORTS=%GATEWAY_PORT% %SHOWCASE_PORT% %VAULT_PORT% %SHOWCASE_API_PORT% %VAULT_API_PORT%"
-if /i "%MODE%"=="prod" set "CHECK_PORTS=%GATEWAY_PORT% %SHOWCASE_API_PORT% %VAULT_API_PORT%"
+set "CHECK_PORTS=%GATEWAY_PORT% %SHOWCASE_PORT% %VAULT_PORT% %ACADEMIA_PORT% %SHOWCASE_API_PORT% %VAULT_API_PORT% %ACADEMIA_API_PORT%"
+if /i "%MODE%"=="prod" set "CHECK_PORTS=%GATEWAY_PORT% %SHOWCASE_API_PORT% %VAULT_API_PORT% %ACADEMIA_API_PORT%"
 
 for %%P in (%CHECK_PORTS%) do (
     call :port_pid %%P
@@ -85,6 +89,8 @@ call :ensure_deps "%SHOWCASE_DIR%" "Innovation Showcase"
 if errorlevel 1 exit /b 1
 call :ensure_deps "%VAULT_DIR%" "SlidesVault"
 if errorlevel 1 exit /b 1
+call :ensure_deps "%ACADEMIA_DIR%" "Inspironics Academia"
+if errorlevel 1 exit /b 1
 
 rem  Each API needs its .env: it holds the Dropbox app key and the key that
 rem  encrypts the refresh token. Say so here rather than leave a card stuck on
@@ -92,6 +98,8 @@ rem  "Starting".
 call :ensure_env "%VAULT_DIR%" "SlidesVault"
 if errorlevel 1 exit /b 1
 call :ensure_env "%SHOWCASE_DIR%" "Innovation Showcase"
+if errorlevel 1 exit /b 1
+call :ensure_env "%ACADEMIA_DIR%" "Inspironics Academia"
 if errorlevel 1 exit /b 1
 
 echo.
@@ -103,6 +111,8 @@ echo     showcase       http://localhost:%GATEWAY_PORT%/showcase/
 echo     showcase api   http://localhost:%GATEWAY_PORT%/showcase/api/
 echo     vault          http://localhost:%GATEWAY_PORT%/vault/
 echo     vault api      http://localhost:%GATEWAY_PORT%/vault/api/
+echo     academia       http://localhost:%GATEWAY_PORT%/academia/
+echo     academia api   http://localhost:%GATEWAY_PORT%/academia/api/
 echo.
 echo   Dropbox redirect URIs - register each exactly in the Dropbox App Console:
 node "%RUN%" redirects %GATEWAY_PORT%
@@ -122,8 +132,12 @@ echo   Starting the SlidesVault dev server and API...
 start "Apex - SlidesVault" /min cmd /c node "%RUN%" vault web dev %GATEWAY_PORT%
 start "Apex - SlidesVault API" /min cmd /c node "%RUN%" vault api dev %GATEWAY_PORT%
 
+echo   Starting the Inspironics Academia dev server and API...
+start "Apex - Inspironics Academia" /min cmd /c node "%RUN%" academia web dev %GATEWAY_PORT%
+start "Apex - Inspironics Academia API" /min cmd /c node "%RUN%" academia api dev %GATEWAY_PORT%
+
 echo.
-echo   The dashboard opens as soon as the gateway is up. Both projects finish
+echo   The dashboard opens as soon as the gateway is up. Every project finishes
 echo   booting behind it - a card reading "Starting" turns "Ready" on its own.
 echo.
 echo   Keep this window open. stop.bat shuts everything down.
@@ -156,9 +170,21 @@ if errorlevel 1 (
 )
 
 echo.
+echo   Building Inspironics Academia...
+node "%RUN%" academia build %GATEWAY_PORT%
+if errorlevel 1 (
+    echo.
+    echo   The Inspironics Academia build failed - see the output above.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
 echo   Starting the APIs...
 start "Apex - Innovation Showcase API" /min cmd /c node "%RUN%" showcase api prod %GATEWAY_PORT%
 start "Apex - SlidesVault API" /min cmd /c node "%RUN%" vault api prod %GATEWAY_PORT%
+start "Apex - Inspironics Academia API" /min cmd /c node "%RUN%" academia api prod %GATEWAY_PORT%
 
 echo.
 node "%~dp0apex\server.mjs" prod --open

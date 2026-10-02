@@ -2,10 +2,10 @@
 setlocal EnableExtensions
 title Apex - stop
 
-rem  Stops everything start.bat launched: the Apex gateway and both project dev
-rem  servers.
+rem  Stops everything start.bat launched: the Apex gateway and every project's dev
+rem  and API servers.
 rem
-rem    stop.bat            the standard ports (5173, 5174, 5175, 4173)
+rem    stop.bat            the standard ports (apexprojects.mjs lists them)
 rem    stop.bat 4180       also look at a custom prod port
 rem
 rem  Only processes belonging to this folder are stopped - another project's
