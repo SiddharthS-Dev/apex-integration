@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#030712" />
     <meta
       name="description"
-      content="Apex — the Inspironics home dashboard. Open the Innovation Showcase or SlidesVault from one place."
+      content="Apex — the Inspironics home dashboard. Open the Innovation Showcase, SlidesVault or Inspironics Academia from one place."
     />
     <title>Apex · Inspironics</title>
     <link rel="icon" href="/logo.svg" type="image/svg+xml" />
@@ -28,10 +28,10 @@
        * The Apex home dashboard.
        *
        * No build step and no node_modules on purpose: one static page whose
-       * job is to hand off to the two real apps. Hand-written CSS rather than
+       * job is to hand off to the three real apps. Hand-written CSS rather than
        * Tailwind, so the shell never needs dependencies of its own.
        *
-       * Sections: tokens · backdrop · top bar · hero · globe · cards · strip ·
+       * Sections: tokens · backdrop · top bar · hero · globe · cards ·
        * responsive
        */
 
@@ -530,7 +530,7 @@
       /* --------------------------------------------------------- cards -- */
       .grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 22px;
         margin-top: 0;
       }
@@ -622,6 +622,16 @@
       .card--vault .card__icon {
         color: #1e1033;
         background: linear-gradient(135deg, #c084fc, var(--purple));
+      }
+      .card--academia {
+        --a: #34d399;
+        --b: #10b981;
+        --glow: rgba(16, 185, 129, 0.55);
+        animation-delay: 0.16s;
+      }
+      .card--academia .card__icon {
+        color: #022c22;
+        background: linear-gradient(135deg, #6ee7b7, #10b981);
       }
       .card__icon svg {
         width: 32px;
@@ -735,37 +745,13 @@
         background: color-mix(in srgb, var(--a) 22%, transparent);
       }
 
-      /* -------------------------------------------------- security strip -- */
-      /* What the gateway actually does (apex/auth.mjs). */
-      .strip {
-        display: inline-flex;
-        flex-wrap: wrap;
-        align-items: center;
-        margin: 18px 0 0;
-        padding: 12px 8px;
-        list-style: none;
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        background: var(--surface-2);
-        font-size: 0.86rem;
-        color: var(--text-2);
-      }
-      .strip li {
-        display: inline-flex;
-        align-items: center;
-        gap: 12px;
-        padding: 0 26px;
-      }
-      .strip li + li {
-        border-left: 1px solid var(--border-2);
-      }
-      .strip svg {
-        width: 20px;
-        height: 20px;
-        color: var(--cyan);
-      }
-
       /* ---------------------------------------------------- responsive -- */
+      /* Three across gets tight below this; stack them rather than orphan one. */
+      @media (max-width: 1240px) {
+        .grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
       @media (max-width: 1100px) {
         .globe {
           width: min(460px, 44vw);
@@ -801,9 +787,6 @@
         .grid {
           grid-template-columns: minmax(0, 1fr);
         }
-        .strip {
-          border-radius: 18px;
-        }
       }
       @media (max-width: 560px) {
         .top-right {
@@ -827,16 +810,6 @@
           width: 48px;
           height: 48px;
           margin-bottom: 0;
-        }
-        .strip {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          gap: 10px;
-          padding: 14px 4px;
-        }
-        .strip li + li {
-          border-left: 0;
         }
         .eyebrow::before,
         .eyebrow::after {
@@ -885,7 +858,7 @@
                 <path d="m6 9 6 6 6-6" />
               </svg>
             </button>
-            <button class="signout" id="signout" type="button" title="Sign out of Apex and both platforms">
+            <button class="signout" id="signout" type="button" title="Sign out of Apex and every platform">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M15 17l5-5-5-5M20 12H9M12 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" />
               </svg>
@@ -894,7 +867,7 @@
             <div class="menu" id="account-menu" hidden>
               Signed in as
               <strong id="menu-email"></strong>
-              <p>One session covers Apex, the Innovation Showcase and SlidesVault, for up to 12 hours. Sign out ends all three.</p>
+              <p>One session covers Apex, the Innovation Showcase, SlidesVault and Inspironics Academia, for up to 12 hours. Sign out ends them all.</p>
             </div>
           </div>
 
@@ -915,7 +888,7 @@
       <section class="hero">
         <div class="hero__text">
           <span class="eyebrow"><i></i>Home dashboard</span>
-          <h1>Two platforms.<br /><em>One front door.</em></h1>
+          <h1>Three platforms.<br /><em>One front door.</em></h1>
           <p>
             Apex is the shared entry point for the Inspironics products. Pick a project below and it opens right here —
             same window, same address, fully working.
@@ -1029,29 +1002,42 @@
             </span>
           </div>
         </a>
-      </div>
 
-      <!-- ------------------------------------------------- security strip -->
-      <ul class="strip" aria-label="How your session is protected">
-        <li>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        <a class="card card--academia" href="/academia/" data-probe="/academia/">
+          <svg class="waves" viewBox="0 0 400 240" fill="none" stroke="currentColor" aria-hidden="true">
+            <path d="M0 200C90 170 140 90 250 80s120 40 150 20" stroke-opacity=".5" />
+            <path d="M0 220C100 190 150 120 260 110s110 30 140 10" stroke-opacity=".35" />
+            <path d="M20 240C120 210 170 150 270 140s100 20 130 0" stroke-opacity=".25" />
           </svg>
-          HttpOnly session cookies
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" />
-          </svg>
-          Checked by each platform
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
-          </svg>
-          12-hour sessions
-        </li>
-      </ul>
+          <div class="card__top">
+            <span class="card__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 9.5 12 5l10 4.5-10 4.5L2 9.5Z" /><path d="M6 11.5v4.5c0 1.4 2.7 3 6 3s6-1.6 6-3v-4.5" /><path d="M22 9.5v5" />
+              </svg>
+            </span>
+            <span class="status" data-state="checking"><i></i><span class="status__label">Checking</span></span>
+          </div>
+
+          <h2>Inspironics Academia</h2>
+          <p>
+            Engineering playbooks turned into courses — lessons, quizzes and exams generated from the source, with
+            verifiable certificates at the end.
+          </p>
+
+          <div class="card__foot">
+            <ul class="tags">
+              <li>Courses</li>
+              <li>Tests</li>
+              <li>Certificates</li>
+            </ul>
+            <span class="go-btn" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </span>
+          </div>
+        </a>
+      </div>
     </main>
 
     <!-- ==================================================================
