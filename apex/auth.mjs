@@ -1,7 +1,7 @@
 /**
  * One sign-in for all of Apex.
  *
- * The Showcase and SlidesVault each keep their own users and sessions — their
+ * The Showcase, SlidesVault and the Academia each keep their own users and sessions — their
  * APIs are the source of truth for who may sign in. Apex does not duplicate
  * that. Signing in here posts the one email and password to every project's
  * own login endpoint, and only if every one of them accepts does the browser
@@ -11,9 +11,10 @@
  *                  what the gateway checks before serving anything at all.
  *   insp_session   the Showcase's session, exactly as its API issued it
  *   sv_session     SlidesVault's session, exactly as its API issued it
+ *   iea_session    the Academia's session, exactly as its API issued it
  *
  * So each app finds itself already signed in and never shows its own login.
- * Signing out revokes every app session at its API and clears all three.
+ * Signing out revokes every app session at its API and clears them all.
  *
  * No password is stored anywhere here; it is only passed through to the APIs.
  * Dependency-free, like the rest of the gateway.
@@ -28,7 +29,7 @@ import { PROJECTS } from './projects.mjs'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 export const APEX_COOKIE = 'apex_session'
-/** Matches both apps' own session lifetime (SESSION_TTL_HOURS=12), so they lapse together. */
+/** Matches every app's own session lifetime (SESSION_TTL_HOURS=12), so they lapse together. */
 export const SESSION_HOURS = 12
 
 const APPS = PROJECTS.filter((p) => p.api?.sessionCookie)
