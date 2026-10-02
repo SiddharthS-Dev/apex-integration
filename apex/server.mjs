@@ -4,7 +4,7 @@
  *   node apex/server.mjs          dev   — dashboard + reverse proxy to each child vite server
  *   node apex/server.mjs prod     prod  — dashboard + the built dist/ of each child
  *
- * Why a gateway at all: the Showcase and SlidesVault are two complete SPAs with
+ * Why a gateway at all: the Showcase, SlidesVault and the Academia are complete SPAs with
  * their own routers, auth and design systems. Merging their sources would mean
  * reconciling two incompatible Tailwind themes. Putting them behind one origin
  * instead gives one URL and one port while each app keeps its own bundle — so
@@ -240,7 +240,8 @@ function proxyApi(req, res, project) {
 
 /** Serves a child's built dist/, falling back to its index.html for SPA routes. */
 function serveBuilt(req, res, project, pathname) {
-  const dist = path.join(ROOT, project.dir, 'dist')
+  // Each project builds inside its web app (apps/web/dist), not at its own root.
+  const dist = path.join(ROOT, project.dir, project.webDir || '', 'dist')
   const index = path.join(dist, 'index.html')
 
   if (!fs.existsSync(index)) {
