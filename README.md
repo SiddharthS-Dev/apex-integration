@@ -1,6 +1,6 @@
 # Apex
 
-The Inspironics home dashboard. One address, one port, both products:
+The Inspironics home dashboard. One address, one port, three products:
 
 | Path         | Project                        | Lives in                          |
 | ------------ | ------------------------------ | --------------------------------- |
@@ -9,6 +9,8 @@ The Inspironics home dashboard. One address, one port, both products:
 | `/showcase/api` | Innovation Showcase API     | `inspironics-innovation-showcase/apps/api` |
 | `/vault/`    | Inspironics SlidesVault        | `slide vault/apps/web`            |
 | `/vault/api` | SlidesVault API                | `slide vault/apps/api`            |
+| `/academia/` | Inspironics Academia           | `Inspironics Academia/apps/web`   |
+| `/academia/api` | Inspironics Academia API    | `Inspironics Academia/apps/api`   |
 
 ---
 
@@ -16,7 +18,7 @@ The Inspironics home dashboard. One address, one port, both products:
 
 ```
 start.bat              dev, on http://localhost:5173
-start.bat prod         builds both projects, then serves them on 4173
+start.bat prod         builds every project, then serves them on 4173
 start.bat prod 4180    the same, on a port of your choosing
 stop.bat               stops everything Apex started
 ```
@@ -31,8 +33,8 @@ it turns **Ready** — nothing to do, it polls and updates itself.
 
 There is **one sign-in** for everything, at `/login`. Nothing — the dashboard,
 either app, or their APIs — is reachable before it. Signing in checks the email
-and password against both apps' own accounts and opens both at once, so
-neither app ever asks again; **Sign out** on the dashboard, or in either app,
+and password against every app's own accounts and opens them all at once, so
+no app ever asks again; **Sign out** on the dashboard, or in any app,
 signs out of all of them. The standard account is `admin@inspironics.net`
 (`BOOTSTRAP_ADMIN_*` in each `apps/api/.env`). See `apex/auth.mjs`.
 
@@ -55,9 +57,9 @@ So Apex does not merge them. It puts a small gateway in front:
                                         │
               ┌─────────────────────────┼─────────────────────────┐
               │                         │                         │
-        /  dashboard            /showcase/  ──►  vite :5174   /vault/  ──►  vite :5175
-     apex/public/index.html         (dev)                        (dev)
-                                dist/ (prod)                  dist/ (prod)
+        /  dashboard      /showcase/ ──► vite :5174   /vault/ ──► vite :5175   /academia/ ──► vite :5176
+     apex/public/index.html      (dev)                     (dev)                     (dev)
+                             dist/ (prod)              dist/ (prod)              dist/ (prod)
 ```
 
 Each project still builds and ships its own bundle, so their CSS can never
@@ -95,18 +97,21 @@ reached through the gateway under its app's mount (`/showcase/api`,
 `/vault/api`) with the mount stripped, so the app, its API and its session
 cookie (`insp_session`, `sv_session`) share one origin.
 
-Both use the same Dropbox app, so register **both** redirect URIs in its App
+They use the same Dropbox app, so register **every** redirect URI in its App
 Console (OAuth 2 → Redirect URIs), character for character:
 
 ```
 http://localhost:5173/showcase/api/dropbox/oauth/callback
 http://localhost:5173/vault/api/dropbox/oauth/callback
+http://localhost:5173/academia/api/dropbox/oauth/callback
 ```
 
-Both sign in with the same standard administrator — `admin@inspironics.net`,
+All three sign in with the same standard administrator — `admin@inspironics.net`,
 set as `BOOTSTRAP_ADMIN_*` in each `apps/api/.env` (gitignored). Then **Admin
-console → Connect Dropbox** in the Showcase, or **Dropbox Settings → Connect**
-in the vault, pick the folder, and run a sync.
+console → Connect Dropbox** in the Showcase, **Dropbox Settings → Connect**
+in the vault, or **Admin → Integrations → Connect Dropbox** in the Academia
+(`/academia/admin/integrations`, which also shows its redirect URI with a copy
+button), pick the folder, and run a sync.
 
 Each child process is started by `apex/run.mjs`, which gives it exactly the
 environment `apex/projects.mjs` defines for it, computed from the gateway
@@ -159,6 +164,24 @@ the Dropbox credentials and an encryption key.
 This install keeps its own database (`slide vault/apps/api/data/`), so it holds
 its own Dropbox connection, separate from the standalone SlidesVault's.
 
+### Inspironics Academia
+
+The Academia (`Inspironics Academia/`, the Engineering Academy monorepo) is
+mounted the same way, with two differences worth knowing:
+
+- Its `vite.config.js` reads the mount and dev server from the environment
+  apex/run.mjs gives it (`APEX_BASE`, `APEX_DEV_PORT`, `APEX_GATEWAY_PORT`),
+  so `npm run dev` in its own folder still serves it standalone at `/`.
+- Its API loads `apps/api/.env` with `--env-file-if-exists`, and the values
+  apex/projects.mjs sets — `PORT`, `APP_BASE_URL`, `DROPBOX_REDIRECT_URI` —
+  win over the file's. `APP_BASE_URL` is what sends the Dropbox OAuth return
+  and password-reset links back under `/academia`.
+
+For the one sign-in, its `.env` needs the same `BOOTSTRAP_ADMIN_EMAIL` as
+the other two. Add `BOOTSTRAP_ADMIN_PASSWORD` as well and the account is
+created at startup if it does not exist yet (it never resets an existing one).
+Its database is `Inspironics Academia/apps/api/data/`.
+
 ### The ports
 
 | Port | What                            |
@@ -166,11 +189,13 @@ its own Dropbox connection, separate from the standalone SlidesVault's.
 | 5173 | the gateway — **the only one you open** |
 | 5174 | Showcase dev server              |
 | 5175 | SlidesVault dev server           |
+| 5176 | Academia dev server              |
 | 4176 | Showcase API (reached at `/showcase/api`) |
 | 4175 | SlidesVault API (reached at `/vault/api`) |
+| 4177 | Academia API (reached at `/academia/api`) |
 | 4173 | the gateway in prod mode         |
 
-5174 and 5175 are bound to `127.0.0.1`; the APIs on 4175 and 4176 listen on
+5174–5176 are bound to `127.0.0.1`; the APIs on 4175–4177 listen on
 every interface. None of them is meant
 to be visited directly — the API's OAuth redirects and cookies only line up
 when it is reached through `/vault/api`. The gateway binds all interfaces, so Apex is also reachable from
@@ -238,7 +263,8 @@ program has the port and Apex will not kill anything it does not own. Stop that
 program, or move Apex's ports in `apex/projects.mjs`.
 
 **A card stays on "Starting".** That project's dev server did not come up. Its
-window is minimised, titled `Apex - Innovation Showcase` or `Apex - SlidesVault`;
+window is minimised, titled `Apex - Innovation Showcase`, `Apex - SlidesVault` or
+`Apex - Inspironics Academia`;
 the error is in there.
 
 **A project 404s or loads unstyled.** Something is requesting an absolute path
