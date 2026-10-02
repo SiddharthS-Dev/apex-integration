@@ -112,6 +112,42 @@ export const PROJECTS = [
     name: 'SlidesVault',
     tagline: 'Discover, search and view presentations across every team. Stream online, read offline.',
   },
+  {
+    id: 'academia',
+    base: '/academia',
+    dir: 'Inspironics Academia',
+    devPort: 5176,
+    webDir: 'apps/web',
+    // Its vite.config.js reads the mount and dev server from these, so it still runs standalone at '/'
+    // when they are unset — rather than hard-coding them the way the other two do.
+    webEnv: (gateway) => ({
+      VITE_API_BASE_URL: '/academia',
+      APEX_BASE: '/academia/',
+      APEX_DEV_PORT: '5176',
+      APEX_GATEWAY_PORT: new URL(gateway).port,
+    }),
+    api: {
+      base: '/academia/api',
+      port: 4177,
+      dir: 'apps/api',
+      entry: 'src/server.js',
+      // Its own npm scripts load .env with this flag; run.mjs starts node directly, so pass it here.
+      nodeArgs: ['--env-file-if-exists=.env', '--disable-warning=ExperimentalWarning'],
+      // Not --watch, like the Showcase: it orphans processes on Windows.
+      watch: false,
+      oauthCallback: '/academia/api/dropbox/oauth/callback',
+      sessionCookie: 'iea_session',
+      env: (gateway) => ({
+        PORT: '4177',
+        APP_ORIGIN: gateway,
+        APP_BASE_URL: `${gateway}/academia`,
+        API_ORIGIN: gateway,
+        DROPBOX_REDIRECT_URI: `${gateway}/academia/api/dropbox/oauth/callback`,
+      }),
+    },
+    name: 'Inspironics Academia',
+    tagline: 'Engineering playbooks turned into courses, tests and verifiable certificates.',
+  },
 ]
 
 /** The project whose API a request path belongs to, or null. Checked before projectFor(). */
