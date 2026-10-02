@@ -1,0 +1,91 @@
+1
+00:00:01,200 --> 00:00:07,000
+Meet Apex — the Inspironics home dashboard.
+
+2
+00:00:08,000 --> 00:00:13,500
+Inspironics runs two complete products: the Innovation Showcase and SlidesVault.
+
+3
+00:00:13,800 --> 00:00:20,600
+Each had its own address, its own sign-in, and a theme that would clash with the other’s if the two were merged.
+
+4
+00:00:21,600 --> 00:00:27,000
+So Apex doesn’t merge them. It puts one small gateway in front.
+
+5
+00:00:27,200 --> 00:00:32,200
+One address, one port — every path goes to the right app and its API.
+
+6
+00:00:32,400 --> 00:00:36,700
+Each app still builds its own bundle, so their styles can never collide.
+
+7
+00:00:37,600 --> 00:00:42,800
+Everything starts at a single sign-in page.
+
+8
+00:00:43,000 --> 00:00:48,600
+One email and password are checked against both platforms at once…
+
+9
+00:00:48,800 --> 00:00:53,600
+…and both sessions are handed to the browser, so neither app ever asks again.
+
+10
+00:00:54,200 --> 00:00:59,400
+The dashboard is the front door: one card per platform.
+
+11
+00:00:59,600 --> 00:01:05,000
+Each card probes its app live — Ready, Starting or Offline.
+
+12
+00:01:05,200 --> 00:01:11,600
+One account menu and one sign-out cover the dashboard and both apps.
+
+13
+00:01:12,400 --> 00:01:18,200
+The Innovation Showcase: 235 intelligent-infrastructure blueprints in an immersive gallery.
+
+14
+00:01:18,400 --> 00:01:24,600
+With a 3D ecosystem explorer, an AI copilot, offline reading and monthly PDF reports.
+
+15
+00:01:25,400 --> 00:01:31,000
+SlidesVault: the presentation knowledge hub for every team.
+
+16
+00:01:31,200 --> 00:01:37,600
+Decks sync from Dropbox, are classified with AI, and stream online or offline.
+
+17
+00:01:38,400 --> 00:01:44,200
+Both platforms follow one rule: the browser never talks to Dropbox.
+
+18
+00:01:44,400 --> 00:01:50,600
+Each API syncs, indexes and proxies every byte — no Dropbox link or token ever reaches a user.
+
+19
+00:01:51,400 --> 00:01:58,200
+Under the hood, the gateway has zero dependencies and one registry of every mount and port.
+
+20
+00:01:58,400 --> 00:02:05,600
+Every server gets its own environment, startup cleans up after itself, and a real-browser smoke test guards the integration.
+
+21
+00:02:06,400 --> 00:02:12,800
+Running it is one command: start.bat — the browser opens on its own.
+
+22
+00:02:13,000 --> 00:02:19,600
+start.bat prod builds and serves both apps; stop.bat stops everything Apex started.
+
+23
+00:02:21,000 --> 00:02:28,000
+Inspironics Apex. Two platforms — one front door.
