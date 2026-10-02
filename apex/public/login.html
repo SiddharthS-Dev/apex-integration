@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#030712" />
-    <meta name="description" content="Sign in to Inspironics Apex — one sign-in for the Innovation Showcase and SlidesVault." />
+    <meta name="description" content="Sign in to Inspironics Apex — one sign-in for the Innovation Showcase, SlidesVault and Inspironics Academia." />
     <title>Sign in · Apex</title>
     <link rel="icon" href="/logo.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -1335,7 +1335,7 @@
               <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" />
             </svg>
           </span>
-          <span><strong>Your data. Your control.</strong>Checked by the Showcase and SlidesVault at every sign-in.</span>
+          <span><strong>Your data. Your control.</strong>Checked by every platform at every sign-in.</span>
         </div>
       </section>
 
@@ -1444,6 +1444,7 @@
                 <li data-step="verify"><span class="dot"></span>Checking your credentials</li>
                 <li data-step="showcase"><span class="dot"></span>Opening Innovation Showcase</li>
                 <li data-step="vault"><span class="dot"></span>Opening SlidesVault</li>
+                <li data-step="academia"><span class="dot"></span>Opening Inspironics Academia</li>
               </ol>
             </form>
 
@@ -1566,7 +1567,7 @@
           li.classList.remove('active', 'ok', 'fail')
           if (state) li.classList.add(state)
         }
-        const resetSteps = () => ['verify', 'showcase', 'vault'].forEach((n) => step(n, null))
+        const resetSteps = () => ['verify', 'showcase', 'vault', 'academia'].forEach((n) => step(n, null))
         const wait = (ms) => new Promise((r) => setTimeout(r, reduced ? 0 : ms))
 
         /* ------------------------------------------------------- submit */
@@ -1609,7 +1610,7 @@
             // just show it, one after the other.
             store.set($('remember').checked ? addr : '')
             step('verify', 'ok')
-            for (const name of ['showcase', 'vault']) {
+            for (const name of ['showcase', 'vault', 'academia']) {
               step(name, 'active')
               await wait(260)
               step(name, 'ok')
