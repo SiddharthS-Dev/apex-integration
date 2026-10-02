@@ -30,11 +30,12 @@ const readEnv = async (...parts) =>
   )
 const VAULT_ENV = await readEnv('slide vault', 'apps', 'api', '.env')
 const SHOWCASE_ENV = await readEnv('inspironics-innovation-showcase', 'apps', 'api', '.env')
+const ACADEMIA_ENV = await readEnv('Inspironics Academia', 'apps', 'api', '.env')
 
-/** The one Apex sign-in: the standard administrator both apps share. */
+/** The one Apex sign-in: the standard administrator every app shares. */
 const ADMIN = { email: VAULT_ENV.BOOTSTRAP_ADMIN_EMAIL, password: VAULT_ENV.BOOTSTRAP_ADMIN_PASSWORD }
-if (ADMIN.email !== SHOWCASE_ENV.BOOTSTRAP_ADMIN_EMAIL) {
-  console.error('\n  The two apps have different BOOTSTRAP_ADMIN_EMAIL values; the single sign-in needs one account.\n')
+if (ADMIN.email !== SHOWCASE_ENV.BOOTSTRAP_ADMIN_EMAIL || ADMIN.email !== ACADEMIA_ENV.BOOTSTRAP_ADMIN_EMAIL) {
+  console.error('\n  The apps have different BOOTSTRAP_ADMIN_EMAIL values; the single sign-in needs one account.\n')
   process.exit(1)
 }
 
@@ -67,7 +68,8 @@ const IGNORE = [
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: 'new',
-  args: ['--no-sandbox', '--disable-gpu', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
+  // Autoplay allowed so a lesson's narration — and its subtitles — run without a click.
+  args: ['--no-sandbox', '--disable-gpu', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'],
   defaultViewport: { width: 1440, height: 950 },
 })
 
@@ -146,13 +148,13 @@ try {
   who === ADMIN.email ? ok(`dashboard shows the signed-in account ${who}`) : fail(`dashboard account chip shows "${who}"`)
 
   const cards = await page.$$('[data-probe]')
-  cards.length === 2 ? ok('dashboard shows both projects') : fail(`expected 2 cards, found ${cards.length}`)
+  cards.length === 3 ? ok('dashboard shows all three projects') : fail(`expected 3 cards, found ${cards.length}`)
 
   await page.waitForFunction(
     () => [...document.querySelectorAll('.status')].every((s) => s.dataset.state === 'up'),
     { timeout: 20000 }
   ).then(
-    () => ok('both projects report Ready'),
+    () => ok('every project reports Ready'),
     () => fail('a project never reported Ready on the dashboard')
   )
 
@@ -160,6 +162,7 @@ try {
   for (const project of [
     { id: 'showcase', mount: '/showcase/', expect: /Showcase/i },
     { id: 'vault', mount: '/vault/', expect: /SlidesVault/i },
+    { id: 'academia', mount: '/academia/', expect: /Academy|Academia/i },
   ]) {
     where = project.id
 
@@ -197,6 +200,54 @@ try {
   ;(await page.evaluate(() => document.body.innerText)).includes(showcaseCallback)
     ? ok(`showcase admin shows the redirect URI ${showcaseCallback}`)
     : fail(`showcase admin does not show ${showcaseCallback}`)
+
+  /* ---------------------------------------- academia: admin + Dropbox */
+  where = 'academia'
+  await page.goto(`${BASE}/academia/admin/integrations`, { waitUntil: 'networkidle2' })
+  await sleep(2500)
+  const academiaAdmin = new URL(page.url()).pathname
+  academiaAdmin === '/academia/admin/integrations'
+    ? ok('academia integrations opens for the standard admin')
+    : fail(`academia integrations bounced to ${academiaAdmin}`)
+  const academiaCallback = `${BASE}/academia/api/dropbox/oauth/callback`
+  ;(await page.evaluate(() => document.body.innerText)).includes(academiaCallback)
+    ? ok(`academia integrations shows the redirect URI ${academiaCallback}`)
+    : fail(`academia integrations does not show ${academiaCallback}`)
+
+  // A lesson video is explainer slides with subtitles, drawn by the page over the narration — not
+  // generic footage. Checked on the first lesson that has them; SMOKE_SHOTS=<dir> saves a frame.
+  const slideLesson = await page.evaluate(async () => {
+    const get = async (p) => (await fetch(`/academia/api${p}`, { credentials: 'include' })).json()
+    const lessons = await get('/entities/Lesson?limit=500')
+    const lesson = lessons.find((l) => /"points"/.test(l.video_scenes || ''))
+    if (!lesson) return null
+    const mod = await get(`/entities/Module/${lesson.module_id}`)
+    return { id: lesson.id, course: mod.course_id, title: JSON.parse(lesson.video_scenes)[0].title }
+  })
+  if (slideLesson) {
+    await page.goto(`${BASE}/academia/learn/${slideLesson.course}/${slideLesson.id}`, { waitUntil: 'networkidle2' })
+    await page.waitForFunction((t) => document.body.innerText.includes(t), { timeout: 15000 }, slideLesson.title).then(
+      () => ok(`academia lesson video shows its slide "${slideLesson.title}"`),
+      () => fail(`academia lesson video never showed the slide "${slideLesson.title}"`)
+    )
+    // Autoplay is blocked headless; play from the overlay, then let a subtitle come up.
+    await page.evaluate(() => document.querySelector('audio')?.play().catch(() => {}))
+    await sleep(4000)
+    const subtitle = await page.evaluate(() => document.querySelector('[aria-live="off"] p')?.textContent || '')
+    subtitle ? ok(`academia lesson video shows subtitles ("${subtitle.slice(0, 40)}…")`) : fail('academia lesson video shows no subtitles')
+    if (process.env.SMOKE_SHOTS) {
+      const frame = await page.$('[class*="container-type"]')
+      await (frame || page).screenshot({ path: path.join(process.env.SMOKE_SHOTS, 'academia-lesson-video.png') })
+      // ...and every slide once fully built, to eyeball each layout.
+      const spans = await page.evaluate((id) => fetch(`/academia/api/entities/Lesson/${id}`, { credentials: 'include' })
+        .then((r) => r.json()).then((l) => JSON.parse(l.video_scenes).map((s) => [s.start, s.end])), slideLesson.id)
+      for (const [i, [start, end]] of spans.entries()) {
+        await page.evaluate((t) => { const a = document.querySelector('audio'); a.currentTime = t; }, start + (end - start) * 0.8)
+        await sleep(1200)
+        await (frame || page).screenshot({ path: path.join(process.env.SMOKE_SHOTS, `academia-slide-${i + 1}.png`) })
+      }
+    }
+  }
 
   /* ---------------------------------------------- vault: library + Dropbox */
   where = 'vault'
@@ -268,6 +319,7 @@ try {
   const after = await page.evaluate(async () => [
     (await fetch('/vault/api/auth/me')).status,
     (await fetch('/showcase/api/auth/session')).status,
+    (await fetch('/academia/api/auth/me')).status,
   ])
   after.every((s) => s === 401)
     ? ok('after sign-out every API refuses again')
