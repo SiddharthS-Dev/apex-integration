@@ -1427,7 +1427,7 @@
                    none of them, so none is shown. -->
               <div class="row">
                 <label class="check"><input type="checkbox" id="remember" /> Remember my email</label>
-                <span class="hint">Session lasts 12 hours</span>
+                <span class="hint">Session lasts <span data-hours>12</span> hours</span>
               </div>
 
               <button class="submit" id="submit" type="submit">
@@ -1440,11 +1440,9 @@
                 <span class="spinner" aria-hidden="true"><i></i>Signing you in…</span>
               </button>
 
+              <!-- One step per platform is added from /auth/config (apex/projects.mjs). -->
               <ol class="steps" id="steps" aria-live="polite">
                 <li data-step="verify"><span class="dot"></span>Checking your credentials</li>
-                <li data-step="showcase"><span class="dot"></span>Opening Innovation Showcase</li>
-                <li data-step="vault"><span class="dot"></span>Opening SlidesVault</li>
-                <li data-step="academia"><span class="dot"></span>Opening Inspironics Academia</li>
               </ol>
             </form>
 
@@ -1455,12 +1453,13 @@
                     <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" />
                   </svg>
                 </span>
-                <!-- What is true of this deployment: HttpOnly cookies, 12-hour
-                     sessions (apex/auth.mjs). Not "encrypted" — over plain
-                     http on localhost, it is not. -->
+                <!-- What is true of this deployment: HttpOnly cookies, sessions
+                     of APEX_SESSION_HOURS (12 unless configured; filled in from
+                     /auth/config). Not "encrypted" — over plain http on
+                     localhost, it is not. -->
                 <span>
                   <strong>Protected by Apex security</strong>
-                  <span>HttpOnly cookies · 12-hour sessions</span>
+                  <span>HttpOnly cookies · <span data-hours>12</span>-hour sessions</span>
                 </span>
               </span>
               <span class="help"><b>Need help?</b>Ask your administrator</span>
@@ -1473,9 +1472,9 @@
     </main>
 
     <!-- ================================================================
-         sign-in — unchanged. Validation, POST /auth/login, the progress
-         steps, remember-email, Caps Lock, show/hide and the redirect are
-         exactly the previous page's.
+         sign-in — validation, POST /auth/login, one progress step per
+         platform (from /auth/config), remember-email, Caps Lock, show/hide,
+         and the redirect to `next` (same-site paths only).
          ================================================================ -->
     <script>
       ;(() => {
@@ -1487,7 +1486,23 @@
         const card = $('card')
         const steps = $('steps')
         const params = new URLSearchParams(location.search)
-        const next = params.get('next') || '/'
+
+        /**
+         * Only a path on this site, exactly as the gateway's safeNext() in
+         * apex/auth.mjs decides: browsers strip tab/CR/LF and read '\' as '/',
+         * so "/\t/evil.com" would otherwise land on another site.
+         */
+        const safeNext = (value) => {
+          if (typeof value !== 'string' || value.length > 2048) return '/'
+          if (!value.startsWith('/') || value.startsWith('//')) return '/'
+          if (/[\s\\\u0000-\u001f\u007f-\u009f]/.test(value)) return '/'
+          try {
+            return new URL(value, 'http://x').origin === 'http://x' ? value : '/'
+          } catch {
+            return '/'
+          }
+        }
+        const next = safeNext(params.get('next') || '/')
         const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
         const REMEMBER_KEY = 'apex.signin.email'
 
@@ -1519,10 +1534,34 @@
           email.focus()
         }
 
-        if (params.get('expired')) {
+        if (params.get('reauth')) {
+          // An app found its own session gone. Nothing else was signed out:
+          // signing in here just issues every platform's session afresh.
+          $('info-text').textContent = 'That platform needs you to sign in again. Your other platforms stay signed in.'
+          $('info').classList.add('show')
+        } else if (params.get('expired')) {
           $('info-text').textContent = 'Your session ended. Sign in again to pick up where you left off.'
           $('info').classList.add('show')
         }
+
+        /* ------------------------------------------------- the platforms */
+        // From the registry (apex/projects.mjs), so a new project needs no
+        // edit here: one progress step each, and the session length.
+        let apps = []
+        const config = fetch('/auth/config', { cache: 'no-store' })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((c) => {
+            if (!c) return
+            apps = Array.isArray(c.apps) ? c.apps : []
+            for (const app of apps) {
+              const li = document.createElement('li')
+              li.dataset.step = app.id
+              li.append(Object.assign(document.createElement('span'), { className: 'dot' }), `Opening ${app.name}`)
+              steps.append(li)
+            }
+            if (c.sessionHours) document.querySelectorAll('[data-hours]').forEach((el) => (el.textContent = String(c.sessionHours)))
+          })
+          .catch(() => {})
 
         /* ----------------------------------------------- field behaviour */
         const showError = (message) => {
@@ -1563,11 +1602,12 @@
 
         /* ------------------------------------------------------ progress */
         const step = (name, state) => {
-          const li = steps.querySelector(`[data-step="${name}"]`)
+          const li = [...steps.children].find((el) => el.dataset.step === name)
+          if (!li) return
           li.classList.remove('active', 'ok', 'fail')
           if (state) li.classList.add(state)
         }
-        const resetSteps = () => ['verify', 'showcase', 'vault', 'academia'].forEach((n) => step(n, null))
+        const resetSteps = () => ['verify', ...apps.map((a) => a.id)].forEach((n) => step(n, null))
         const wait = (ms) => new Promise((r) => setTimeout(r, reduced ? 0 : ms))
 
         /* ------------------------------------------------------- submit */
@@ -1606,23 +1646,33 @@
             const body = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(body.error || `Sign-in failed (${res.status}).`)
 
-            // Every platform has accepted by the time this returns; the steps
-            // just show it, one after the other.
+            // Every platform has answered by the time this returns; the steps
+            // just show it, one after the other. One that was down or did not
+            // know these credentials is marked, not fatal: the others open.
             store.set($('remember').checked ? addr : '')
             step('verify', 'ok')
-            for (const name of ['showcase', 'vault', 'academia']) {
-              step(name, 'active')
+            await config
+            const signedIn = Array.isArray(body.apps) ? body.apps : apps.map((a) => a.id)
+            for (const { id } of apps) {
+              step(id, 'active')
               await wait(260)
-              step(name, 'ok')
-              document.querySelector(`[data-product="${name}"]`)?.classList.add('is-open')
-              const state = document.querySelector(`[data-product="${name}"] .product__state`)
+              const open = signedIn.includes(id)
+              step(id, open ? 'ok' : 'fail')
+              if (!open) continue
+              document.querySelector(`[data-product="${id}"]`)?.classList.add('is-open')
+              const state = document.querySelector(`[data-product="${id}"] .product__state`)
               if (state) state.textContent = 'Open'
             }
             submit.classList.remove('busy')
             submit.classList.add('done')
-            submit.querySelector('.label').innerHTML = 'Signed in — opening Apex'
+            submit.querySelector('.label').textContent = 'Signed in — opening Apex'
             await wait(380)
-            location.replace(body.next || next)
+            // Heading into a platform this sign-in did not cover would only
+            // bounce straight back here; the dashboard says which one, instead.
+            let target = safeNext(body.next || next)
+            const into = apps.find((a) => target === a.base || target.startsWith(`${a.base}/`))
+            if (into && !signedIn.includes(into.id)) target = '/'
+            location.replace(target)
           } catch (err) {
             step('verify', 'fail')
             busy = false

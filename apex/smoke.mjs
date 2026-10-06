@@ -63,6 +63,8 @@ const IGNORE = [
   // Signed out, the vault asks the API who is signed in and the API answers
   // 401 — that is the answer, not a failure, but Chrome logs every 4xx fetch.
   /status of 401 \(Unauthorized\)/i,
+  // The signed-out checks below ask for things that must be refused.
+  /status of 405 \(Method Not Allowed\)/i,
 ]
 
 const browser = await puppeteer.launch({
@@ -282,10 +284,45 @@ try {
     ? ok(`dropbox settings shows the redirect URI ${callback}`)
     : fail(`dropbox settings does not show ${callback}`)
 
-  /* ------------------------- signing out of one app signs out of Apex */
+  /* ------------------------------------------------ cookie isolation */
+  // Each app's session cookie lives under its own mount, so no other app —
+  // and no page of the dashboard — is ever sent it.
+  const jar = await page.cookies(`${BASE}/vault/`, `${BASE}/showcase/`, `${BASE}/academia/`, `${BASE}/`)
+  const pathOf = (name) => jar.find((c) => c.name === name)?.path
+  pathOf('sv_session') === '/vault/' && pathOf('insp_session') === '/showcase/' && pathOf('iea_session') === '/academia/'
+    ? ok('each app session cookie is scoped to its own mount')
+    : fail(`app cookie paths: ${jar.map((c) => `${c.name}=${c.path}`).join(', ')}`)
+
+  /* --------------------------------------- the sign-in is not a weapon */
+  where = 'dashboard'
+  // An open-redirect payload: browsers strip the tab, so "/\t/evil.com" would
+  // become "//evil.com". Signed in, /login redirects straight to `next`.
+  await page.goto(`${BASE}/login?next=${encodeURIComponent('/\t/evil.example')}`, { waitUntil: 'networkidle2' })
+  new URL(page.url()).origin === new URL(BASE).origin
+    ? ok('an open-redirect payload in ?next= stays on Apex')
+    : fail(`?next= sent the browser to ${page.url()}`)
+
+  // A cross-site link can sign nobody out: GET is refused, a POST from another
+  // origin is refused, and /login?reauth=1 only shows the form.
+  const cookieHeader = (await page.cookies(`${BASE}/`)).map((c) => `${c.name}=${c.value}`).join('; ')
+  const getLogout = await fetch(`${BASE}/auth/logout`, { headers: { cookie: cookieHeader }, redirect: 'manual' })
+  const crossPost = await fetch(`${BASE}/auth/logout`, {
+    method: 'POST',
+    headers: { cookie: cookieHeader, origin: 'http://evil.example' },
+  })
+  getLogout.status === 405 && crossPost.status === 403 && !crossPost.headers.get('set-cookie')
+    ? ok('a cross-site GET or POST cannot sign anyone out')
+    : fail(`logout answered GET ${getLogout.status}, cross-site POST ${crossPost.status}`)
+  await page.goto(`${BASE}/login?reauth=1&next=%2Fshowcase%2F`, { waitUntil: 'networkidle2' })
+  const stillIn = await page.evaluate(async () => (await fetch('/auth/me')).status)
+  stillIn === 200 ? ok('/login?reauth=1 signs nothing out') : fail(`after /login?reauth=1, /auth/me answered ${stillIn}`)
+
+  /* ---------------------- one app's lapsed session leaves the rest open */
   // The vault's own sign-out, then a page inside it: the app finds no session
-  // and hands the browser to the Apex sign-in, which ends every session — so
-  // the Showcase is locked again too.
+  // and hands the browser to the Apex sign-in (reauth) — but the Showcase,
+  // whose session is untouched, stays open.
+  where = 'vault'
+  await page.goto(`${BASE}/vault/`, { waitUntil: 'networkidle2' })
   await page.evaluate(async () => {
     await fetch('/vault/api/auth/logout', { method: 'POST', credentials: 'include' })
   })
@@ -294,22 +331,34 @@ try {
     () => ok("an app's lapsed session hands over to the Apex sign-in"),
     () => fail(`after the vault signed out, ended on ${new URL(page.url()).pathname}`)
   )
+  const reauthUrl = page.url()
+  where = 'showcase'
   await page.goto(`${BASE}/showcase/`, { waitUntil: 'networkidle2' })
-  new URL(page.url()).pathname === '/login'
-    ? ok('...and the other app is signed out with it')
-    : fail(`the Showcase stayed open at ${new URL(page.url()).pathname}`)
+  await sleep(1500)
+  new URL(page.url()).pathname.startsWith('/showcase/') && !(await page.$('#root input[type="password"]'))
+    ? ok('...and the other apps stay signed in')
+    : fail(`the Showcase was signed out too, at ${new URL(page.url()).pathname}`)
 
-  /* ------------------------------------------- dashboard sign-out, too */
+  /* -------------------------------- signing in again, then sign-out */
   where = 'dashboard'
+  await page.goto(reauthUrl, { waitUntil: 'networkidle2' })
   await page.waitForSelector('#password')
   await page.$eval('#email', (el) => (el.value = ''))
   await page.type('#email', ADMIN.email)
   await page.type('#password', ADMIN.password)
   await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }), page.click('#submit')])
   const back = new URL(page.url()).pathname
-  back === '/showcase/'
-    ? ok('signing in again returns to the page that asked (/showcase/)')
+  back.startsWith('/vault/')
+    ? ok(`signing in again returns to the page that asked (${back})`)
     : fail(`signing in again landed on ${back}`)
+
+  // A certificate to check signed out below, if the Academia has issued any.
+  const certId = await page.evaluate(async () => {
+    const r = await fetch('/academia/api/entities/Certificate?limit=1', { credentials: 'include' })
+    const list = r.ok ? await r.json() : []
+    return (Array.isArray(list) ? list[0] : null)?.certificate_id || null
+  })
+
   await page.goto(`${BASE}/`, { waitUntil: 'networkidle2' })
   await page.waitForSelector('#account:not([hidden]) #signout', { visible: true, timeout: 10000 })
   await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2' }), page.click('#signout')])
@@ -324,6 +373,33 @@ try {
   after.every((s) => s === 401)
     ? ok('after sign-out every API refuses again')
     : fail(`after sign-out the APIs answered ${after.join(', ')}`)
+
+  /* -------------------------- certificates verify without an account */
+  where = 'verify'
+  await page.goto(`${BASE}/academia/verify/APEX-SMOKE-NO-SUCH-CERT`, { waitUntil: 'networkidle2' })
+  const unknown = await page
+    .waitForFunction(() => document.getElementById('card')?.dataset.state !== 'checking', { timeout: 10000 })
+    .then(() => page.evaluate(() => [location.pathname, document.getElementById('card').dataset.state]))
+    .catch(() => [new URL(page.url()).pathname, 'none'])
+  unknown[0].startsWith('/academia/verify/') && unknown[1] === 'invalid'
+    ? ok('signed out, /academia/verify/<id> loads the public check (unknown id: not valid)')
+    : fail(`signed out, the verify page ended on ${unknown[0]} in state ${unknown[1]}`)
+  if (certId) {
+    await page.goto(`${BASE}/academia/verify/${encodeURIComponent(certId)}`, { waitUntil: 'networkidle2' })
+    await page
+      .waitForFunction(() => document.getElementById('card')?.dataset.state === 'valid', { timeout: 10000 })
+      .then(
+        () => ok('signed out, a real certificate verifies as genuine'),
+        () => fail(`signed out, certificate ${certId} did not verify`)
+      )
+  }
+  const otherApi = await page.evaluate(async () => [
+    (await fetch('/academia/api/functions/verifyCertificate')).status,
+    (await fetch('/academia/api/auth/me')).status,
+  ])
+  otherApi[0] === 405 && otherApi[1] === 401
+    ? ok('signed out, only POST verifyCertificate is open — nothing else')
+    : fail(`signed out, GET verifyCertificate answered ${otherApi[0]}, /academia/api/auth/me ${otherApi[1]}`)
 
   where = 'dashboard'
 } catch (err) {

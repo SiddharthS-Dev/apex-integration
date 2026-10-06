@@ -6,7 +6,7 @@
  *   node apex/run.mjs <project> build            [gatewayPort]
  *   node apex/run.mjs redirects                  [gatewayPort]   prints the Dropbox redirect URIs
  *
- * Why this exists rather than `set X=…` in start.bat: the two API servers read
+ * Why this exists rather than `set X=…` in start.bat: the API servers read
  * the same variable names (PORT, DROPBOX_REDIRECT_URI) and both web apps read
  * VITE_API_BASE_URL, so values set for one would leak into the other. Here each
  * process gets exactly its own, computed from apex/projects.mjs.
@@ -20,7 +20,7 @@ import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { GATEWAY_PORT, PROJECTS, dropboxRedirectUris, gatewayUrl } from './projects.mjs'
+import { GATEWAY_PORT, PROJECTS, apiEnvOptions, dropboxRedirectUris, gatewayUrl } from './projects.mjs'
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const [target, role = 'api', ...rest] = process.argv.slice(2)
@@ -55,7 +55,16 @@ if (role === 'api') {
     file: process.execPath,
     args: [...(api.nodeArgs || []), ...(mode === 'dev' && api.watch ? ['--watch'] : []), path.join(cwd, api.entry)],
     cwd,
-    env: api.env(gateway),
+    env: {
+      // What every API is told the same way. HOST keeps it on loopback, where
+      // only the gateway can reach it; TRUST_PROXY=loopback makes it believe
+      // the gateway's X-Forwarded-For (the real client address) and nobody
+      // else's. In prod it runs as production, with each app's own checks on.
+      HOST: '127.0.0.1',
+      TRUST_PROXY: 'loopback',
+      ...(mode === 'prod' ? { NODE_ENV: 'production' } : {}),
+      ...api.env(gateway, apiEnvOptions(port)),
+    },
   }
 } else if (role === 'build') {
   // The app's own build script, not a bare `vite build`: the Showcase's runs its
@@ -65,7 +74,7 @@ if (role === 'api') {
     file: process.platform === 'win32' ? 'npm.cmd' : 'npm',
     args: ['run', 'build'],
     cwd,
-    env: project.webEnv ? project.webEnv(gateway) : {},
+    env: project.webEnv ? project.webEnv(gateway, port) : {},
     shell: true,
   }
 } else if (role === 'web') {
@@ -82,7 +91,7 @@ if (role === 'api') {
     file: process.execPath,
     args: [vite, ...(role === 'build' ? ['build'] : [])],
     cwd,
-    env: project.webEnv ? project.webEnv(gateway) : {},
+    env: project.webEnv ? project.webEnv(gateway, port) : {},
   }
 } else {
   fail(`Unknown role "${role}" — use api, web or build.`)

@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#030712" />
+    <meta name="theme-color" content="#eef3fb" />
     <meta
       name="description"
       content="Apex — the Inspironics home dashboard. Open the Innovation Showcase, SlidesVault or Inspironics Academia from one place."
@@ -29,52 +29,59 @@
        *
        * No build step and no node_modules on purpose: one static page whose
        * job is to hand off to the three real apps. Hand-written CSS rather than
-       * Tailwind, so the shell never needs dependencies of its own.
+       * Tailwind, so the shell never needs dependencies of its own. Every
+       * number on it is read from the apps' own APIs — nothing is made up.
        *
-       * Sections: tokens · backdrop · top bar · hero · globe · cards ·
-       * responsive
+       * Sections: tokens · backdrop · top bar · hero · globe · status panel ·
+       * cards · illustrations · dock · palette · responsive
        */
 
       /* -------------------------------------------------------- tokens -- */
       :root {
+        color-scheme: light;
+        --bg: #eef3fb;
+        --bg-2: #f7f9fe;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-2: rgba(255, 255, 255, 0.7);
+        --surface-solid: #ffffff;
+        --text: #0b1530;
+        --text-2: #334155;
+        --muted: #5b6b85;
+        --faint: #8a98b0;
+        --border: rgba(15, 23, 42, 0.08);
+        --border-2: rgba(15, 23, 42, 0.14);
+        --shadow: 0 18px 48px -28px rgba(30, 64, 175, 0.35);
+        --cyan: #06b6d4;
+        --cyan-2: #0891b2;
+        --blue: #2563eb;
+        --purple: #7c3aed;
+        --violet: #a855f7;
+        --green: #10b981;
+        --amber: #f59e0b;
+        --rose: #f43f5e;
+        --grid: rgba(37, 99, 235, 0.06);
+        --headline: #0b1530;
+        --navy: #0f1d44;
+      }
+      :root[data-theme='dark'] {
         color-scheme: dark;
         --bg: #030712;
         --bg-2: #050a1a;
-        --surface: rgba(10, 18, 38, 0.62);
-        --surface-2: rgba(15, 23, 42, 0.55);
+        --surface: rgba(10, 18, 38, 0.72);
+        --surface-2: rgba(15, 23, 42, 0.6);
+        --surface-solid: #0b1328;
         --text: #f8fafc;
         --text-2: #cbd5e1;
         --muted: #94a3b8;
         --faint: #64748b;
-        --border: rgba(148, 163, 184, 0.18);
-        --border-2: rgba(148, 163, 184, 0.3);
-        --cyan: #00e5ff;
-        --cyan-2: #22d3ee;
-        --blue: #3b82f6;
-        --purple: #8b5cf6;
-        --violet: #a855f7;
-        --green: #10b981;
-        --amber: #fbbf24;
-        --rose: #fb7185;
+        --border: rgba(148, 163, 184, 0.14);
+        --border-2: rgba(148, 163, 184, 0.26);
+        --shadow: 0 18px 48px -24px rgba(0, 0, 0, 0.7);
+        --cyan: #22d3ee;
+        --cyan-2: #00e5ff;
         --grid: rgba(0, 229, 255, 0.04);
         --headline: #ffffff;
-      }
-      :root[data-theme='light'] {
-        color-scheme: light;
-        --bg: #eef2f8;
-        --bg-2: #e5ebf5;
-        --surface: rgba(255, 255, 255, 0.78);
-        --surface-2: rgba(255, 255, 255, 0.7);
-        --text: #0f172a;
-        --text-2: #334155;
-        --muted: #475569;
-        --faint: #64748b;
-        --border: rgba(15, 23, 42, 0.12);
-        --border-2: rgba(15, 23, 42, 0.2);
-        --cyan: #0891b2;
-        --cyan-2: #0e7490;
-        --grid: rgba(8, 145, 178, 0.07);
-        --headline: #0f172a;
+        --navy: #0b1730;
       }
 
       * {
@@ -87,9 +94,10 @@
         margin: 0;
         min-height: 100vh;
         background: var(--bg);
-        background-image: radial-gradient(900px 600px at 85% 20%, rgba(88, 28, 135, 0.28), transparent 65%),
-          radial-gradient(800px 500px at 10% 90%, rgba(8, 47, 73, 0.4), transparent 70%),
-          linear-gradient(180deg, var(--bg-2), var(--bg) 60%);
+        background-image: radial-gradient(900px 600px at 70% 10%, rgba(59, 130, 246, 0.12), transparent 65%),
+          radial-gradient(700px 500px at 100% 30%, rgba(139, 92, 246, 0.1), transparent 70%),
+          radial-gradient(800px 500px at 0% 100%, rgba(6, 182, 212, 0.12), transparent 70%),
+          linear-gradient(180deg, var(--bg-2), var(--bg) 70%);
         background-attachment: fixed;
         color: var(--text);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -97,20 +105,46 @@
         overflow-x: hidden;
         transition: background-color 0.3s ease, color 0.3s ease;
       }
-      :root[data-theme='light'] body {
-        background-image: radial-gradient(900px 600px at 85% 20%, rgba(139, 92, 246, 0.12), transparent 65%),
-          radial-gradient(800px 500px at 10% 90%, rgba(8, 145, 178, 0.1), transparent 70%),
+      :root[data-theme='dark'] body {
+        background-image: radial-gradient(900px 600px at 70% 15%, rgba(88, 28, 135, 0.28), transparent 65%),
+          radial-gradient(800px 500px at 10% 90%, rgba(8, 47, 73, 0.4), transparent 70%),
           linear-gradient(180deg, var(--bg-2), var(--bg) 60%);
       }
-
+      a {
+        color: inherit;
+      }
+      button {
+        font: inherit;
+      }
       .mono {
         font-family: 'JetBrains Mono', ui-monospace, monospace;
+      }
+      [hidden] {
+        display: none !important;
       }
 
       @keyframes rise {
         from {
           opacity: 0;
-          transform: translateY(16px);
+          transform: translateY(14px);
+        }
+      }
+      @keyframes float {
+        50% {
+          transform: translateY(-8px);
+        }
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
+        }
+        100% {
+          box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
         }
       }
 
@@ -131,104 +165,113 @@
         background-image: linear-gradient(var(--grid) 1px, transparent 1px),
           linear-gradient(90deg, var(--grid) 1px, transparent 1px);
         background-size: 48px 48px;
-        mask-image: radial-gradient(ellipse 80% 60% at 40% 30%, #000 25%, transparent 100%);
-        -webkit-mask-image: radial-gradient(ellipse 80% 60% at 40% 30%, #000 25%, transparent 100%);
+        mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 25%, transparent 100%);
+        -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 25%, transparent 100%);
+      }
+      /* the soft wave in the lower left corner */
+      .swoosh {
+        position: fixed;
+        left: -120px;
+        bottom: -140px;
+        width: 520px;
+        height: 360px;
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0.7;
       }
 
       .shell {
         position: relative;
         z-index: 1;
-        max-width: 1480px;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        min-height: 100svh;
+        max-width: 1760px;
         margin: 0 auto;
-        padding: 20px clamp(16px, 4vw, 44px) 28px;
+        padding: 0 clamp(16px, 3vw, 48px) 22px;
       }
 
       /* ------------------------------------------------------- top bar -- */
       .topbar {
         position: relative;
-        z-index: 10;
-        display: flex;
+        z-index: 20;
+        display: grid;
+        grid-template-columns: auto 1fr;
         align-items: center;
-        justify-content: space-between;
         gap: 16px;
-        flex-wrap: wrap;
+        height: 64px;
+        margin: 0 calc(-1 * clamp(16px, 3vw, 48px));
+        padding: 0 clamp(16px, 3vw, 48px);
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--surface-solid) 70%, transparent);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
       }
       .brand {
         display: flex;
         align-items: center;
         gap: 14px;
+        text-decoration: none;
       }
       .brand svg {
-        width: 42px;
-        height: 42px;
+        width: 36px;
+        height: 36px;
         flex-shrink: 0;
-        filter: drop-shadow(0 0 14px rgba(0, 229, 255, 0.55));
+        filter: drop-shadow(0 0 10px rgba(6, 182, 212, 0.45));
       }
       .brand__name {
         font-family: 'JetBrains Mono', ui-monospace, monospace;
-        font-size: 0.92rem;
+        font-size: 0.9rem;
         font-weight: 600;
-        letter-spacing: 0.26em;
+        letter-spacing: 0.32em;
         text-transform: uppercase;
         white-space: nowrap;
       }
+
       .top-right {
         display: flex;
         align-items: center;
-        gap: 18px;
+        justify-content: flex-end;
+        gap: 14px;
       }
-
-      /* The signed-in account and the one sign-out for every platform. */
       .account {
         position: relative;
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 6px 8px 6px 7px;
+        padding: 5px 8px 5px 6px;
         border: 1px solid var(--border-2);
         border-radius: 999px;
-        background: var(--surface-2);
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
-      }
-      .account[hidden] {
-        display: none;
+        background: var(--surface);
       }
       .account__who {
         display: inline-flex;
         align-items: center;
         gap: 10px;
-        padding: 0 10px 0 0;
+        padding: 0 12px 0 0;
         border: 0;
         border-right: 1px solid var(--border-2);
         background: transparent;
         color: var(--text);
-        font: inherit;
-        font-size: 0.86rem;
+        font-size: 0.84rem;
         font-weight: 500;
         cursor: pointer;
-      }
-      .account__who:focus-visible,
-      .signout:focus-visible {
-        outline: 2px solid var(--cyan);
-        outline-offset: 3px;
-        border-radius: 999px;
       }
       .account__avatar {
         display: grid;
         place-items: center;
-        width: 34px;
-        height: 34px;
+        width: 32px;
+        height: 32px;
         border-radius: 50%;
-        background: linear-gradient(135deg, var(--cyan), var(--blue) 60%, var(--purple));
-        color: #03111f;
-        font-weight: 800;
-        font-size: 0.74rem;
+        background: linear-gradient(135deg, var(--blue), #1d4ed8);
+        color: #fff;
+        font-weight: 700;
+        font-size: 0.72rem;
         text-transform: uppercase;
-        box-shadow: 0 0 18px -4px rgba(0, 229, 255, 0.7);
       }
       .account__email {
-        max-width: 16rem;
+        max-width: 15rem;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -246,48 +289,47 @@
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        height: 34px;
+        height: 32px;
         padding: 0 10px 0 8px;
         border: 0;
         border-radius: 999px;
         background: transparent;
         color: var(--text-2);
-        font: inherit;
-        font-size: 0.86rem;
+        font-size: 0.84rem;
         font-weight: 500;
         cursor: pointer;
         transition: color 0.2s, background 0.2s;
       }
       .signout:hover {
         color: var(--text);
-        background: rgba(251, 113, 133, 0.1);
+        background: rgba(244, 63, 94, 0.1);
       }
       .signout svg {
         width: 17px;
         height: 17px;
       }
+      .account__who:focus-visible,
+      .signout:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 3px;
+        border-radius: 999px;
+      }
+
+      /* drop-down panels: the account menu and Settings */
       .menu {
         position: absolute;
         top: calc(100% + 10px);
         right: 0;
-        z-index: 20;
-        min-width: 260px;
+        z-index: 30;
+        min-width: 270px;
         padding: 14px;
         border: 1px solid var(--border-2);
         border-radius: 16px;
-        background: rgba(8, 13, 30, 0.97);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+        background: var(--surface-solid);
+        box-shadow: 0 24px 60px -24px rgba(15, 23, 42, 0.35);
         font-size: 0.84rem;
         color: var(--muted);
-      }
-      :root[data-theme='light'] .menu {
-        background: rgba(255, 255, 255, 0.98);
-        box-shadow: 0 24px 60px -24px rgba(15, 23, 42, 0.35);
-      }
-      .menu[hidden] {
-        display: none;
+        animation: rise 0.25s ease both;
       }
       .menu strong {
         display: block;
@@ -300,52 +342,50 @@
         margin: 12px 0 0;
         padding-top: 12px;
         border-top: 1px solid var(--border);
+        line-height: 1.5;
       }
-
-      /* A switch between the sun and the moon; presentation only. */
       .theme {
         display: inline-flex;
         align-items: center;
         gap: 10px;
-        padding: 9px 14px;
+        padding: 8px 13px;
         border: 1px solid var(--border-2);
         border-radius: 999px;
-        background: var(--surface-2);
+        background: var(--surface);
         color: var(--text-2);
       }
       .theme > svg {
-        width: 18px;
-        height: 18px;
+        width: 17px;
+        height: 17px;
       }
       .switch {
         position: relative;
-        width: 44px;
-        height: 24px;
+        width: 42px;
+        height: 22px;
         padding: 0;
         border: 0;
         border-radius: 999px;
-        background: linear-gradient(90deg, var(--cyan-2), var(--blue));
-        box-shadow: 0 0 16px -3px rgba(0, 229, 255, 0.7);
+        background: linear-gradient(90deg, var(--cyan), #34d399);
+        box-shadow: 0 0 14px -3px rgba(6, 182, 212, 0.7);
         cursor: pointer;
       }
       .switch::after {
         content: '';
         position: absolute;
         top: 3px;
-        left: 23px;
-        width: 18px;
-        height: 18px;
+        left: 3px;
+        width: 16px;
+        height: 16px;
         border-radius: 50%;
-        background: #ffffff;
+        background: #fff;
         box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
         transition: left 0.22s ease;
       }
-      .switch[aria-checked='false']::after {
-        left: 3px;
+      .switch[aria-checked='true']::after {
+        left: 23px;
       }
-      .switch[aria-checked='false'] {
-        background: rgba(148, 163, 184, 0.45);
-        box-shadow: none;
+      .switch[aria-checked='true'] {
+        background: linear-gradient(90deg, #3b82f6, var(--purple));
       }
       .switch:focus-visible {
         outline: 2px solid var(--cyan);
@@ -356,10 +396,11 @@
       .hero {
         position: relative;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-columns: minmax(0, 600px) minmax(0, 1fr);
         align-items: center;
         gap: 24px;
-        min-height: 350px;
+        flex: 1 0 auto;
+        padding: clamp(8px, 2vh, 28px) 0 clamp(18px, 2.6vh, 40px);
       }
       .hero__text {
         position: relative;
@@ -370,34 +411,16 @@
         display: inline-flex;
         align-items: center;
         gap: 10px;
-        position: relative;
-        padding: 8px 16px;
-        border: 1px solid rgba(0, 229, 255, 0.3);
+        padding: 7px 14px;
+        border: 1px solid var(--border-2);
         border-radius: 999px;
-        background: rgba(0, 229, 255, 0.05);
+        background: var(--surface);
         font-family: 'JetBrains Mono', ui-monospace, monospace;
-        font-size: 0.8rem;
+        font-size: 0.72rem;
         font-weight: 600;
-        letter-spacing: 0.2em;
+        letter-spacing: 0.16em;
         text-transform: uppercase;
         color: var(--text);
-      }
-      /* the thin lines running off either side of the pill */
-      .eyebrow::before,
-      .eyebrow::after {
-        content: '';
-        position: absolute;
-        top: 50%;
-        width: 34px;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.55));
-      }
-      .eyebrow::before {
-        right: 100%;
-      }
-      .eyebrow::after {
-        left: 100%;
-        transform: scaleX(-1);
       }
       .eyebrow i {
         width: 8px;
@@ -407,174 +430,294 @@
         box-shadow: 0 0 10px var(--green);
       }
       .hero h1 {
-        margin: 22px 0 0;
-        font-size: clamp(2.6rem, 5.4vw, 4.9rem);
-        line-height: 1.02;
+        margin: 20px 0 0;
+        font-size: clamp(2.4rem, min(3.6vw, 6.8vh), 4.4rem);
+        line-height: 1.04;
         font-weight: 900;
-        letter-spacing: -0.04em;
+        letter-spacing: -0.045em;
         color: var(--headline);
       }
       .hero h1 em {
         font-style: normal;
-        background: linear-gradient(95deg, var(--cyan) 0%, #22d3ee 25%, var(--blue) 55%, var(--purple) 80%, var(--violet) 100%);
+        background: linear-gradient(95deg, #06b6d4 0%, #0ea5e9 30%, #3b82f6 58%, #8b5cf6 82%, #a855f7 100%);
         -webkit-background-clip: text;
         background-clip: text;
         color: transparent;
-        filter: drop-shadow(0 0 24px rgba(0, 229, 255, 0.25));
       }
       .hero p {
-        margin: 26px 0 0;
-        max-width: 600px;
-        font-size: clamp(1rem, 1.2vw, 1.14rem);
+        margin: 18px 0 0;
+        max-width: 480px;
+        font-size: clamp(0.94rem, 0.95vw, 1.02rem);
         line-height: 1.6;
         color: var(--text-2);
+      }
+      .motto {
+        margin-top: 22px;
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.3em;
+        color: var(--cyan-2);
+      }
+      .motto b {
+        margin: 0 0.9em;
+        color: var(--faint);
+        font-weight: 400;
       }
 
       /* --------------------------------------------------------- globe -- */
       .globe {
         position: relative;
-        justify-self: center;
-        width: min(520px, 40vw);
-        aspect-ratio: 1.12;
-        margin-top: -34px;
-        pointer-events: none;
+        justify-self: end;
+        width: clamp(340px, min(46vw, 70vh), 760px);
+        aspect-ratio: 1.8;
+        margin: -28px -12px -28px 0;
+        cursor: grab;
+        touch-action: pan-y;
+        user-select: none;
+      }
+      .globe.dragging {
+        cursor: grabbing;
       }
       .globe canvas {
         width: 100%;
         height: 100%;
         display: block;
       }
-      .tile {
+      .globe__hint {
         position: absolute;
-        display: grid;
-        place-items: center;
-        width: 62px;
-        height: 62px;
-        border-radius: 15px;
-        color: var(--cyan);
-        background: linear-gradient(135deg, rgba(0, 229, 255, 0.18), rgba(15, 23, 42, 0.7));
-        border: 1.5px solid rgba(0, 229, 255, 0.55);
-        box-shadow: 0 0 30px -4px rgba(0, 229, 255, 0.55), inset 0 0 18px -6px rgba(0, 229, 255, 0.8);
-        animation: float 7s ease-in-out infinite;
-      }
-      .tile svg {
-        width: 30px;
-        height: 30px;
-        filter: drop-shadow(0 0 6px currentColor);
-      }
-      .tile--purple {
-        color: #c4b5fd;
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(15, 23, 42, 0.7));
-        border-color: rgba(167, 139, 250, 0.6);
-        box-shadow: 0 0 30px -4px rgba(139, 92, 246, 0.6), inset 0 0 18px -6px rgba(167, 139, 250, 0.8);
-      }
-      .tile--layers {
-        top: 13%;
-        left: 17%;
-      }
-      .tile--db {
-        top: 52%;
-        left: 11%;
-        animation-delay: -2.5s;
-      }
-      .tile--chart {
-        top: 22%;
-        right: 12%;
-        animation-delay: -1.5s;
-      }
-      .tile--chip {
-        top: 57%;
-        right: 7%;
-        animation-delay: -4s;
-      }
-      @keyframes float {
-        50% {
-          transform: translateY(-10px);
-        }
-      }
-      .motto {
-        position: absolute;
-        right: 0;
-        bottom: 6%;
-        z-index: 2;
+        left: 50%;
+        bottom: 2px;
+        transform: translateX(-50%);
         display: inline-flex;
         align-items: center;
-        gap: 12px;
-        padding: 9px 10px 9px 18px;
-        border: 1px solid var(--border-2);
+        gap: 8px;
+        padding: 5px 12px;
+        border: 1px solid var(--border);
         border-radius: 999px;
-        background: var(--surface-2);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        font-size: 0.86rem;
+        background: color-mix(in srgb, var(--surface-solid) 80%, transparent);
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.64rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--muted);
+        pointer-events: none;
+        white-space: nowrap;
+        transition: color 0.3s, border-color 0.3s;
+      }
+      .globe__hint i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--green);
+        animation: pulse 1.8s ease-out infinite;
+      }
+      .globe:hover .globe__hint {
         color: var(--text-2);
+        border-color: var(--border-2);
       }
-      .motto b {
-        color: var(--faint);
-        font-weight: 400;
+      /* a node around the globe: an icon tile and its caption */
+      .node {
+        position: absolute;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: inherit;
+        text-decoration: none;
+        cursor: pointer;
+        /* drifts with the mouse (set from the globe script), on top of the float */
+        translate: calc(var(--px, 0) * 1px) calc(var(--py, 0) * 1px);
+        transition: translate 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        animation: float 7s ease-in-out infinite;
       }
-      .motto span.go {
+      .node:focus-visible {
+        outline: none;
+      }
+      .node:focus-visible .tile,
+      .node:hover .tile {
+        scale: 1.12;
+      }
+      .node:focus-visible .node__label,
+      .node:hover .node__label {
+        border-color: color-mix(in srgb, var(--cyan) 55%, transparent);
+        box-shadow: 0 14px 30px -14px rgba(6, 182, 212, 0.6), 0 0 0 3px rgba(6, 182, 212, 0.12);
+        transform: translateY(-2px);
+      }
+      .node__label {
+        transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+      }
+      .node__label b::after {
+        content: ' \2197';
+        opacity: 0;
+        color: var(--cyan-2);
+        transition: opacity 0.2s;
+      }
+      .node:hover .node__label b::after,
+      .node:focus-visible .node__label b::after {
+        opacity: 1;
+      }
+      .node__label--dark b::after {
+        color: #67e8f9;
+      }
+      .node--infra {
+        top: 10%;
+        left: 2%;
+      }
+      .node--analytics {
+        top: 2%;
+        right: 2%;
+        animation-delay: -1.5s;
+      }
+      .node--knowledge {
+        top: 64%;
+        left: 0;
+        animation-delay: -2.5s;
+      }
+      .node--auto {
+        top: 62%;
+        right: 0;
+        animation-delay: -4s;
+      }
+      .node--analytics,
+      .node--knowledge {
+        flex-direction: row;
+      }
+      .node--knowledge .node__label {
+        order: -1;
+      }
+      .tile {
         display: grid;
         place-items: center;
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        border: 1px solid var(--border-2);
-        color: var(--cyan);
+        width: 50px;
+        height: 50px;
+        flex: none;
+        border-radius: 14px;
+        color: #fff;
+        background: linear-gradient(135deg, #22d3ee, #0284c7);
+        box-shadow: 0 12px 26px -10px rgba(2, 132, 199, 0.75), 0 0 0 5px rgba(255, 255, 255, 0.55);
+        transition: scale 0.25s ease, box-shadow 0.25s ease;
       }
-      .motto svg {
-        width: 14px;
-        height: 14px;
+      .tile--purple {
+        background: linear-gradient(135deg, #a78bfa, #6d28d9);
+        box-shadow: 0 12px 26px -10px rgba(109, 40, 217, 0.75), 0 0 0 5px rgba(255, 255, 255, 0.55);
+      }
+      .tile--soft {
+        color: var(--cyan-2);
+        background: #fff;
+        box-shadow: 0 12px 26px -12px rgba(2, 132, 199, 0.5), 0 0 0 1px rgba(6, 182, 212, 0.25);
+      }
+      :root[data-theme='dark'] .tile--soft {
+        background: #0b1730;
+      }
+      :root[data-theme='dark'] .tile,
+      :root[data-theme='dark'] .tile--purple {
+        box-shadow: 0 0 26px -4px rgba(34, 211, 238, 0.6), 0 0 0 4px rgba(255, 255, 255, 0.06);
+      }
+      .tile:hover {
+        scale: 1.1;
+      }
+      .tile svg {
+        width: 24px;
+        height: 24px;
+      }
+      .node__label {
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--surface-solid);
+        box-shadow: 0 10px 24px -16px rgba(15, 23, 42, 0.4);
+        line-height: 1.3;
+        white-space: nowrap;
+      }
+      .node__label b {
+        display: block;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .node__label span {
+        font-size: 0.68rem;
+        color: var(--muted);
+      }
+      .node__label--dark {
+        border-color: transparent;
+        background: var(--navy);
+      }
+      .node__label--dark b {
+        color: #fff;
+      }
+      .node__label--dark span {
+        color: #c7d2fe;
       }
 
+      /* -------------------------------------------------- status panel -- */
+      .dot {
+        flex: none;
+        width: 9px;
+        height: 9px;
+        margin-top: 4px;
+        border-radius: 50%;
+        background: var(--faint);
+      }
+      .dot[data-state='up'] {
+        background: var(--green);
+        animation: pulse 1.8s ease-out infinite;
+      }
+      .dot[data-state='starting'],
+      .dot[data-state='checking'] {
+        background: var(--amber);
+        animation: blink 1.1s ease-in-out infinite;
+      }
+      .dot[data-state='down'] {
+        background: var(--rose);
+      }
       /* --------------------------------------------------------- cards -- */
       .grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 22px;
-        margin-top: 0;
+        margin-top: 4px;
+        scroll-margin-top: 80px;
       }
       .card {
         --a: var(--cyan);
         --b: #0ea5e9;
-        --glow: rgba(0, 229, 255, 0.55);
+        --glow: rgba(6, 182, 212, 0.45);
         position: relative;
         display: flex;
         flex-direction: column;
-        padding: 24px 32px 26px 38px;
-        border-radius: 22px;
-        border: 1.5px solid color-mix(in srgb, var(--a) 70%, transparent);
-        background: radial-gradient(120% 90% at 100% 100%, color-mix(in srgb, var(--a) 16%, transparent), transparent 60%),
-          linear-gradient(135deg, color-mix(in srgb, var(--b) 12%, transparent), rgba(3, 7, 18, 0.2)), var(--surface);
-        box-shadow: 0 0 40px -14px var(--glow), inset 0 0 50px -30px var(--glow);
+        min-height: 0;
+        padding: 18px 24px 20px;
+        border-radius: 18px;
+        border: 1.5px solid color-mix(in srgb, var(--a) 45%, transparent);
+        background: radial-gradient(90% 90% at 100% 100%, color-mix(in srgb, var(--a) 14%, transparent), transparent 62%),
+          linear-gradient(160deg, var(--surface-solid), color-mix(in srgb, var(--a) 5%, var(--surface-solid)));
+        box-shadow: 0 22px 50px -30px var(--glow), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
         color: inherit;
         text-decoration: none;
-        overflow: hidden;
         isolation: isolate;
-        backdrop-filter: blur(18px);
-        -webkit-backdrop-filter: blur(18px);
-        transition: transform 0.25s ease, box-shadow 0.25s ease;
+        transition: transform 0.18s ease-out, box-shadow 0.25s ease, border-color 0.25s ease;
         animation: rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
       }
-      :root[data-theme='light'] .card {
-        background: radial-gradient(120% 90% at 100% 100%, color-mix(in srgb, var(--a) 12%, transparent), transparent 60%),
-          linear-gradient(135deg, color-mix(in srgb, var(--b) 8%, #ffffff), rgba(255, 255, 255, 0.85));
-        box-shadow: 0 18px 40px -26px var(--glow), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
-      }
-      :root[data-theme='light'] .go-btn {
-        background: rgba(255, 255, 255, 0.85);
-        color: var(--text);
-      }
-      :root[data-theme='light'] .tags li {
-        background: rgba(255, 255, 255, 0.7);
+      :root[data-theme='dark'] .card {
+        background: radial-gradient(90% 90% at 100% 100%, color-mix(in srgb, var(--a) 16%, transparent), transparent 62%),
+          linear-gradient(160deg, rgba(10, 18, 38, 0.85), rgba(10, 18, 38, 0.65));
+        box-shadow: 0 0 40px -16px var(--glow), inset 0 0 50px -30px var(--glow);
       }
       .card--vault {
         --a: var(--purple);
         --b: #6366f1;
-        --glow: rgba(139, 92, 246, 0.6);
+        --glow: rgba(124, 58, 237, 0.45);
         animation-delay: 0.08s;
       }
-      /* the bright light along the top edge */
+      .card--academia {
+        --a: var(--green);
+        --b: #10b981;
+        --glow: rgba(16, 185, 129, 0.45);
+        animation-delay: 0.16s;
+      }
+      /* the light along the top edge */
       .card::before {
         content: '';
         position: absolute;
@@ -583,236 +726,635 @@
         right: 12%;
         height: 2px;
         background: linear-gradient(90deg, transparent, var(--a), transparent);
-        filter: blur(1px);
+      }
+      /* a soft light that follows the cursor */
+      .card::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        border-radius: inherit;
+        background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--a) 18%, transparent), transparent 65%);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+      }
+      .card:hover::after {
+        opacity: 1;
       }
       .card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 20px 60px -20px var(--glow), 0 0 50px -12px var(--glow), inset 0 0 50px -30px var(--glow);
+        border-color: var(--a);
+        transform: perspective(1000px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-4px);
+        box-shadow: 0 30px 60px -28px var(--glow), 0 0 0 4px color-mix(in srgb, var(--a) 12%, transparent);
       }
       .card:focus-visible {
         outline: 2px solid var(--a);
         outline-offset: 4px;
       }
-      /* the flowing lines in the lower right */
-      .card .waves {
-        position: absolute;
-        right: -40px;
-        bottom: -30px;
-        width: 70%;
-        height: 80%;
-        z-index: -1;
-        opacity: 0.55;
-        color: var(--a);
+      .card__body {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        max-width: 58%;
       }
       .card__top {
         display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
       }
       .card__icon {
         display: grid;
         place-items: center;
-        width: 58px;
-        height: 58px;
-        border-radius: 14px;
-        color: #03111f;
-        background: linear-gradient(135deg, var(--cyan), #22d3ee);
-        box-shadow: 0 0 30px -4px var(--glow);
+        width: 46px;
+        height: 46px;
+        flex: none;
+        border-radius: 12px;
+        color: #04263a;
+        background: linear-gradient(135deg, #67e8f9, #06b6d4);
+        box-shadow: 0 10px 24px -10px var(--glow);
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
       }
       .card--vault .card__icon {
-        color: #1e1033;
-        background: linear-gradient(135deg, #c084fc, var(--purple));
-      }
-      .card--academia {
-        --a: #34d399;
-        --b: #10b981;
-        --glow: rgba(16, 185, 129, 0.55);
-        animation-delay: 0.16s;
+        color: #fff;
+        background: linear-gradient(135deg, #c084fc, #7c3aed);
       }
       .card--academia .card__icon {
-        color: #022c22;
-        background: linear-gradient(135deg, #6ee7b7, #10b981);
+        color: #fff;
+        background: linear-gradient(135deg, #6ee7b7, #059669);
+      }
+      .card:hover .card__icon {
+        transform: rotate(-6deg) scale(1.06);
       }
       .card__icon svg {
-        width: 32px;
-        height: 32px;
+        width: 28px;
+        height: 28px;
       }
       .status {
         display: inline-flex;
         align-items: center;
-        gap: 10px;
-        margin-top: 4px;
-        padding: 6px 14px;
+        gap: 8px;
+        margin-left: auto;
+        padding: 5px 12px;
         border-radius: 999px;
-        background: rgba(3, 7, 18, 0.35);
+        border: 1px solid var(--border);
+        background: var(--surface-solid);
         font-family: 'JetBrains Mono', ui-monospace, monospace;
-        font-size: 0.72rem;
+        font-size: 0.68rem;
         font-weight: 600;
-        letter-spacing: 0.2em;
+        letter-spacing: 0.16em;
         text-transform: uppercase;
         color: var(--text);
-      }
-      :root[data-theme='light'] .status {
-        background: rgba(255, 255, 255, 0.6);
+        white-space: nowrap;
       }
       .status i {
-        width: 8px;
-        height: 8px;
+        width: 7px;
+        height: 7px;
         border-radius: 50%;
         background: var(--faint);
       }
       .status[data-state='up'] i {
         background: var(--green);
-        box-shadow: 0 0 10px var(--green);
+        box-shadow: 0 0 8px var(--green);
       }
-      .status[data-state='starting'] i {
+      .status[data-state='starting'] i,
+      .status[data-state='checking'] i {
         background: var(--amber);
-        box-shadow: 0 0 10px var(--amber);
         animation: blink 1.1s ease-in-out infinite;
       }
-      .status[data-state='down'] i {
+      .status[data-state='down'] i,
+      .status[data-state='api'] i {
         background: var(--rose);
       }
-      .status[data-state='checking'] i {
-        animation: blink 1.1s ease-in-out infinite;
-      }
-      @keyframes blink {
-        50% {
-          opacity: 0.35;
-        }
+      .status[data-state='signin'] i {
+        background: var(--amber);
       }
       .card h2 {
-        margin: 16px 0 0;
-        font-size: clamp(1.7rem, 2.3vw, 2.2rem);
+        margin: 12px 0 0;
+        font-size: clamp(1.3rem, 1.4vw, 1.6rem);
         font-weight: 800;
         letter-spacing: -0.025em;
       }
       .card p {
-        margin: 12px 0 0;
-        max-width: 560px;
-        font-size: 1rem;
-        line-height: 1.5;
+        margin: 6px 0 0;
+        font-size: 0.84rem;
+        line-height: 1.45;
         color: var(--text-2);
-      }
-      .card__foot {
-        display: flex;
-        align-items: flex-end;
-        justify-content: space-between;
-        gap: 16px;
-        margin-top: auto;
-        padding-top: 14px;
       }
       .tags {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
-        margin: 0;
+        gap: 8px;
+        margin: 12px 0 0;
         padding: 0;
         list-style: none;
       }
       .tags li {
-        padding: 6px 13px;
+        padding: 4px 11px;
         border-radius: 999px;
         border: 1px solid var(--border-2);
-        background: rgba(148, 163, 184, 0.06);
-        font-family: 'JetBrains Mono', ui-monospace, monospace;
-        font-size: 0.72rem;
+        background: var(--surface-solid);
+        font-size: 0.68rem;
         font-weight: 600;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
         color: var(--text-2);
+        transition: border-color 0.2s, color 0.2s;
       }
-      .go-btn {
-        flex: none;
+      .card:hover .tags li {
+        border-color: color-mix(in srgb, var(--a) 45%, transparent);
+        color: var(--text);
+      }
+      .open {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        align-self: flex-start;
+        margin-top: auto;
+        padding: 9px 20px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #1d4ed8, #2563eb 55%, #06b6d4);
+        color: #fff;
+        font-size: 0.86rem;
+        font-weight: 600;
+        box-shadow: 0 12px 24px -12px rgba(37, 99, 235, 0.8);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .card--vault .open {
+        background: linear-gradient(90deg, #7c3aed, #a855f7);
+        box-shadow: 0 12px 24px -12px rgba(124, 58, 237, 0.8);
+      }
+      .card--academia .open {
+        background: linear-gradient(90deg, #059669, #10b981);
+        box-shadow: 0 12px 24px -12px rgba(5, 150, 105, 0.8);
+      }
+      .open svg {
+        width: 18px;
+        height: 18px;
+        transition: transform 0.2s ease;
+      }
+      .card:hover .open svg {
+        transform: translateX(4px);
+      }
+      .tags + .open {
+        margin-top: 16px;
+      }
+      .card__spacer {
+        flex: 1;
+        min-height: 14px;
+      }
+      /* the live numbers in each card's corner */
+      .facts {
+        position: absolute;
+        top: 16px;
+        right: 64px;
+        z-index: 3;
+        margin: 0;
+        padding: 10px 14px;
+        list-style: none;
+        border-radius: 12px;
+        border: 1px solid color-mix(in srgb, var(--a) 20%, transparent);
+        background: color-mix(in srgb, var(--a) 8%, var(--surface-solid));
+        font-size: 0.72rem;
+        color: var(--text-2);
+      }
+      .facts li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 0;
+        white-space: nowrap;
+      }
+      .facts li svg {
+        width: 14px;
+        height: 14px;
+        color: var(--a);
+      }
+      .facts b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .facts--dark {
+        top: -30px;
+        right: 22px;
+        padding: 12px 18px;
+        border: 0;
+        background: var(--navy);
+        color: #dbeafe;
+        font-size: 0.78rem;
+        box-shadow: 0 18px 30px -16px rgba(15, 29, 68, 0.8);
+      }
+      .facts--dark b {
+        color: #fff;
+      }
+      .facts--dark li svg {
+        color: #93c5fd;
+      }
+      .corner {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        z-index: 3;
         display: grid;
         place-items: center;
-        width: 58px;
-        height: 58px;
-        margin-bottom: 0;
+        width: 34px;
+        height: 34px;
         border-radius: 50%;
-        border: 1.5px solid color-mix(in srgb, var(--a) 70%, transparent);
-        background: rgba(3, 7, 18, 0.35);
+        border: 1px solid var(--border-2);
+        background: var(--surface-solid);
+        color: var(--a);
+        transition: transform 0.2s ease;
+      }
+      .corner svg {
+        width: 15px;
+        height: 15px;
+      }
+      .card:hover .corner {
+        transform: translate(2px, -2px);
+      }
+
+      /* --------------------------------------------------- illustrations -- */
+      .art {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        z-index: 1;
+        width: 50%;
+        height: 86%;
+        pointer-events: none;
+        transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      :root[data-theme='dark'] .cap polygon {
+        fill: #e2e8f0;
+      }
+      :root[data-theme='dark'] .cap path:first-of-type {
+        fill: #94a3b8;
+      }
+      .card:hover .art {
+        transform: translateY(-6px) scale(1.02);
+      }
+      .art svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+
+      /* ---------------------------------------------------------- dock -- */
+      .dock {
+        display: grid;
+        grid-template-columns: 250px auto minmax(280px, 1.3fr) minmax(220px, 1fr) 210px;
+        align-items: center;
+        gap: 22px;
+        margin-top: 18px;
+        padding: 12px 16px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--surface);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        box-shadow: var(--shadow);
+        animation: rise 0.8s 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .dock__box {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface-solid);
+      }
+      .dock__box .dot {
+        width: 16px;
+        height: 16px;
+        margin: 0;
+      }
+      .dock__box b {
+        display: block;
+        font-size: 0.84rem;
+        font-weight: 600;
+      }
+      .dock__box small {
+        display: block;
+        margin-top: 3px;
+        font-size: 0.74rem;
+        color: var(--muted);
+      }
+      .dock h4 {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        font-size: 0.8rem;
+        font-weight: 600;
         color: var(--text);
-        box-shadow: 0 0 24px -6px var(--glow);
-        transition: transform 0.25s ease, background 0.25s ease;
       }
-      .go-btn svg {
-        width: 24px;
-        height: 24px;
+      .dock h4 svg {
+        width: 16px;
+        height: 16px;
+        color: var(--blue);
       }
-      .card:hover .go-btn {
-        transform: translateX(4px);
-        background: color-mix(in srgb, var(--a) 22%, transparent);
+      .quick {
+        padding-right: 22px;
+        border-right: 1px solid var(--border);
+      }
+      .quick__head {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+      .quick__hint {
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+      .quick__hint u {
+        text-decoration-color: var(--faint);
+      }
+      kbd {
+        display: inline-grid;
+        place-items: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 4px;
+        border: 1px solid var(--border-2);
+        border-radius: 5px;
+        background: var(--surface-solid);
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.66rem;
+        color: var(--text-2);
+      }
+      .quick__keys {
+        display: flex;
+        gap: 12px;
+        margin-top: 10px;
+      }
+      .quick__keys a {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 1.5px solid color-mix(in srgb, var(--k) 45%, transparent);
+        background: var(--surface-solid);
+        color: var(--k);
+        font-weight: 600;
+        font-size: 0.86rem;
+        text-decoration: none;
+        transition: background 0.2s, color 0.2s, transform 0.2s;
+      }
+      .quick__keys a:hover {
+        background: var(--k);
+        color: #fff;
+        transform: translateY(-2px);
+      }
+      .activity {
+        padding-right: 22px;
+        border-right: 1px solid var(--border);
+      }
+      .activity ul {
+        margin: 8px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .activity li {
+        display: grid;
+        grid-template-columns: 16px 90px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 3px 0;
+        font-size: 0.74rem;
+        color: var(--muted);
+      }
+      .activity li svg {
+        width: 14px;
+        height: 14px;
+      }
+      .activity li b {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .activity li span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .activity li time {
+        color: var(--faint);
+        white-space: nowrap;
+      }
+      .activity .empty {
+        display: block;
+        color: var(--faint);
+      }
+      .search {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        height: 46px;
+        padding: 0 14px;
+        border: 1px solid var(--border-2);
+        border-radius: 14px;
+        background: var(--surface-solid);
+        color: var(--muted);
+        font-size: 0.84rem;
+        text-align: left;
+        cursor: text;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+      .search:hover,
+      .search:focus-visible {
+        outline: none;
+        border-color: var(--blue);
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+      }
+      .search svg {
+        width: 18px;
+        height: 18px;
+        flex: none;
+      }
+      .search span {
+        flex: 1;
+      }
+      .search kbd {
+        height: 22px;
+        padding: 0 8px;
+      }
+      .shield {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface-solid);
+        font-size: 0.8rem;
+        line-height: 1.4;
+        color: var(--text-2);
+      }
+      .shield svg {
+        width: 30px;
+        height: 30px;
+        flex: none;
+      }
+
+      /* -------------------------------------------------------- palette -- */
+      .palette {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: grid;
+        place-items: start center;
+        padding: 12vh 16px 16px;
+        background: rgba(15, 23, 42, 0.35);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+      }
+      .palette__box {
+        width: min(620px, 100%);
+        overflow: hidden;
+        border: 1px solid var(--border-2);
+        border-radius: 18px;
+        background: var(--surface-solid);
+        box-shadow: 0 40px 90px -30px rgba(15, 23, 42, 0.55);
+        animation: rise 0.2s ease both;
+      }
+      .palette__input {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .palette__input svg {
+        width: 20px;
+        height: 20px;
+      }
+      .palette input {
+        flex: 1;
+        height: 58px;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 1rem;
+      }
+      .palette ul {
+        max-height: 52vh;
+        margin: 0;
+        padding: 8px;
+        overflow: auto;
+        list-style: none;
+      }
+      .palette li a {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        color: var(--text);
+        text-decoration: none;
+        font-size: 0.9rem;
+      }
+      .palette li a small {
+        margin-left: auto;
+        color: var(--faint);
+        font-size: 0.74rem;
+        white-space: nowrap;
+      }
+      .palette li a i {
+        width: 8px;
+        height: 8px;
+        flex: none;
+        border-radius: 50%;
+        background: var(--k, var(--blue));
+      }
+      .palette li a[aria-selected='true'],
+      .palette li a:hover {
+        background: rgba(37, 99, 235, 0.09);
+      }
+      .palette__empty {
+        padding: 18px;
+        color: var(--muted);
+        font-size: 0.88rem;
       }
 
       /* ---------------------------------------------------- responsive -- */
-      /* Three across gets tight below this; stack them rather than orphan one. */
+      /* Narrower than the mockup's width: keep the bar on one line and the
+         Ready pill clear of the live numbers in the card corner. */
+      @media (max-width: 1640px) {
+        .card .status {
+          margin-left: 0;
+        }
+      }
+      @media (max-width: 1560px) {
+        .signout span {
+          display: none;
+        }
+      }
+      @media (max-width: 1320px) {
+        .account__email {
+          display: none;
+        }
+      }
+      @media (max-width: 1440px) {
+        .node__label {
+          display: none;
+        }
+        .dock {
+          grid-template-columns: 240px auto minmax(260px, 1fr) minmax(200px, 1fr);
+        }
+        .shield {
+          display: none;
+        }
+      }
       @media (max-width: 1240px) {
         .grid {
           grid-template-columns: minmax(0, 1fr);
         }
-      }
-      @media (max-width: 1100px) {
-        .globe {
-          width: min(460px, 44vw);
-          margin-top: 0;
+        .card__body {
+          max-width: 62%;
         }
-        .tile {
-          width: 52px;
-          height: 52px;
+        .dock {
+          grid-template-columns: 1fr 1fr;
         }
-        .tile svg {
-          width: 24px;
-          height: 24px;
-        }
-        .motto {
-          display: none;
+        .quick,
+        .activity {
+          border-right: 0;
+          padding-right: 0;
         }
       }
       @media (max-width: 860px) {
-        .topbar,
-        .hero {
-          padding-left: 0;
-        }
         .hero {
           grid-template-columns: minmax(0, 1fr);
-          min-height: 0;
-          padding-top: 28px;
         }
         .globe {
           order: -1;
-          width: min(360px, 82vw);
-          margin: 0 auto -30px;
+          justify-self: center;
+          margin-right: 0;
+          width: min(440px, 94vw);
         }
-        .grid {
+        .dock {
           grid-template-columns: minmax(0, 1fr);
         }
-      }
-      @media (max-width: 560px) {
-        .top-right {
-          gap: 10px;
-        }
-        .account__email,
-        .signout span,
-        .theme > svg {
+        .facts {
           display: none;
         }
-        .theme {
-          padding: 8px 10px;
+      }
+      @media (max-width: 600px) {
+        .account__email,
+        .signout span,
+        .theme > svg,
+        .brand__name {
+          display: none;
         }
-        .account__who {
-          padding-right: 6px;
+        .card__body {
+          max-width: 100%;
         }
-        .card {
-          padding: 22px 20px 22px;
-        }
-        .go-btn {
-          width: 48px;
-          height: 48px;
-          margin-bottom: 0;
-        }
-        .eyebrow::before,
-        .eyebrow::after {
+        .art {
           display: none;
         }
       }
@@ -831,55 +1373,58 @@
   <body>
     <canvas id="sky" aria-hidden="true"></canvas>
     <div class="grid-bg" aria-hidden="true"></div>
+    <svg class="swoosh" viewBox="0 0 520 360" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="swooshA" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stop-color="#22d3ee" stop-opacity=".55" />
+          <stop offset=".6" stop-color="#3b82f6" stop-opacity=".35" />
+          <stop offset="1" stop-color="#a855f7" stop-opacity="0" />
+        </linearGradient>
+      </defs>
+      <path d="M0 360V150c80 30 140 120 260 110s170-90 260-60v160Z" fill="url(#swooshA)" />
+      <path d="M0 360V230c90 10 160 70 270 60s150-70 250-40v110Z" fill="url(#swooshA)" opacity=".7" />
+    </svg>
 
     <main class="shell">
       <!-- -------------------------------------------------------- top bar -->
       <header class="topbar">
-        <span class="brand">
+        <a class="brand" href="/" aria-label="Apex home">
           <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
             <defs>
               <linearGradient id="apexMark" x1="0" y1="0" x2="32" y2="32">
-                <stop offset="0%" stop-color="#00e5ff" />
-                <stop offset="100%" stop-color="#22d3ee" />
+                <stop offset="0%" stop-color="#22d3ee" />
+                <stop offset="100%" stop-color="#0891b2" />
               </linearGradient>
             </defs>
-            <path d="M16 2.5 29 27H3L16 2.5Z" stroke="url(#apexMark)" stroke-width="2.3" stroke-linejoin="round" />
+            <path d="M16 2.5 29 27H3L16 2.5Z" stroke="url(#apexMark)" stroke-width="2.4" stroke-linejoin="round" />
             <path d="M16 12.5 22 24H10l6-11.5Z" fill="url(#apexMark)" opacity=".9" />
           </svg>
           <span class="brand__name">Inspironics&nbsp;·&nbsp;Apex</span>
-        </span>
+        </a>
+
 
         <div class="top-right">
           <div class="account" id="account" hidden>
             <button class="account__who" id="account-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu">
               <span class="account__avatar" id="avatar" aria-hidden="true"></span>
               <span class="account__email" id="who"></span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="m6 9 6 6 6-6" />
-              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
             </button>
             <button class="signout" id="signout" type="button" title="Sign out of Apex and every platform">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M15 17l5-5-5-5M20 12H9M12 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" />
-              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 17l5-5-5-5M20 12H9M12 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" /></svg>
               <span>Sign out</span>
             </button>
             <div class="menu" id="account-menu" hidden>
               Signed in as
               <strong id="menu-email"></strong>
-              <p>One session covers Apex, the Innovation Showcase, SlidesVault and Inspironics Academia, for up to 12 hours. Sign out ends them all.</p>
+              <p id="menu-session">One session covers Apex and every platform it opened. Sign out ends them all.</p>
             </div>
           </div>
 
           <div class="theme">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-            </svg>
-            <button class="switch" id="theme-switch" type="button" role="switch" aria-checked="true" aria-label="Dark theme"></button>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
-            </svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+            <button class="switch" id="theme-switch" type="button" role="switch" aria-checked="false" aria-label="Dark theme"></button>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" /></svg>
           </div>
         </div>
       </header>
@@ -893,214 +1438,753 @@
             Apex is the shared entry point for the Inspironics products. Pick a project below and it opens right here —
             same window, same address, fully working.
           </p>
+          <div class="motto" aria-hidden="true">EXPLORE<b>·</b>BUILD<b>·</b>INNOVATE</div>
         </div>
 
-        <div class="globe" aria-hidden="true">
-          <canvas id="globe"></canvas>
-          <span class="tile tile--layers">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 13 9 5 9-5" /><path d="m3 17 9 5 9-5" />
-            </svg>
-          </span>
-          <span class="tile tile--db">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <ellipse cx="12" cy="5.5" rx="8" ry="3" /><path d="M4 5.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" /><path d="M4 11.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
-            </svg>
-          </span>
-          <span class="tile tile--purple tile--chart">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <rect x="4" y="13" width="4" height="7" rx="1" /><rect x="10" y="9" width="4" height="11" rx="1" /><rect x="16" y="5" width="4" height="15" rx="1" />
-            </svg>
-          </span>
-          <span class="tile tile--purple tile--chip">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="6" y="6" width="12" height="12" rx="2" /><rect x="9.5" y="9.5" width="5" height="5" rx="1" fill="currentColor" />
-              <path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3" />
-            </svg>
-          </span>
+        <div class="globe">
+          <canvas id="globe" aria-hidden="true"></canvas>
+          <a class="node node--infra" href="/showcase/" data-node="infra" title="Open the Innovation Showcase blueprints">
+            <span class="tile tile--soft">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 13 9 5 9-5" /><path d="m3 17 9 5 9-5" /></svg>
+            </span>
+            <span class="node__label"><b>Infrastructure</b><span>Systems &amp; services</span></span>
+          </a>
+          <a class="node node--analytics" href="/vault/admin" data-node="analytics" title="Open SlidesVault reading analytics">
+            <span class="tile tile--purple">
+              <svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="13" width="4" height="7" rx="1" /><rect x="10" y="9" width="4" height="11" rx="1" /><rect x="16" y="5" width="4" height="15" rx="1" /></svg>
+            </span>
+            <span class="node__label node__label--dark"><b>Analytics</b><span>Data insights &amp; reports</span></span>
+          </a>
+          <a class="node node--knowledge" href="/academia/courses" data-node="knowledge" title="Open the Academia course catalogue">
+            <span class="tile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="8" ry="3" /><path d="M4 5.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" /><path d="M4 11.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" /></svg>
+            </span>
+            <span class="node__label"><b>Knowledge</b><span>Docs &amp; learning</span></span>
+          </a>
+          <a class="node node--auto" href="/academia/admin" data-node="auto" title="Open the Academia content pipeline">
+            <span class="tile tile--purple">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" /></svg>
+            </span>
+            <span class="node__label"><b>Automation</b><span>Agents &amp; workflows</span></span>
+          </a>
+          <span class="globe__hint"><i></i>Live network · drag to rotate</span>
         </div>
 
-        <span class="motto" aria-hidden="true">
-          Explore <b>•</b> Build <b>•</b> Innovate
-          <span class="go">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M7 17 17 7M8 7h9v9" />
-            </svg>
-          </span>
-        </span>
       </section>
 
       <!-- ---------------------------------------------------------- cards -->
-      <div class="grid">
-        <a class="card card--showcase" href="/showcase/" data-probe="/showcase/">
-          <svg class="waves" viewBox="0 0 400 240" fill="none" stroke="currentColor" aria-hidden="true">
-            <path d="M0 200C90 170 140 90 250 80s120 40 150 20" stroke-opacity=".5" />
-            <path d="M0 220C100 190 150 120 260 110s110 30 140 10" stroke-opacity=".35" />
-            <path d="M20 240C120 210 170 150 270 140s100 20 130 0" stroke-opacity=".25" />
-          </svg>
-          <div class="card__top">
-            <span class="card__icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="3.5" y="3.5" width="7" height="7" rx="2" /><rect x="13.5" y="3.5" width="7" height="7" rx="2" />
-                <rect x="3.5" y="13.5" width="7" height="7" rx="2" /><rect x="13.5" y="13.5" width="7" height="7" rx="2" />
-              </svg>
-            </span>
-            <span class="status" data-state="checking"><i></i><span class="status__label">Checking</span></span>
+      <div class="grid" id="projects">
+        <a class="card card--showcase" href="/showcase/" data-probe="/showcase/" data-app="showcase">
+          <ul class="facts facts--dark" id="facts-showcase" aria-label="Innovation Showcase at a glance">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="2" /><path d="m21 16-5-5L5 20" /></svg><span><b data-fact="assets">—</b> assets</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" /><path d="m4 7.5 8 4.5 8-4.5M12 12v9" /></svg>3D explorer</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7" /></svg>Monthly reports</li>
+          </ul>
+          <div class="card__body">
+            <div class="card__top">
+              <span class="card__icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2" /><rect x="13.5" y="3.5" width="7" height="7" rx="2" /><rect x="3.5" y="13.5" width="7" height="7" rx="2" /><rect x="13.5" y="13.5" width="7" height="7" rx="2" /></svg>
+              </span>
+              <span class="status" data-state="checking"><i></i><span class="status__label">Checking</span></span>
+            </div>
+            <h2>Innovation Showcase</h2>
+            <p>An immersive gallery of <span id="showcase-count"></span>intelligent-infrastructure blueprints, command decks and architecture systems, with a 3D ecosystem explorer and monthly reporting.</p>
+            <ul class="tags"><li>Gallery</li><li>Ecosystem 3D</li><li>Reports</li></ul>
+            <span class="open">Open Platform <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg></span>
           </div>
-
-          <h2>Innovation Showcase</h2>
-          <p>
-            An immersive gallery of 235 intelligent-infrastructure blueprints, command decks and architecture systems, with a
-            3D ecosystem explorer and monthly reporting.
-          </p>
-
-          <div class="card__foot">
-            <ul class="tags">
-              <li>Gallery</li>
-              <li>Ecosystem 3D</li>
-              <li>Reports</li>
-            </ul>
-            <span class="go-btn" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
-            </span>
-          </div>
+          <div class="art" id="art-city" aria-hidden="true"></div>
         </a>
 
-        <a class="card card--vault" href="/vault/" data-probe="/vault/">
-          <svg class="waves" viewBox="0 0 400 240" fill="none" stroke="currentColor" aria-hidden="true">
-            <path d="M0 200C90 170 140 90 250 80s120 40 150 20" stroke-opacity=".5" />
-            <path d="M0 220C100 190 150 120 260 110s110 30 140 10" stroke-opacity=".35" />
-            <path d="M20 240C120 210 170 150 270 140s100 20 130 0" stroke-opacity=".25" />
-          </svg>
-          <div class="card__top">
-            <span class="card__icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="2.5" y="4" width="19" height="13" rx="2" /><path d="M12 17v3M8.5 20h7" />
-              </svg>
-            </span>
-            <span class="status" data-state="checking"><i></i><span class="status__label">Checking</span></span>
+        <a class="card card--vault" href="/vault/" data-probe="/vault/" data-app="vault">
+          <ul class="facts" id="facts-vault" aria-label="SlidesVault at a glance" hidden>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2" /><path d="M12 17v3" /></svg><span><b data-fact="presentations">—</b> presentations</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg><span><b data-fact="slides">—</b> slides</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg><span><b data-fact="previewed">—</b> previewed</span></li>
+          </ul>
+          <span class="corner" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9" /></svg></span>
+          <div class="card__body">
+            <div class="card__top">
+              <span class="card__icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2" /><path d="M12 17v3M8.5 20h7" /></svg>
+              </span>
+              <span class="status" data-state="checking"><i></i><span class="status__label">Checking</span></span>
+            </div>
+            <h2>SlidesVault</h2>
+            <p>The presentation knowledge hub — discover, search and view decks across every team. Stream them online or download for offline reading.</p>
+            <ul class="tags"><li>Library</li><li>Offline</li><li>Analytics</li></ul>
+            <span class="open">Open Platform <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg></span>
           </div>
-
-          <h2>SlidesVault</h2>
-          <p>
-            The presentation knowledge hub — discover, search and view decks across every team. Stream them online or
-            download for offline reading.
-          </p>
-
-          <div class="card__foot">
-            <ul class="tags">
-              <li>Library</li>
-              <li>Offline</li>
-              <li>Analytics</li>
-            </ul>
-            <span class="go-btn" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
-            </span>
-          </div>
+          <div class="art" id="art-slides" aria-hidden="true"></div>
         </a>
 
-        <a class="card card--academia" href="/academia/" data-probe="/academia/">
-          <svg class="waves" viewBox="0 0 400 240" fill="none" stroke="currentColor" aria-hidden="true">
-            <path d="M0 200C90 170 140 90 250 80s120 40 150 20" stroke-opacity=".5" />
-            <path d="M0 220C100 190 150 120 260 110s110 30 140 10" stroke-opacity=".35" />
-            <path d="M20 240C120 210 170 150 270 140s100 20 130 0" stroke-opacity=".25" />
-          </svg>
-          <div class="card__top">
-            <span class="card__icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M2 9.5 12 5l10 4.5-10 4.5L2 9.5Z" /><path d="M6 11.5v4.5c0 1.4 2.7 3 6 3s6-1.6 6-3v-4.5" /><path d="M22 9.5v5" />
-              </svg>
-            </span>
-            <span class="status" data-state="checking"><i></i><span class="status__label">Checking</span></span>
+        <a class="card card--academia" href="/academia/" data-probe="/academia/" data-app="academia">
+          <ul class="facts" id="facts-academia" aria-label="Academia at a glance" hidden>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9.5 12 5l10 4.5-10 4.5L2 9.5Z" /></svg><span><b data-fact="courses">—</b> courses</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4" /></svg><span><b data-fact="lessons">—</b> lessons</span></li>
+            <li data-fact-row="learners"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6" /></svg><span><b data-fact="learners">—</b> learners</span></li>
+          </ul>
+          <span class="corner" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9" /></svg></span>
+          <div class="card__body">
+            <div class="card__top">
+              <span class="card__icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5 12 5l10 4.5-10 4.5L2 9.5Z" /><path d="M6 11.5v4.5c0 1.4 2.7 3 6 3s6-1.6 6-3v-4.5" /><path d="M22 9.5v5" /></svg>
+              </span>
+              <span class="status" data-state="checking"><i></i><span class="status__label">Checking</span></span>
+            </div>
+            <h2>Inspironics Academia</h2>
+            <p>Engineering playbooks turned into courses — lessons, quizzes and exams generated from the source, with verifiable certificates at the end.</p>
+            <ul class="tags"><li>Courses</li><li>Tests</li><li>Certificates</li></ul>
+            <span class="open">Open Platform <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg></span>
           </div>
-
-          <h2>Inspironics Academia</h2>
-          <p>
-            Engineering playbooks turned into courses — lessons, quizzes and exams generated from the source, with
-            verifiable certificates at the end.
-          </p>
-
-          <div class="card__foot">
-            <ul class="tags">
-              <li>Courses</li>
-              <li>Tests</li>
-              <li>Certificates</li>
-            </ul>
-            <span class="go-btn" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
-            </span>
-          </div>
+          <div class="art" id="art-academy" aria-hidden="true"></div>
         </a>
       </div>
+
+      <!-- ----------------------------------------------------------- dock -->
+      <footer class="dock">
+        <div class="dock__box" aria-live="polite">
+          <span class="dot" id="dock-dot" data-state="checking"></span>
+          <div>
+            <b id="dock-title">Checking systems…</b>
+            <small id="dock-status">— / 3 platforms ready</small>
+          </div>
+        </div>
+
+        <div class="quick">
+          <div class="quick__head">
+            <h4>Quick access</h4>
+            <span class="quick__hint">Press <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> or use <u>Ctrl + K</u></span>
+          </div>
+          <div class="quick__keys">
+            <a href="/showcase/" style="--k: #0891b2" title="Innovation Showcase">1</a>
+            <a href="/vault/" style="--k: #7c3aed" title="SlidesVault">2</a>
+            <a href="/academia/" style="--k: #059669" title="Inspironics Academia">3</a>
+          </div>
+        </div>
+
+        <div class="activity">
+          <h4>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>
+            Recent activity
+          </h4>
+          <ul id="activity"><li class="empty">Loading…</li></ul>
+        </div>
+
+        <button class="search" id="search-open" type="button" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          <span>Search Apex…</span>
+          <kbd>Ctrl + K</kbd>
+        </button>
+
+        <div class="shield">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <defs>
+              <linearGradient id="shieldG" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#3b82f6" />
+                <stop offset="1" stop-color="#06b6d4" />
+              </linearGradient>
+            </defs>
+            <path d="M12 2.5 4 6v5.5c0 4.6 3.4 8.8 8 10 4.6-1.2 8-5.4 8-10V6l-8-3.5Z" fill="url(#shieldG)" />
+            <path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          One sign-in covers every platform
+        </div>
+      </footer>
     </main>
 
+    <!-- -------------------------------------------------------- palette -->
+    <div class="palette" id="palette" role="dialog" aria-modal="true" aria-label="Search Apex" hidden>
+      <div class="palette__box">
+        <label class="palette__input">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          <input id="palette-input" type="search" placeholder="Search platforms, pages, presentations and courses…" autocomplete="off" />
+          <kbd>Esc</kbd>
+        </label>
+        <ul id="palette-list" role="listbox"></ul>
+      </div>
+    </div>
+
     <!-- ==================================================================
-         behaviour — who is signed in, sign-out, and the Ready/Starting
-         probes on each card. Unchanged from the previous dashboard, apart
-         from filling in the account menu.
+         behaviour — who is signed in (and to which platforms), sign-out, the
+         Ready / Starting / API offline / Sign in required probes, the system
+         status panel, each card's live numbers, recent activity and search.
+         Every figure comes from the apps' own APIs; one that cannot be read
+         (a learner is not allowed admin lists, an API is down) is left out
+         rather than guessed.
          ================================================================== -->
     <script>
-      /* Who is signed in, and the one sign-out for every platform. */
-      fetch('/auth/me', { cache: 'no-store' })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((me) => {
-          if (!me) return
-          document.getElementById('who').textContent = me.email
-          document.getElementById('menu-email').textContent = me.email
-          document.getElementById('avatar').textContent = me.email.slice(0, 2)
-          document.getElementById('account').hidden = false
+      /*
+       * /auth/me lists the apps this sign-in covers — an app that was down or
+       * did not know the credentials is left out, and its card says "Sign in
+       * required" and leads back to the sign-in. /auth/config is the registry
+       * (apex/projects.mjs): each app's mount, API health route and sign-out.
+       */
+      const cards = [...document.querySelectorAll('[data-probe]')]
+      const NAMES = { showcase: 'Showcase', vault: 'SlidesVault', academia: 'Academia' }
+      let stopped = false
+
+      /** The Apex session has lapsed: stop everything and go and sign in again. */
+      function expired() {
+        if (stopped) return
+        stopped = true
+        location.replace('/login?next=%2F&expired=1')
+      }
+
+      const me = fetch('/auth/me', { cache: 'no-store' })
+        .then((r) => {
+          if (r.status === 401) expired()
+          return r.ok ? r.json() : null
         })
-        .catch(() => {})
+        .catch(() => null)
+      const registry = fetch('/auth/config', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+
+      me.then((who) => {
+        if (!who) return
+        document.getElementById('who').textContent = who.email
+        document.getElementById('menu-email').textContent = who.email
+        document.getElementById('avatar').textContent = who.email.slice(0, 2)
+        document.getElementById('account').hidden = false
+      })
 
       document.getElementById('signout').addEventListener('click', async (e) => {
         e.currentTarget.disabled = true
         try {
-          await fetch('/auth/logout', { method: 'POST' })
+          // Each app's session cookie is scoped to its own mount, so only a
+          // request inside that mount carries it: end each one at its own API
+          // first, then Apex's (which also clears every cookie in the browser).
+          const { apps = [] } = (await registry) || {}
+          await Promise.all(apps.map((a) => fetch(a.logout, { method: 'POST', credentials: 'same-origin' }).catch(() => {})))
+          await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' })
         } finally {
           location.replace('/login')
         }
       })
 
+      /* ------------------------------------------------------ helpers -- */
+      /** GET JSON from a path; null on any failure. A gateway 401 ends the page. */
+      async function json(url) {
+        try {
+          const res = await fetch(url, { cache: 'no-store', credentials: 'same-origin' })
+          if (res.status === 401) {
+            const body = await res.clone().json().catch(() => ({}))
+            if (body.code === 'APEX_SIGNIN_REQUIRED') expired()
+          }
+          return res.ok ? await res.json() : null
+        } catch {
+          return null
+        }
+      }
+
+      const fmt = (n) => Number(n).toLocaleString()
+      function ago(iso) {
+        const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
+        if (s < 60) return 'just now'
+        if (s < 3600) return `${Math.round(s / 60)}m ago`
+        if (s < 86400) return `${Math.round(s / 3600)}h ago`
+        return `${Math.round(s / 86400)}d ago`
+      }
+      function fact(app, key, value) {
+        const list = document.getElementById(`facts-${app}`)
+        const el = list?.querySelector(`[data-fact="${key}"]`)
+        if (!el) return
+        el.textContent = value
+        list.hidden = false
+      }
+
+      /* ------------------------------------------------------- probes -- */
       /*
-       * Probe each mount so a card can say whether its app is up. In dev the
-       * gateway answers 503 while a child vite server is still booting, which
-       * is the "starting" state — the card stays clickable either way, because
-       * the gateway's own retry page takes over from there.
+       * Probe each mount so a card can say whether its app is up, then its
+       * API's health route, so "the page loads but nothing works" reads as
+       * "API offline" rather than "Ready". In dev the gateway answers 503
+       * while a child vite server is still booting, which is the "starting"
+       * state. A 401 from the gateway means the Apex session itself has
+       * ended; there is no point polling on, so the page hands over.
        */
-      const LABEL = { up: 'Ready', starting: 'Starting', down: 'Offline', checking: 'Checking' }
+      const LABEL = {
+        up: 'Ready',
+        starting: 'Starting',
+        down: 'Offline',
+        api: 'API offline',
+        signin: 'Sign in required',
+        checking: 'Checking',
+      }
 
       function paint(card, state) {
         const status = card.querySelector('.status')
         status.dataset.state = state
         status.querySelector('.status__label').textContent = LABEL[state]
+        summarize()
       }
 
-      async function probe(card) {
+      // The status panel's and the dock's roll-up of every card's state.
+      function summarize() {
+        const states = cards.map((c) => c.querySelector('.status').dataset.state)
+        const up = states.filter((s) => s === 'up').length
+        const bad = states.some((s) => s === 'down' || s === 'api')
+        const settled = !states.includes('checking')
+        const overall = up === states.length ? 'up' : bad ? 'down' : 'starting'
+        document.getElementById('dock-dot').dataset.state = settled ? overall : 'checking'
+        document.getElementById('dock-status').textContent = `${up} / ${states.length} platforms ready`
+        document.getElementById('dock-title').textContent = !settled
+          ? 'Checking systems…'
+          : overall === 'up'
+            ? 'All systems operational'
+            : bad
+              ? 'Some systems are down'
+              : 'Some systems need attention'
+      }
+
+      async function status(url) {
         try {
-          const res = await fetch(card.dataset.probe, { cache: 'no-store' })
-          paint(card, res.ok ? 'up' : res.status === 503 ? 'starting' : 'down')
-          return res.ok
+          const res = await fetch(url, { cache: 'no-store', credentials: 'same-origin' })
+          if (res.status === 401 && res.headers.get('content-type')?.includes('json')) {
+            const body = await res.clone().json().catch(() => ({}))
+            if (body.code === 'APEX_SIGNIN_REQUIRED') expired()
+          }
+          return res.status
         } catch {
-          paint(card, 'down')
-          return false
+          return 0
         }
       }
 
-      const cards = [...document.querySelectorAll('[data-probe]')]
+      /** True once the card has settled (nothing left to wait for). */
+      async function probe(card) {
+        const ok = (s) => s >= 200 && s < 300
+        const web = await status(card.dataset.probe)
+        if (stopped) return true
+        let state = web === 503 ? 'starting' : ok(web) ? 'up' : 'down'
+        if (card.dataset.health) {
+          const api = await status(card.dataset.health)
+          if (stopped) return true
+          if (state === 'up' && !ok(api)) state = 'api'
+        }
+        if (state === 'up' && card.dataset.signedIn === 'no') state = 'signin'
+        paint(card, state)
+        return state === 'up' || state === 'signin'
+      }
 
       async function sweep() {
         const results = await Promise.all(cards.map(probe))
         // Keep polling only while something has yet to come up.
-        if (results.some((ok) => !ok)) setTimeout(sweep, 2000)
+        if (!stopped && results.some((done) => !done)) setTimeout(sweep, 2000)
       }
 
-      sweep()
+      Promise.all([me, registry]).then(([who, reg]) => {
+        if (stopped) return
+        const apps = reg?.apps || []
+        for (const card of cards) {
+          const app = apps.find((a) => `${a.base}/` === card.dataset.probe)
+          if (!app) continue
+          card.dataset.health = app.health || ''
+          if (who && Array.isArray(who.apps) && !who.apps.includes(app.id)) {
+            // Not covered by this sign-in: lead to the form rather than into
+            // an app that would only send the browser there anyway.
+            card.dataset.signedIn = 'no'
+            card.href = `/login?reauth=1&next=${encodeURIComponent(card.dataset.probe)}`
+          }
+        }
+        sweep()
+        loadFacts()
+        loadActivity()
+      })
+
+      /* -------------------------------------------------- live numbers -- */
+      // What the palette can jump to beyond the fixed pages: real decks and courses.
+      const found = { decks: [], courses: [] }
+
+      async function loadFacts() {
+        const [plates, decks, courses, modules, users] = await Promise.all([
+          json('/showcase/api/entities/plates/count'),
+          json('/vault/api/presentations?limit=1000'),
+          json('/academia/api/entities/Course?limit=500'),
+          json('/academia/api/entities/Module?limit=2000'),
+          json('/academia/api/entities/User?limit=5000'),
+        ])
+
+        const total = Number(plates?.total)
+        if (Number.isFinite(total) && total > 0) {
+          fact('showcase', 'assets', fmt(total))
+          document.getElementById('showcase-count').textContent = `${fmt(total)} `
+        } else {
+          document.querySelector('#facts-showcase [data-fact="assets"]').closest('li').remove()
+        }
+
+        if (decks?.items) {
+          const items = decks.items
+          const slides = items.reduce((n, d) => n + (Number(d.slide_count) || 0), 0)
+          const previewed = items.length ? Math.round((items.filter((d) => d.thumbnail_url).length / items.length) * 100) : 0
+          fact('vault', 'presentations', fmt(decks.total ?? items.length))
+          if (slides) fact('vault', 'slides', fmt(slides))
+          else document.querySelector('#facts-vault [data-fact="slides"]').closest('li').remove()
+          fact('vault', 'previewed', `${previewed}%`)
+          found.decks = items.map((d) => ({ title: d.title, href: `/vault/presentation/${encodeURIComponent(d.id)}` }))
+        }
+
+        if (Array.isArray(courses)) {
+          fact('academia', 'courses', fmt(courses.length))
+          found.courses = courses
+            .filter((c) => c.status === 'published')
+            .map((c) => ({ title: c.title, href: `/academia/courses/${encodeURIComponent(c.id)}` }))
+        }
+        if (Array.isArray(modules)) fact('academia', 'lessons', fmt(modules.reduce((n, m) => n + (Number(m.lesson_count) || 0), 0)))
+        // Only an administrator may list users; for anyone else the row goes.
+        if (Array.isArray(users)) fact('academia', 'learners', fmt(users.filter((u) => u.role !== 'admin').length))
+        else document.querySelector('[data-fact-row="learners"]')?.remove()
+      }
+
+      /* ------------------------------------------------ recent activity -- */
+      // Each platform's latest Dropbox sync runs (administrators only).
+      const ICON = {
+        showcase: ['#0891b2', '<rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/>'],
+        vault: ['#7c3aed', '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M12 17v3M8.5 20h7"/>'],
+        academia: ['#059669', '<path d="M2 9.5 12 5l10 4.5-10 4.5L2 9.5Z"/><path d="M6 11.5v4.5c0 1.4 2.7 3 6 3s6-1.6 6-3v-4.5"/>'],
+      }
+      const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+      function describe(app, run) {
+        if (run.status && run.status !== 'success') return `Sync ${run.status === 'running' ? 'in progress' : 'failed'}`
+        const added = Number(run.added ?? run.new_files ?? 0)
+        const updated = Number(run.updated ?? run.updated_files ?? 0)
+        const removed = Number(run.archived ?? run.deleted_files ?? 0)
+        const what = { showcase: 'blueprint', vault: 'presentation', academia: 'playbook' }[app]
+        if (added) return `${plural(added, `new ${what}`)} indexed`
+        if (updated) return `${plural(updated, what)} updated`
+        if (removed) return `${plural(removed, what)} archived`
+        return 'Library synced — no changes'
+      }
+
+      let lastRuns = []
+      async function loadActivity() {
+        const [s, v, a] = await Promise.all([
+          json('/showcase/api/entities/sync-logs?limit=5'),
+          json('/vault/api/sync-logs?limit=5'),
+          json('/academia/api/sync/logs?limit=5'),
+        ])
+        const when = (r) => r.finishedAt || r.finished_at || r.completed_at || r.startedAt || r.started_at
+        const pick = (app, list) => (Array.isArray(list) ? list : list?.items || []).map((r) => ({ app, at: when(r), text: describe(app, r) }))
+        lastRuns = [...pick('showcase', s), ...pick('vault', v), ...pick('academia', a)]
+          .filter((r) => r.at && !Number.isNaN(Date.parse(r.at)))
+          .sort((x, y) => Date.parse(y.at) - Date.parse(x.at))
+        renderActivity()
+      }
+
+      function renderActivity() {
+        const list = document.getElementById('activity')
+        // One line per platform: its latest run.
+        const latest = []
+        for (const r of lastRuns) if (!latest.some((x) => x.app === r.app)) latest.push(r)
+        list.replaceChildren()
+        if (!latest.length) {
+          const li = document.createElement('li')
+          li.className = 'empty'
+          li.textContent = 'No sync activity you can see yet.'
+          list.append(li)
+        }
+        for (const r of latest.slice(0, 3)) {
+          const li = document.createElement('li')
+          const [color, path] = ICON[r.app]
+          li.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg><b></b><span></span><time></time>`
+          li.querySelector('b').textContent = NAMES[r.app]
+          li.querySelector('span').textContent = r.text
+          li.querySelector('time').textContent = ago(r.at)
+          li.querySelector('time').dateTime = r.at
+          list.append(li)
+        }
+      }
+      // Keep "12m ago" honest, and pick up new sync runs now and then.
+      setInterval(() => !stopped && renderActivity(), 30_000)
+      setInterval(() => !stopped && loadActivity(), 120_000)
+
+      /* -------------------------------------------------------- search -- */
+      const PAGES = [
+        ['Innovation Showcase', 'Platform', '/showcase/', '#0891b2'],
+        ['Showcase gallery', 'Showcase', '/showcase/', '#0891b2'],
+        ['Monthly report', 'Showcase', '/showcase/report', '#0891b2'],
+        ['Showcase admin console', 'Showcase', '/showcase/admin', '#0891b2'],
+        ['SlidesVault', 'Platform', '/vault/', '#7c3aed'],
+        ['Presentation library', 'SlidesVault', '/vault/library', '#7c3aed'],
+        ['My reading dashboard', 'SlidesVault', '/vault/dashboard', '#7c3aed'],
+        ['Offline library', 'SlidesVault', '/vault/offline', '#7c3aed'],
+        ['Analytics and administration', 'SlidesVault', '/vault/admin', '#7c3aed'],
+        ['Dropbox settings', 'SlidesVault', '/vault/dropbox-settings', '#7c3aed'],
+        ['User manual', 'SlidesVault', '/vault/user-manual', '#7c3aed'],
+        ['Inspironics Academia', 'Platform', '/academia/', '#059669'],
+        ['Course catalogue', 'Academia', '/academia/courses', '#059669'],
+        ['My learning', 'Academia', '/academia/my-learning', '#059669'],
+        ['Tests', 'Academia', '/academia/tests', '#059669'],
+        ['Certificates', 'Academia', '/academia/certificates', '#059669'],
+        ['Playbooks', 'Academia', '/academia/playbooks', '#059669'],
+        ['Academia administration', 'Academia', '/academia/admin', '#059669'],
+        ['Academia integrations', 'Academia', '/academia/admin/integrations', '#059669'],
+        ['Your profile', 'Academia', '/academia/profile', '#059669'],
+      ].map(([title, where, href, k]) => ({ title, where, href, k }))
+
+      const palette = document.getElementById('palette')
+      const input = document.getElementById('palette-input')
+      const listEl = document.getElementById('palette-list')
+      let results = []
+      let active = 0
+
+      function search(q) {
+        const terms = q.toLowerCase().split(/\s+/).filter(Boolean)
+        const hit = (s) => terms.every((t) => s.toLowerCase().includes(t))
+        const all = [
+          ...PAGES,
+          ...found.decks.map((d) => ({ ...d, where: 'Presentation', k: '#7c3aed' })),
+          ...found.courses.map((c) => ({ ...c, where: 'Course', k: '#059669' })),
+        ]
+        return (terms.length ? all.filter((r) => hit(`${r.title} ${r.where}`)) : PAGES).slice(0, 40)
+      }
+
+      function draw() {
+        listEl.replaceChildren()
+        if (!results.length) {
+          const li = document.createElement('li')
+          li.className = 'palette__empty'
+          li.textContent = 'Nothing matches that.'
+          listEl.append(li)
+          return
+        }
+        results.forEach((r, i) => {
+          const li = document.createElement('li')
+          const a = document.createElement('a')
+          a.href = r.href
+          a.setAttribute('role', 'option')
+          a.setAttribute('aria-selected', String(i === active))
+          a.style.setProperty('--k', r.k)
+          a.innerHTML = '<i></i><span></span><small></small>'
+          a.querySelector('span').textContent = r.title
+          a.querySelector('small').textContent = r.where
+          li.append(a)
+          listEl.append(li)
+        })
+        listEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+      }
+
+      function openPalette() {
+        palette.hidden = false
+        input.value = ''
+        results = search('')
+        active = 0
+        draw()
+        input.focus()
+      }
+      const closePalette = () => {
+        palette.hidden = true
+        document.getElementById('search-open').focus()
+      }
+
+      document.getElementById('search-open').addEventListener('click', openPalette)
+      input.addEventListener('input', () => {
+        results = search(input.value)
+        active = 0
+        draw()
+      })
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault()
+          active = (active + (e.key === 'ArrowDown' ? 1 : -1) + results.length) % Math.max(results.length, 1)
+          draw()
+        } else if (e.key === 'Enter' && results[active]) {
+          location.href = results[active].href
+        }
+      })
+      palette.addEventListener('click', (e) => {
+        if (e.target === palette) closePalette()
+      })
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault()
+          palette.hidden ? openPalette() : closePalette()
+        } else if (e.key === 'Escape' && !palette.hidden) {
+          closePalette()
+        }
+      })
+
+    </script>
+
+    <!-- ==================================================================
+         illustrations — drawn here as isometric SVG rather than shipped as
+         images, so they stay sharp, follow the theme and cost nothing.
+         ================================================================== -->
+    <script>
+      ;(() => {
+        // Isometric projection: x runs down-right, y down-left, z up.
+        const iso = (x, y, z = 0) => [(x - y) * 0.866, (x + y) * 0.5 - z]
+        const pts = (list) => list.map((p) => p.map((n) => n.toFixed(1)).join(',')).join(' ')
+        const poly = (list, fill, extra = '') => `<polygon points="${pts(list)}" fill="${fill}" ${extra}/>`
+        const line = (a, b, stroke, w = 0.6, extra = '') =>
+          `<line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}" stroke="${stroke}" stroke-width="${w}" ${extra}/>`
+
+        /** A box: top, the face towards the viewer on the left (y = y+d) and on the right (x = x+w). */
+        function box(x, y, w, d, h, c, opts = {}) {
+          const P = iso
+          let out = ''
+          out += poly([P(x, y + d, 0), P(x + w, y + d, 0), P(x + w, y + d, h), P(x, y + d, h)], c.left)
+          out += poly([P(x + w, y, 0), P(x + w, y + d, 0), P(x + w, y + d, h), P(x + w, y, h)], c.right)
+          out += poly([P(x, y, h), P(x + w, y, h), P(x + w, y + d, h), P(x, y + d, h)], c.top)
+          if (opts.windows) {
+            for (let z = opts.windows; z < h - 3; z += opts.windows) {
+              out += line(P(x + 1.5, y + d, z), P(x + w - 1.5, y + d, z), c.line, 0.7)
+              out += line(P(x + w, y + 1.5, z), P(x + w, y + d - 1.5, z), c.line, 0.7)
+            }
+            for (let i = 1; i < 3; i++) {
+              out += line(P(x + (w * i) / 3, y + d, 2), P(x + (w * i) / 3, y + d, h - 2), c.line, 0.5, 'opacity=".6"')
+              out += line(P(x + w, y + (d * i) / 3, 2), P(x + w, y + (d * i) / 3, h - 2), c.line, 0.5, 'opacity=".6"')
+            }
+          }
+          return out
+        }
+        const tree = (x, y, r = 3.2) => {
+          const [sx, sy] = iso(x, y, 0)
+          return `<rect x="${(sx - 0.5).toFixed(1)}" y="${(sy - 4).toFixed(1)}" width="1" height="4" fill="#7c5a3a"/>` +
+            `<circle cx="${sx.toFixed(1)}" cy="${(sy - 5.5).toFixed(1)}" r="${r}" fill="url(#leaf)"/>`
+        }
+
+        /* ---------------------------------------------- the smart city */
+        function city() {
+          const glass = { top: '#dbeafe', left: 'url(#glassL)', right: 'url(#glassR)', line: 'rgba(255,255,255,.55)' }
+          const cyan = { top: '#cffafe', left: 'url(#cyanL)', right: 'url(#cyanR)', line: 'rgba(255,255,255,.6)' }
+          const slab = { top: '#f1f5f9', left: '#cbd5e1', right: '#94a3b8' }
+          const towers = [
+            [26, 14, 20, 18, 62, glass],
+            [52, 10, 18, 16, 46, cyan],
+            [12, 40, 18, 16, 40, cyan],
+            [40, 38, 22, 22, 84, glass],
+            [70, 36, 18, 18, 38, glass],
+            [30, 66, 20, 16, 30, cyan],
+            [62, 62, 18, 18, 56, glass],
+            [86, 64, 14, 14, 24, cyan],
+            [14, 70, 12, 12, 20, glass],
+          ]
+          let s = box(0, 0, 112, 112, 6, { top: '#e2f2ff', left: '#93c5fd', right: '#60a5fa' })
+          // roads on the plaza
+          s += line(iso(0, 33, 6), iso(112, 33, 6), '#bfdbfe', 2.2)
+          s += line(iso(0, 84, 6), iso(112, 84, 6), '#bfdbfe', 2.2)
+          s += line(iso(62, 0, 6), iso(62, 112, 6), '#bfdbfe', 2.2)
+          // back to front so nearer towers cover farther ones
+          const order = towers.slice().sort((a, b) => a[0] + a[1] - (b[0] + b[1]))
+          for (const [x, y, w, d, h, c] of order) {
+            s += box(x, y, w, d, 3, slab).replace(/<polygon/g, '<polygon transform="translate(0 -6)"')
+            s += `<g transform="translate(0 -9)">${box(x + 1, y + 1, w - 2, d - 2, h, c, { windows: 7 })}</g>`
+          }
+          for (const [x, y] of [[8, 8], [100, 10], [104, 30], [8, 96], [26, 100], [96, 96], [100, 78], [78, 100], [10, 56], [56, 100], [104, 50]]) {
+            s += `<g transform="translate(0 -6)">${tree(x, y)}</g>`
+          }
+          return `<svg viewBox="-105 -110 210 240" preserveAspectRatio="xMaxYMax meet">
+            <defs>
+              <linearGradient id="glassL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>
+              <linearGradient id="glassR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#93c5fd"/><stop offset="1" stop-color="#3b82f6"/></linearGradient>
+              <linearGradient id="cyanL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#67e8f9"/><stop offset="1" stop-color="#0891b2"/></linearGradient>
+              <linearGradient id="cyanR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a5f3fc"/><stop offset="1" stop-color="#22d3ee"/></linearGradient>
+              <radialGradient id="leaf"><stop offset="0" stop-color="#86efac"/><stop offset="1" stop-color="#16a34a"/></radialGradient>
+              <radialGradient id="cityGlow"><stop offset="0" stop-color="#38bdf8" stop-opacity=".35"/><stop offset="1" stop-color="#38bdf8" stop-opacity="0"/></radialGradient>
+            </defs>
+            <ellipse cx="0" cy="70" rx="120" ry="52" fill="url(#cityGlow)"/>
+            ${s}
+          </svg>`
+        }
+
+        /* --------------------------------------------- the slide stack */
+        function slides() {
+          const sheet = (dx, dy, fill, op = 1) =>
+            `<g transform="translate(${dx} ${dy}) skewY(-16)" opacity="${op}"><rect width="120" height="80" rx="7" fill="${fill}" stroke="rgba(124,58,237,.25)"/></g>`
+          return `<svg viewBox="0 0 220 190" preserveAspectRatio="xMaxYMax meet">
+            <defs>
+              <linearGradient id="sheetBack" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c4b5fd"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+              <linearGradient id="sheetMid" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9d5ff"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+              <linearGradient id="bars" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#60a5fa"/></linearGradient>
+              <radialGradient id="slideGlow"><stop offset="0" stop-color="#a78bfa" stop-opacity=".4"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+            </defs>
+            <ellipse cx="120" cy="168" rx="96" ry="18" fill="url(#slideGlow)"/>
+            <ellipse cx="120" cy="166" rx="74" ry="10" fill="none" stroke="#c4b5fd" stroke-opacity=".6"/>
+            ${sheet(78, 58, 'url(#sheetBack)', 0.9)}
+            ${sheet(62, 78, 'url(#sheetMid)', 0.95)}
+            <g transform="translate(44 100) skewY(-16)">
+              <rect width="128" height="84" rx="7" fill="#fff" stroke="rgba(124,58,237,.35)"/>
+              <rect x="0" y="0" width="128" height="14" rx="7" fill="#f5f3ff"/>
+              <circle cx="8" cy="7" r="2" fill="#f87171"/><circle cx="15" cy="7" r="2" fill="#fbbf24"/><circle cx="22" cy="7" r="2" fill="#34d399"/>
+              <text x="10" y="30" font-family="Inter, sans-serif" font-size="9" font-weight="700" fill="#1e1b4b">Q3 Strategy</text>
+              <rect x="10" y="36" width="44" height="3" rx="1.5" fill="#ddd6fe"/>
+              <rect x="10" y="43" width="34" height="3" rx="1.5" fill="#ede9fe"/>
+              <rect x="70" y="52" width="8" height="22" rx="1.5" fill="url(#bars)"/>
+              <rect x="82" y="44" width="8" height="30" rx="1.5" fill="url(#bars)"/>
+              <rect x="94" y="36" width="8" height="38" rx="1.5" fill="url(#bars)"/>
+              <rect x="106" y="28" width="8" height="46" rx="1.5" fill="url(#bars)"/>
+              <path d="M10 70 22 62l10 4 12-10 12 3" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </g>
+            <g transform="translate(172 34)">
+              <rect width="36" height="36" rx="9" fill="#fff" stroke="rgba(124,58,237,.3)"/>
+              <path d="M9 25V17M16 25V11M23 25v-6M29 25H7" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round"/>
+            </g>
+          </svg>`
+        }
+
+        /* ------------------------------------------ the learning desk */
+        function academy() {
+          const green = { top: '#d1fae5', left: '#34d399', right: '#059669' }
+          const teal = { top: '#ccfbf1', left: '#2dd4bf', right: '#0f766e' }
+          const blue = { top: '#dbeafe', left: '#60a5fa', right: '#2563eb' }
+          const base = { top: '#e2e8f0', left: '#cbd5e1', right: '#94a3b8' }
+          let s = ''
+          // books, stacked
+          s += box(-70, 30, 34, 24, 7, blue)
+          s += `<g transform="translate(0 -7)">${box(-68, 31, 30, 22, 7, green)}</g>`
+          s += `<g transform="translate(0 -14)">${box(-66, 32, 28, 20, 6, teal)}</g>`
+          // laptop base
+          s += box(-10, -10, 64, 44, 3, base)
+          const [kx, ky] = iso(-6, -6, 3)
+          s += `<g transform="translate(${kx.toFixed(1)} ${ky.toFixed(1)}) matrix(0.866 0.5 -0.866 0.5 0 0)"><rect width="56" height="26" rx="2" fill="#f8fafc"/>${Array.from(
+            { length: 4 },
+            (_, r) => Array.from({ length: 9 }, (_, c) => `<rect x="${2 + c * 6}" y="${2 + r * 6}" width="5" height="5" rx="1" fill="#e2e8f0"/>`).join('')
+          ).join('')}</g>`
+          // the screen, standing up along the back edge
+          const [ox, oy] = iso(-10, -10, 3)
+          s += `<g transform="translate(${ox.toFixed(1)} ${oy.toFixed(1)}) matrix(0.866 0.5 0 -1 0 0)">
+              <rect x="0" y="0" width="64" height="46" rx="3" fill="#1e293b"/>
+              <rect x="3" y="3" width="58" height="40" rx="2" fill="url(#screen)"/>
+            </g>`
+          // screen content, drawn upright then sheared to sit on the screen plane
+          s += `<g transform="translate(${ox.toFixed(1)} ${oy.toFixed(1)}) matrix(0.866 0.5 0 1 0 0)">
+              <rect x="6" y="-40" width="52" height="7" rx="1.5" fill="#fff" opacity=".9"/>
+              <rect x="6" y="-30" width="30" height="20" rx="2" fill="#fff" opacity=".85"/>
+              <polygon points="18,-24 18,-16 25,-20" fill="#059669"/>
+              <rect x="40" y="-30" width="18" height="3" rx="1.5" fill="#fff" opacity=".85"/>
+              <rect x="40" y="-24" width="14" height="3" rx="1.5" fill="#fff" opacity=".6"/>
+              <rect x="40" y="-18" width="16" height="3" rx="1.5" fill="#fff" opacity=".6"/>
+              <rect x="6" y="-7" width="52" height="3" rx="1.5" fill="#fff" opacity=".35"/>
+              <rect x="6" y="-7" width="30" height="3" rx="1.5" fill="#34d399"/>
+            </g>`
+          // graduation cap over the laptop
+          s += `<g class="cap" transform="translate(46 -86)">
+              <polygon points="0,-14 30,0 0,14 -30,0" fill="#0f172a"/>
+              <path d="M-18 6v9c0 5 8 9 18 9s18-4 18-9V6L0 14Z" fill="#1e293b"/>
+              <path d="M22 4v16" stroke="#10b981" stroke-width="2"/><circle cx="22" cy="21" r="2.5" fill="#10b981"/>
+            </g>`
+          // certificate card, leaning on the right
+          s += `<g transform="translate(76 -20) skewY(-18)">
+              <rect width="40" height="50" rx="4" fill="#fff" stroke="rgba(5,150,105,.35)"/>
+              <rect x="6" y="8" width="28" height="3" rx="1.5" fill="#a7f3d0"/>
+              <rect x="6" y="15" width="20" height="3" rx="1.5" fill="#d1fae5"/>
+              <rect x="6" y="22" width="24" height="3" rx="1.5" fill="#d1fae5"/>
+              <circle cx="27" cy="38" r="6" fill="#10b981"/><path d="m24 38 2 2 4-4" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+            </g>`
+          return `<svg viewBox="-110 -120 240 200" preserveAspectRatio="xMaxYMax meet">
+            <defs>
+              <linearGradient id="screen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#0ea5e9"/></linearGradient>
+              <radialGradient id="deskGlow"><stop offset="0" stop-color="#34d399" stop-opacity=".35"/><stop offset="1" stop-color="#34d399" stop-opacity="0"/></radialGradient>
+            </defs>
+            <ellipse cx="10" cy="44" rx="120" ry="38" fill="url(#deskGlow)"/>
+            ${s}
+          </svg>`
+        }
+
+        document.getElementById('art-city').innerHTML = city()
+        document.getElementById('art-slides').innerHTML = slides()
+        document.getElementById('art-academy').innerHTML = academy()
+      })()
     </script>
 
     <!-- ==================================================================
@@ -1140,7 +2224,7 @@
           const dark = root.dataset.theme !== 'light'
           sw.setAttribute('aria-checked', String(dark))
           sw.setAttribute('aria-label', dark ? 'Dark theme' : 'Light theme')
-          document.querySelector('meta[name="theme-color"]').content = dark ? '#030712' : '#eef2f8'
+          document.querySelector('meta[name="theme-color"]').content = dark ? '#030712' : '#eef3fb'
         }
         sw.addEventListener('click', () => {
           root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light'
@@ -1153,6 +2237,33 @@
         syncSwitch()
 
         const light = () => root.dataset.theme === 'light'
+
+        /* ------------------------------------------------------ shortcuts */
+        const links = [...document.querySelectorAll('.grid .card')]
+        document.addEventListener('keydown', (e) => {
+          if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest('input, textarea, [contenteditable]')) return
+          const card = links[Number(e.key) - 1]
+          if (card) location.href = card.href
+        })
+
+        /* ------------------------------------------------------ card tilt */
+        if (!reduced) {
+          for (const card of links) {
+            card.addEventListener('pointermove', (e) => {
+              const r = card.getBoundingClientRect()
+              const x = (e.clientX - r.left) / r.width
+              const y = (e.clientY - r.top) / r.height
+              card.style.setProperty('--mx', `${x * 100}%`)
+              card.style.setProperty('--my', `${y * 100}%`)
+              card.style.setProperty('--ry', `${(x - 0.5) * 6}deg`)
+              card.style.setProperty('--rx', `${(0.5 - y) * 6}deg`)
+            })
+            card.addEventListener('pointerleave', () => {
+              card.style.setProperty('--rx', '0deg')
+              card.style.setProperty('--ry', '0deg')
+            })
+          }
+        }
 
         /* --------------------------------------------- background network */
         const sky = document.getElementById('sky')
@@ -1179,13 +2290,15 @@
             vx: (Math.random() - 0.5) * 0.12,
             vy: (Math.random() - 0.5) * 0.12,
             r: Math.random() * 1.6 + 0.5,
-            hue: Math.random() < 0.35 ? '139,92,246' : '0,229,255',
+            purple: Math.random() < 0.35,
           }))
         }
 
         function drawSky() {
           sctx.clearRect(0, 0, W, H)
-          const k = light() ? 0.5 : 1
+          const lt = light()
+          const k = lt ? 0.9 : 1
+          for (const d of dots) d.hue = d.purple ? (lt ? '124,58,237' : '139,92,246') : lt ? '8,145,178' : '0,229,255'
           for (let i = 0; i < dots.length; i++) {
             const a = dots[i]
             for (let j = i + 1; j < dots.length; j++) {
@@ -1284,7 +2397,68 @@
         let GW = 0
         let GH = 0
         let spin = (62 * Math.PI) / 180 // turned so the Americas face the viewer
-        const TILT = 0.36
+        let TILT = 0.36
+        let baseTilt = 0.36 // what dragging sets; the mouse adds a little on top
+        let tiltOffset = 0
+        let tiltTarget = 0
+        let spinVel = 0
+        let hovering = false
+        let hoverNode = null
+
+        // Drag to spin (and tip) the globe; it keeps some momentum on release.
+        const globeEl = gcan.parentElement
+        let drag = null
+        globeEl.addEventListener('pointerdown', (e) => {
+          if (e.target.closest('.node')) return // a node is a link, not a handle
+          drag = { x: e.clientX, y: e.clientY }
+          globeEl.setPointerCapture(e.pointerId)
+          globeEl.classList.add('dragging')
+        })
+        globeEl.addEventListener('pointermove', (e) => {
+          if (!drag) return
+          const dx = e.clientX - drag.x
+          const dy = e.clientY - drag.y
+          drag = { x: e.clientX, y: e.clientY }
+          spinVel = dx * 0.006
+          spin += spinVel
+          baseTilt = Math.max(-0.2, Math.min(0.9, baseTilt + dy * 0.004))
+          TILT = baseTilt + tiltOffset
+          if (reduced) draw()
+        })
+
+        // The nodes drift with the mouse and the globe leans towards it, so
+        // the scene feels alive before anyone touches it. A hovered node
+        // lights up its connection into the globe.
+        const nodes = [...globeEl.querySelectorAll('.node')]
+        const DEPTH = { infra: 14, analytics: 9, knowledge: 11, auto: 16 }
+        addEventListener('pointermove', (e) => {
+          if (reduced) return
+          const r = globeEl.getBoundingClientRect()
+          const nx = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / (r.width * 1.2)))
+          const ny = Math.max(-1, Math.min(1, (e.clientY - (r.top + r.height / 2)) / (r.height * 1.4)))
+          for (const n of nodes) {
+            const d = DEPTH[n.dataset.node] || 10
+            n.style.setProperty('--px', (nx * d).toFixed(1))
+            n.style.setProperty('--py', (ny * d).toFixed(1))
+          }
+          tiltTarget = ny * 0.14
+        })
+        globeEl.addEventListener('pointerenter', () => (hovering = true))
+        globeEl.addEventListener('pointerleave', () => (hovering = false))
+        for (const n of nodes) {
+          const on = () => (hoverNode = n.dataset.node)
+          const off = () => (hoverNode = null)
+          n.addEventListener('pointerenter', on)
+          n.addEventListener('pointerleave', off)
+          n.addEventListener('focus', on)
+          n.addEventListener('blur', off)
+        }
+        const endDrag = () => {
+          drag = null
+          globeEl.classList.remove('dragging')
+        }
+        globeEl.addEventListener('pointerup', endDrag)
+        globeEl.addEventListener('pointercancel', endDrag)
 
         function project([x, y, z]) {
           const c = Math.cos(spin)
@@ -1319,22 +2493,22 @@
           const lt = light()
           const cx = GW / 2
           const cy = GH / 2
-          const R = Math.min(GW, GH) * 0.36
+          const R = Math.min(GW, GH) * 0.4
           g.clearRect(0, 0, GW, GH)
 
           // atmosphere
           const halo = g.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.35)
-          halo.addColorStop(0, lt ? 'rgba(37,99,235,0.25)' : 'rgba(37,99,235,0.55)')
-          halo.addColorStop(0.35, lt ? 'rgba(56,189,248,0.1)' : 'rgba(56,189,248,0.18)')
+          halo.addColorStop(0, lt ? 'rgba(37,99,235,0.4)' : 'rgba(37,99,235,0.55)')
+          halo.addColorStop(0.35, lt ? 'rgba(56,189,248,0.16)' : 'rgba(56,189,248,0.18)')
           halo.addColorStop(1, 'rgba(0,0,0,0)')
           g.fillStyle = halo
           g.fillRect(0, 0, GW, GH)
 
           // the ocean body
           const body = g.createRadialGradient(cx - R * 0.3, cy - R * 0.35, R * 0.1, cx, cy, R)
-          body.addColorStop(0, lt ? 'rgba(59,130,246,0.25)' : 'rgba(30,64,175,0.55)')
-          body.addColorStop(0.7, lt ? 'rgba(30,64,175,0.2)' : 'rgba(15,23,80,0.8)')
-          body.addColorStop(1, lt ? 'rgba(30,64,175,0.35)' : 'rgba(37,99,235,0.75)')
+          body.addColorStop(0, lt ? 'rgba(59,130,246,0.95)' : 'rgba(30,64,175,0.55)')
+          body.addColorStop(0.7, lt ? 'rgba(30,58,138,0.97)' : 'rgba(15,23,80,0.8)')
+          body.addColorStop(1, lt ? 'rgba(37,99,235,0.95)' : 'rgba(37,99,235,0.75)')
           g.fillStyle = body
           g.beginPath()
           g.arc(cx, cy, R, 0, Math.PI * 2)
@@ -1364,19 +2538,66 @@
             const p = project(pt)
             if (p[2] < 0.02) continue
             const a = 0.25 + p[2] * 0.75
-            g.fillStyle = lt ? `rgba(14,116,144,${a})` : `rgba(125,211,252,${a})`
+            g.fillStyle = `rgba(125,211,252,${a})`
             g.fillRect(cx + p[0] * R - 0.9, cy - p[1] * R - 0.9, 1.8, 1.8)
           }
 
           // rim light
           const rim = g.createRadialGradient(cx, cy, R * 0.82, cx, cy, R * 1.02)
           rim.addColorStop(0, 'rgba(0,0,0,0)')
-          rim.addColorStop(0.85, lt ? 'rgba(56,189,248,0.35)' : 'rgba(56,189,248,0.55)')
+          rim.addColorStop(0.85, 'rgba(56,189,248,0.55)')
           rim.addColorStop(1, 'rgba(0,229,255,0)')
           g.fillStyle = rim
           g.beginPath()
           g.arc(cx, cy, R * 1.02, 0, Math.PI * 2)
           g.fill()
+
+          // a connection from every node into the globe, with data flowing in
+          const box = gcan.getBoundingClientRect()
+          nodes.forEach((n, i) => {
+            const t = n.querySelector('.tile').getBoundingClientRect()
+            const nx = t.left + t.width / 2 - box.left
+            const ny = t.top + t.height / 2 - box.top
+            const ang = Math.atan2(ny - cy, nx - cx)
+            const ex = cx + Math.cos(ang) * R * 0.96
+            const ey = cy + Math.sin(ang) * R * 0.96
+            // bow the line a little, away from the globe's centre
+            const mx = (nx + ex) / 2 + Math.cos(ang + Math.PI / 2) * 18
+            const my = (ny + ey) / 2 + Math.sin(ang + Math.PI / 2) * 18
+            const hot = hoverNode === n.dataset.node
+            const rgb = n.querySelector('.tile--purple') ? '139,92,246' : '6,182,212'
+            g.save()
+            g.lineWidth = hot ? 2.2 : 1.5
+            g.setLineDash([5, 6])
+            g.lineDashOffset = -time / 35
+            g.strokeStyle = `rgba(${rgb},${hot ? 1 : lt ? 0.6 : 0.65})`
+            if (hot) {
+              g.shadowColor = `rgba(${rgb},1)`
+              g.shadowBlur = 10
+            }
+            g.beginPath()
+            g.moveTo(nx, ny)
+            g.quadraticCurveTo(mx, my, ex, ey)
+            g.stroke()
+            g.restore()
+            // a packet travelling from the node into the globe
+            const k = (((time / (hot ? 900 : 1800) + i * 0.27) % 1) + 1) % 1
+            const px = (1 - k) * (1 - k) * nx + 2 * (1 - k) * k * mx + k * k * ex
+            const py = (1 - k) * (1 - k) * ny + 2 * (1 - k) * k * my + k * k * ey
+            g.fillStyle = '#ffffff'
+            g.shadowColor = `rgba(${rgb},1)`
+            g.shadowBlur = 12
+            g.beginPath()
+            g.arc(px, py, hot ? 3.2 : 2.2, 0, Math.PI * 2)
+            g.fill()
+            g.shadowBlur = 0
+            // where it lands
+            g.strokeStyle = `rgba(${rgb},${hot ? 0.9 : 0.5})`
+            g.lineWidth = 1.2
+            g.beginPath()
+            g.arc(ex, ey, hot ? 6 + Math.sin(time / 200) * 1.5 : 3.5, 0, Math.PI * 2)
+            g.stroke()
+          })
 
           // city links, lifted off the surface, each with a travelling pulse
           LINKS.forEach(([i, j], n) => {
@@ -1430,20 +2651,20 @@
 
           // orbit rings, each with a bright satellite
           ;[
-            { rx: 1.5, ry: 0.42, rot: -0.12, speed: 11000, color: '96,165,250' },
-            { rx: 1.34, ry: 0.62, rot: 0.42, speed: 15000, color: '0,229,255' },
-            { rx: 1.22, ry: 0.3, rot: -0.55, speed: 19000, color: '167,139,250' },
+            { rx: 1.5, ry: 0.42, rot: -0.12, speed: 11000, color: '96,165,250', dark: '37,99,235' },
+            { rx: 1.34, ry: 0.62, rot: 0.42, speed: 15000, color: '0,229,255', dark: '8,145,178' },
+            { rx: 1.22, ry: 0.3, rot: -0.55, speed: 19000, color: '167,139,250', dark: '124,58,237' },
           ].forEach((o, n) => {
             g.save()
             g.translate(cx, cy)
             g.rotate(o.rot)
-            g.strokeStyle = `rgba(${o.color},${lt ? 0.35 : 0.45})`
+            g.strokeStyle = lt ? `rgba(${o.dark},0.55)` : `rgba(${o.color},0.45)`
             g.lineWidth = 1.2
             g.beginPath()
             g.ellipse(0, 0, R * o.rx, R * o.ry, 0, 0, Math.PI * 2)
             g.stroke()
             const a = (time / o.speed) * Math.PI * 2 + n * 2
-            g.fillStyle = '#ffffff'
+            g.fillStyle = lt ? `rgb(${o.dark})` : '#ffffff'
             g.shadowColor = `rgba(${o.color},1)`
             g.shadowBlur = 14
             g.beginPath()
@@ -1477,7 +2698,13 @@
             if (d.x < 0 || d.x > W) d.vx *= -1
             if (d.y < 0 || d.y > H) d.vy *= -1
           }
-          spin += 0.0011
+          if (!drag) {
+            // slow down while the pointer is over the globe, so it can be read
+            spin += (hovering ? 0.0004 : 0.0011) + spinVel
+            spinVel *= 0.94
+          }
+          tiltOffset += (tiltTarget - tiltOffset) * 0.05
+          TILT = baseTilt + tiltOffset
           draw(time)
           requestAnimationFrame(tick)
         }

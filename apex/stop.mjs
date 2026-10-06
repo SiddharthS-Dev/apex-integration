@@ -1,8 +1,12 @@
 /**
  * Stops Apex.
  *
- *   node apex/stop.mjs [port ...]     stop everything Apex is running
+ *   node apex/stop.mjs [port ...]     stop everything Apex is running — on its
+ *                                     standard ports plus any port named (a
+ *                                     custom prod gateway port, for instance)
  *   node apex/stop.mjs --quiet        say nothing unless something was stopped
+ *   node apex/stop.mjs --pid <port>   print the PID listening on <port>, if any
+ *                                     (start.bat's port check; stops nothing)
  *
  * Only processes that belong to *this* folder are stopped. The naive version of
  * this — kill whatever is listening on 5173/4173 — happily kills an unrelated
@@ -44,17 +48,32 @@ const run = (cmd, args) => {
   }
 }
 
-/** PIDs listening on the ports we care about, from netstat. */
-function listeners(ports) {
+/**
+ * One line of `netstat -ano` as { port, pid } when it is a TCP listener, else null.
+ *
+ * The state column is translated on non-English Windows ("ABHÖREN", "ÉCOUTE"…),
+ * so a listener is recognised by position instead: a TCP row has five columns —
+ * proto, local, foreign, state, PID — and only a listening socket has no remote
+ * end, which netstat prints as 0.0.0.0:0 or [::]:0. Pure, exported for tests.
+ */
+export function parseNetstatLine(line) {
+  const cols = String(line).trim().split(/\s+/)
+  if (cols.length !== 5 || cols[0].toUpperCase() !== 'TCP') return null
+  const [, local, foreign, , pidText] = cols
+  if (foreign !== '0.0.0.0:0' && foreign !== '[::]:0') return null
+  const port = Number(local.slice(local.lastIndexOf(':') + 1))
+  const pid = Number(pidText)
+  return Number.isInteger(port) && port > 0 && Number.isInteger(pid) && pid > 0 ? { port, pid } : null
+}
+
+/** PIDs listening on the ports we care about, from netstat (IPv4 and IPv6). */
+export function listeners(ports) {
   const found = new Map() // pid -> Set<port>
   for (const line of run('netstat', ['-ano']).split(/\r?\n/)) {
-    const m = line.match(/^\s*TCP\s+(\S+):(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/i)
-    if (!m) continue
-    const port = Number(m[2])
-    const pid = Number(m[3])
-    if (!ports.includes(port) || !pid) continue
-    if (!found.has(pid)) found.set(pid, new Set())
-    found.get(pid).add(port)
+    const hit = parseNetstatLine(line)
+    if (!hit || !ports.includes(hit.port)) continue
+    if (!found.has(hit.pid)) found.set(hit.pid, new Set())
+    found.get(hit.pid).add(hit.port)
   }
   return found
 }
@@ -114,9 +133,22 @@ export function stopApex(ports = ALL_PORTS, { exclude = [] } = {}) {
 /* ------------------------------------------------------------------- CLI -- */
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const quiet = process.argv.includes('--quiet')
-  const asked = process.argv.slice(2).filter((a) => /^\d+$/.test(a)).map(Number)
-  const { stopped, foreign } = stopApex(asked.length ? asked : ALL_PORTS)
+  const args = process.argv.slice(2)
+  const pidAt = args.indexOf('--pid')
+  if (pidAt >= 0) {
+    // start.bat's "is this port taken, and by whom": one PID, or nothing.
+    const port = Number(args[pidAt + 1])
+    const [pid] = Number.isInteger(port) ? listeners([port]).keys() : []
+    if (pid) console.log(pid)
+    process.exit(0)
+  }
+
+  const quiet = args.includes('--quiet')
+  // A port named on the command line is looked at as well as the standard
+  // ones, not instead of them: "stop.bat 4180" stops a prod gateway on 4180
+  // and the APIs and dev servers beside it.
+  const asked = args.filter((a) => /^\d+$/.test(a)).map(Number)
+  const { stopped, foreign } = stopApex([...new Set([...ALL_PORTS, ...asked])])
 
   for (const s of stopped) console.log(`    port ${s.ports}  PID ${s.pid}  stopped`)
 
