@@ -21,6 +21,7 @@ start.bat              dev, on http://localhost:5173
 start.bat prod         builds every project, then serves them on 4173
 start.bat prod 4180    the same, on a port of your choosing
 stop.bat               stops everything Apex started
+stop.bat 4180          the same, plus a gateway on a custom port
 ```
 
 Open the dashboard, click a card, and that project opens in the same window at
@@ -32,11 +33,40 @@ dev servers finish booting, so a card may read **Starting** for a moment before
 it turns **Ready** — nothing to do, it polls and updates itself.
 
 There is **one sign-in** for everything, at `/login`. Nothing — the dashboard,
-either app, or their APIs — is reachable before it. Signing in checks the email
-and password against every app's own accounts and opens them all at once, so
-no app ever asks again; **Sign out** on the dashboard, or in any app,
-signs out of all of them. The standard account is `admin@inspironics.net`
-(`BOOTSTRAP_ADMIN_*` in each `apps/api/.env`). See `apex/auth.mjs`.
+any app, or their APIs — is reachable before it. Signing in checks the email
+and password against every app's own accounts and opens every app that accepts
+them at once, so no app asks again. An app that is down, or does not know the
+account, is skipped rather than failing the sign-in; its dashboard card reads
+**Sign in required** and leads back to the form. **Sign out** on the dashboard
+signs out of all of them. When one app's own session ends, it sends you to
+`/login?reauth=1`, which shows the form without signing the others out. The
+standard account is `admin@inspironics.net` (`BOOTSTRAP_ADMIN_*` in each
+`apps/api/.env`). See `apex/auth.mjs`.
+
+Each app's session cookie is scoped to its own mount (`Path=/vault/` and so on)
+and the gateway forwards it to that app only, never another app's cookie or
+`apex_session`. The one exception to the sign-in is a certificate's
+verification link, `/academia/verify/<id>`: signed out, the gateway answers it
+with its own small page (`apex/public/verify.html`), backed by the one public
+call `POST /academia/api/functions/verifyCertificate`.
+
+### Settings
+
+All optional, set in the environment before `start.bat`:
+
+| Variable             | Default                     | What it does |
+| -------------------- | --------------------------- | ------------ |
+| `APEX_HOST`          | `127.0.0.1`                 | The interface the gateway listens on. Loopback means this machine only. `0.0.0.0` opens it to the network — prefer a reverse proxy. The apps' own dev servers and APIs always stay on `127.0.0.1`. |
+| `APEX_PUBLIC_URL`    | `http://localhost:<port>`   | The URL browsers use. Behind an https reverse proxy set it, e.g. `https://apex.example.com`: every origin, OAuth redirect URI and API base handed to the apps is built from it, sign-in accepts it as an origin, and with `https` every app's session cookie becomes `Secure`. Register the redirect URIs `start.bat` prints for it. |
+| `APEX_TRUST_PROXY`   | unset                       | Set to `1` when that proxy sets `X-Forwarded-For` (overwriting, not appending), `-Proto` and `-Host`. The gateway then takes the client address for its sign-in rate limit from the left-most `X-Forwarded-For`. Leave unset otherwise — any client could claim any address. |
+| `APEX_SESSION_HOURS` | `12`                        | How long one sign-in lasts. Each app is started with the same `SESSION_TTL_HOURS`, so no app session outlives Apex's. |
+| `APEX_PORT`          | `5173` dev, `4173` prod     | The gateway's port (`start.bat prod 4180` sets it too). |
+
+`start.bat prod` runs every API with `NODE_ENV=production`. Over plain
+`http://localhost` that still works: each app is told its cookies are not
+`Secure` (`COOKIE_SECURE=false`, `SESSION_COOKIE_SECURE=false`). A public
+`APEX_PUBLIC_URL` must be `https` — the Showcase API refuses to start in
+production otherwise.
 
 ---
 
@@ -195,11 +225,14 @@ Its database is `Inspironics Academia/apps/api/data/`.
 | 4177 | Academia API (reached at `/academia/api`) |
 | 4173 | the gateway in prod mode         |
 
-5174–5176 are bound to `127.0.0.1`; the APIs on 4175–4177 listen on
-every interface. None of them is meant
-to be visited directly — the API's OAuth redirects and cookies only line up
-when it is reached through `/vault/api`. The gateway binds all interfaces, so Apex is also reachable from
-another device on your network.
+All of 5174–5176 and the APIs on 4175–4177 are bound to `127.0.0.1` (Apex
+starts each API with `HOST=127.0.0.1` and `TRUST_PROXY=loopback`, so it
+believes the client address in the gateway's `X-Forwarded-For` and nobody
+else's). None of them is meant to be visited directly — the API's OAuth
+redirects and cookies only line up when it is reached through `/vault/api`.
+The gateway itself listens on `APEX_HOST`, `127.0.0.1` by default, so Apex is
+not reachable from another device unless you set `APEX_HOST=0.0.0.0` or put a
+reverse proxy in front (see Settings above).
 
 ---
 
@@ -238,7 +271,10 @@ imports the app's source modules, which only a dev server serves.
    `devPort` on `127.0.0.1`, and set `hmr.clientPort` to the gateway's port.
 3. Give its router a `basename` of `import.meta.env.BASE_URL`.
 4. Fix any absolute `/…` URLs it builds at runtime.
-5. Add a card to `apex/public/index.html` and launch it from `start.bat`.
+5. Add a card to `apex/public/index.html` (its `data-probe` is the mount) and
+   launch it from `start.bat`. With an API, give it `sessionCookie` and
+   `health` in `projects.mjs`: the sign-in page's steps and the dashboard's
+   health probes come from there (`/auth/config`).
 
 `apex/projects.mjs` is the source of truth for ports and mounts; the gateway,
 the dashboard and the stop script all read from it.

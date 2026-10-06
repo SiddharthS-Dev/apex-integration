@@ -63,7 +63,9 @@ rem  and keep holding their ports. Refusing to start in that state stranded you:
 rem  the browser said ERR_CONNECTION_REFUSED on 5173 and this script said the
 rem  ports were busy - with our own orphans. stop.mjs only ever touches
 rem  processes belonging to this folder, so this is safe to run every time.
-node "%~dp0apex\stop.mjs" --quiet
+rem  The gateway port is named too, so a custom prod port (start.bat prod 4180)
+rem  left over from last time is cleared as well as the standard ones.
+node "%~dp0apex\stop.mjs" --quiet %GATEWAY_PORT%
 
 rem  Anything still holding a port now belongs to someone else, so say whose it
 rem  is rather than killing it.
@@ -106,6 +108,7 @@ echo.
 echo   Apex - Inspironics
 echo   ----------------------------------------------------
 echo     mode           %MODE%
+if defined APEX_PUBLIC_URL echo     public url     %APEX_PUBLIC_URL%
 echo     dashboard      http://localhost:%GATEWAY_PORT%/
 echo     showcase       http://localhost:%GATEWAY_PORT%/showcase/
 echo     showcase api   http://localhost:%GATEWAY_PORT%/showcase/api/
@@ -233,9 +236,12 @@ if not exist "%~1\apps\api\.env" (
 exit /b 0
 
 rem  Sets PID to the process listening on the port passed in, or leaves it unset.
+rem  Asked of stop.mjs rather than parsed from netstat here: netstat's state
+rem  column is translated on non-English Windows, so matching the word
+rem  LISTENING silently finds nothing there. stop.mjs goes by column position.
 :port_pid
 set "PID="
-for /f "tokens=5" %%P in ('netstat -ano 2^>nul ^| findstr /r /c:":%~1 .*LISTENING"') do (
+for /f "delims=" %%P in ('node "%~dp0apex\stop.mjs" --pid %~1 2^>nul') do (
     if not defined PID set "PID=%%P"
 )
 exit /b 0
