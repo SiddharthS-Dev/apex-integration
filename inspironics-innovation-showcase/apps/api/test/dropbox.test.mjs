@@ -52,6 +52,22 @@ test('a 401 mid-flight refreshes once and retries', async () => {
   }
 })
 
+test('a download the client aborted is not retried', async () => {
+  const h = await createHarness()
+  try {
+    const admin = await h.signIn('a@x.io', 'admin')
+    await h.connectDropbox(admin.user.id)
+    h.dropbox.put('/Showcase/a.jpg', fakeJpeg(1, 1))
+    const ac = new AbortController()
+    ac.abort()
+    const before = h.dropbox.state.calls.filter((c) => c.path === '/2/files/download').length
+    await assert.rejects(h.services.dropbox.download('files/download', { path: '/Showcase/a.jpg' }, { signal: ac.signal }), { name: 'AbortError' })
+    assert.equal(h.dropbox.state.calls.filter((c) => c.path === '/2/files/download').length - before, 1, 'one attempt, no retries')
+  } finally {
+    await h.close()
+  }
+})
+
 test('every call carries the root path header, and a moved team root is followed', async () => {
   const h = await createHarness()
   try {

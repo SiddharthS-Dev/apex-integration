@@ -96,6 +96,15 @@ export const storageKeys = {
   explorerQuality: 'inspironics.explorer.quality.v1',
 }
 
+/**
+ * Window events that cross feature boundaries without an import between them.
+ * `signedOut` fires when a signed-in session ends (sign-out, or the server
+ * saying the cookie is no longer valid), so per-user caches can forget it.
+ */
+export const appEvents = {
+  signedOut: 'inspironics:signed-out',
+}
+
 /** Auth policy. A server would own these; they live here until one does. */
 export const authPolicy = {
   otpTtlMs: 10 * 60 * 1000,

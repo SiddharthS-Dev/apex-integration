@@ -28,50 +28,85 @@ const CHALK = [244, 244, 249]
 /** @type {[number, number, number]} */
 const MUTED = [150, 152, 165]
 
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+/**
+ * Everything in the report is computed from `data` (the loaded catalog) — no
+ * fixed counts, claims or roadmap. "This month" means a plate whose file was
+ * added or changed during the report's month, from the record's `modifiedAt`
+ * (Dropbox's server_modified). Records without dates (the bundled demo corpus)
+ * get a library snapshot instead, labelled as such.
+ */
 export function buildReportModel(data, date = new Date()) {
   const month = date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-  const { items, cats, techs, totalCount, esgN, aiN, iotN, flagshipN } = data
+  const asOf = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const items = data?.items || []
+  const cats = data?.cats || []
+  const techs = data?.techs || []
+  const totalCount = data?.totalCount ?? items.length
+  const { esgN = 0, aiN = 0, iotN = 0, flagshipN = 0 } = data || {}
+  const productsN = Object.values(data?.productCounts || {}).filter((n) => n > 0).length
 
-  const byCat = cats.map((c) => ({
-    ...c,
-    share: Math.round((c.count / totalCount) * 100),
-    milestones: items
-      .filter((i) => i.cat === c.name)
-      .slice(0, 4)
-      .map((i) => ({ title: i.title, note: i.takeaway || i.objective || '' })),
-  }))
+  const monthStart = new Date(date.getFullYear(), date.getMonth(), 1).getTime()
+  const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime()
+  const when = (i) => Date.parse(i.modifiedAt || '')
+  const dated = items.some((i) => Number.isFinite(when(i)))
+  const inMonth = (i) => {
+    const t = when(i)
+    return t >= monthStart && t < monthEnd
+  }
+  const changedN = dated ? items.filter(inMonth).length : null
+
+  const byCat = cats.map((c) => {
+    const inCat = items.filter((i) => i.cat === c.name)
+    const picked = dated ? inCat.filter(inMonth).sort((a, b) => when(b) - when(a)) : inCat
+    return {
+      ...c,
+      share: totalCount ? Math.round((c.count / totalCount) * 100) : 0,
+      changed: dated ? picked.length : null,
+      milestones: picked.slice(0, 4).map((i) => ({ title: i.title, note: i.takeaway || i.objective || '' })),
+    }
+  })
 
   const topTech = techs
     .map((t) => ({ name: t, count: items.filter((i) => i.tech.includes(t)).length }))
+    .filter((t) => t.count > 0)
     .sort((a, b) => b.count - a.count)
+
+  const largest = byCat[0]
+  const summary = totalCount
+    ? [
+        `As of ${asOf} the library holds ${plural(totalCount, 'plate')} across ${plural(cats.length, 'category', 'categories')} and ${plural(topTech.length, 'technology domain')}.`,
+        dated
+          ? changedN
+            ? `${plural(changedN, 'plate was', 'plates were')} added or updated during ${month}.`
+            : `No plates were added or updated during ${month}.`
+          : 'These plates carry no dates, so this report describes the library as it stands rather than a month of change.',
+        `${aiN} carry an AI component, ${iotN} are IoT-enabled and ${esgN} are ESG-linked. ${largest.name} is the largest category, at ${plural(largest.count, 'plate')}.`,
+      ]
+    : [`As of ${asOf} the library has no plates yet — connect Dropbox and run a sync, and this report fills itself in.`]
 
   return {
     month,
     generatedAt: date,
     kpis: [
       { label: 'Total plates', value: totalCount },
+      ...(dated ? [{ label: `Changed in ${month.split(' ')[0]}`, value: changedN }] : []),
       { label: 'Categories', value: cats.length },
-      { label: 'Tech domains', value: techs.length },
+      { label: 'Tech domains', value: topTech.length },
       { label: 'AI-driven', value: aiN },
       { label: 'IoT-enabled', value: iotN },
       { label: 'ESG-linked', value: esgN },
       { label: 'Flagship', value: flagshipN },
-      { label: 'Products', value: 5 },
+      { label: 'Products', value: productsN },
     ],
-    summary: [
-      `The Inspironics innovation estate closed ${month} at ${totalCount} published architecture plates spanning ${cats.length} categories and ${techs.length} technology domains.`,
-      `${aiN} plates now carry an AI or agentic component and ${iotN} are IoT-enabled, reflecting the continued shift from static schematics toward instrumented, closed-loop systems.`,
-      `${esgN} plates are explicitly ESG-linked, driven by carbon accounting work landing in the Caleido Mints line, while ${byCat[0].name} remains the largest single body of work at ${byCat[0].count} plates.`,
-    ],
+    summary,
     byCat,
     topTech,
-    roadmap: [
-      ['Portfolio twin depth', 'Extend Cielo Epic roll-ups so facility twins aggregate without manual mapping.'],
-      ['Edge inference footprint', 'Push more Machine Learning plates from cloud scoring to on-site Edge AI.'],
-      ['Carbon attribution', 'Close the gap between metered consumption and scope-3 attribution in Mints.'],
-      ['Zero-trust baseline', 'Bring the Security posture in the healthcare zone to every other zone.'],
-      ['Marketplace surface', 'Package the most-reused components as installable modules.'],
-    ],
+    /** Section 04's wording follows what the data can actually say. */
+    milestones: dated
+      ? { label: 'Changes by category', title: `Added or updated in ${month}`, empty: `Nothing was added or updated in ${month}.` }
+      : { label: 'Library by category', title: 'A sample from each category', empty: 'No plates yet.' },
   }
 }
 
@@ -197,6 +232,10 @@ export function generateReportPdf(data, { date = new Date(), save = true } = {})
   y += 8
   sectionTitle('03 · Domain coverage', 'Plates by technology domain')
   const max = model.topTech[0]?.count || 1
+  if (!model.topTech.length) {
+    flow(30)
+    y += text('No technology domains recorded yet.', M.l, y, { size: 10.5 }) + 10
+  }
   model.topTech.forEach((t) => {
     flow(24)
     doc.setFont('helvetica', 'normal')
@@ -218,8 +257,13 @@ export function generateReportPdf(data, { date = new Date(), save = true } = {})
 
   /* -------------------------------------------------------- milestones --- */
   y += 14
-  sectionTitle('04 · Milestones by category', 'What shipped this cycle')
-  model.byCat.forEach((c) => {
+  sectionTitle(`04 · ${model.milestones.label}`, model.milestones.title)
+  const groups = model.byCat.filter((c) => c.milestones.length)
+  if (!groups.length) {
+    flow(30)
+    y += text(model.milestones.empty, M.l, y, { size: 10.5 }) + 10
+  }
+  groups.forEach((c) => {
     flow(96)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
@@ -228,7 +272,8 @@ export function generateReportPdf(data, { date = new Date(), save = true } = {})
     doc.setFont('courier', 'normal')
     doc.setFontSize(8)
     doc.setTextColor(...EM)
-    doc.text(`${c.count} PLATES · ${c.share}%`, PAGE.w - M.r - 92, y)
+    const tally = c.changed === null ? `${c.count} PLATES · ${c.share}%` : `${c.changed} OF ${c.count} PLATES`
+    doc.text(tally, PAGE.w - M.r - doc.getTextWidth(tally), y)
     y += 8
     rule(y, [30, 32, 44])
     y += 14
@@ -242,28 +287,6 @@ export function generateReportPdf(data, { date = new Date(), save = true } = {})
       y += 4
     })
     y += 10
-  })
-
-  /* ----------------------------------------------------------- roadmap --- */
-  y += 6
-  sectionTitle('05 · Roadmap', 'Where the next cycle goes')
-  model.roadmap.forEach(([t, d], i) => {
-    flow(52)
-    doc.setFillColor(...PANEL)
-    doc.roundedRect(M.l, y - 12, CONTENT_W, 44, 6, 6, 'F')
-    doc.setFont('courier', 'bold')
-    doc.setFontSize(9)
-    doc.setTextColor(...CY)
-    doc.text(`0${i + 1}`, M.l + 12, y + 4)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(10)
-    doc.setTextColor(...CHALK)
-    doc.text(t, M.l + 36, y + 2)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8.5)
-    doc.setTextColor(...MUTED)
-    doc.text(doc.splitTextToSize(d, CONTENT_W - 52), M.l + 36, y + 16)
-    y += 54
   })
 
   /* ------------------------------------------------------------ footers -- */

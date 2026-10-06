@@ -2,24 +2,35 @@
  * /api/entities — the catalog and what it says about itself.
  *
  *   GET   /plates               the active library, as plate records
+ *   GET   /plates/count         { total } — public, for the Apex dashboard's tile
  *   GET   /plates/:id
- *   POST  /plates/:id/events    view / download / favourite / offline
+ *   POST  /plates/:id/events    view / download / favourite / offline (guests: view only)
  *   PATCH /plates/:id           admin correction of title or classification
- *   GET   /analytics            dashboard aggregates
+ *   GET   /analytics            admin dashboard aggregates
  *   GET   /sync-logs            admin
  *   GET   /login-history        admin
  */
 import express from 'express'
-import { CATEGORY_NAMES, PRODUCTS, TECHS } from '@inspironics/shared'
-import { badRequest, intParam, notFound, route } from '../lib/http.js'
+import { CATEGORY_NAMES, PRODUCTS, ROLES, TECHS } from '@inspironics/shared'
+import { HttpError, badRequest, intParam, notFound, route } from '../lib/http.js'
 import { requireAdmin, requireAuth } from '../middleware/auth.js'
+import { rateLimit } from '../middleware/security.js'
 import { EVENT_KINDS, toPlate } from '../repos/files.js'
 
 const EDITABLE_TEXT = ['objective', 'architecture', 'takeaway']
 const EDITABLE_LISTS = ['flow', 'components', 'bizben', 'techben', 'extraKeywords']
 
-export function entityRoutes({ repos }) {
+export function entityRoutes({ config, repos, metrics }) {
   const r = express.Router()
+  // a person browsing records a few events a minute; this only stops a script inflating counts
+  const eventLimiter = rateLimit({
+    windowMs: 60_000,
+    max: config.isProd ? 120 : 2000,
+    bucket: 'events',
+    metrics,
+    // per person; the shared guest identity is counted per address instead
+    key: (req) => (req.user && req.user.role !== ROLES.GUEST ? `u:${req.user.id}` : `ip:${req.ip}`),
+  })
 
   r.get(
     '/plates',
@@ -38,6 +49,15 @@ export function entityRoutes({ repos }) {
     })
   )
 
+  // only a number: nothing about the plates themselves leaves without a session
+  r.get(
+    '/plates/count',
+    route(async (req, res) => {
+      res.setHeader('Cache-Control', 'public, max-age=60')
+      res.json({ total: (await repos.files.counts()).active || 0 })
+    })
+  )
+
   r.get(
     '/plates/:id',
     requireAuth,
@@ -51,11 +71,15 @@ export function entityRoutes({ repos }) {
   r.post(
     '/plates/:id/events',
     requireAuth,
+    eventLimiter,
     route(async (req, res) => {
       const kind = req.body?.kind
       if (!EVENT_KINDS.includes(kind)) throw badRequest(`kind must be one of ${EVENT_KINDS.join(', ')}.`)
+      // the shared guest identity may count a view; downloads, favourites and
+      // offline saves belong to a person
+      if (req.user.role === ROLES.GUEST && kind !== 'view') throw new HttpError(403, 'Create an account to do that.')
       const row = await repos.files.get(req.params.id)
-      if (!row) throw notFound('No such plate.')
+      if (!row || row.status !== 'active') throw notFound('No such plate.')
       await repos.events.record(row.id, req.user.id, kind)
       if (kind === 'view') await repos.files.incrementViews(row.id)
       res.status(204).end()
@@ -98,7 +122,7 @@ export function entityRoutes({ repos }) {
 
   r.get(
     '/analytics',
-    requireAuth,
+    requireAdmin,
     route(async (req, res) => {
       const days = intParam(req.query.days, 30, { min: 1, max: 365 })
       const since = new Date(Date.now() - days * 86400_000).toISOString()
@@ -118,8 +142,6 @@ export function entityRoutes({ repos }) {
         repos.events.top('view', 10),
         repos.events.top('download', 10),
       ])
-      const admin = req.user.role === 'admin'
-
       res.json({
         library: {
           active: counts.active || 0,
@@ -145,9 +167,7 @@ export function entityRoutes({ repos }) {
           archived: s.archived,
           failed: s.failed,
         })),
-        ...(admin && {
-          logins: (await repos.events.loginsByDay(since)).map((l) => ({ day: l.day, success: !!l.success, count: Number(l.n) })),
-        }),
+        logins: (await repos.events.loginsByDay(since)).map((l) => ({ day: l.day, success: !!l.success, count: Number(l.n) })),
       })
     })
   )

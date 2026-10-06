@@ -83,6 +83,8 @@ export function createFakeDropbox({ thumbnail = () => fakeJpeg(640, 480) } = {})
     const u = new URL(url)
     const headers = Object.fromEntries(Object.entries(init.headers || {}).map(([k, v]) => [k.toLowerCase(), v]))
     state.calls.push({ path: u.pathname, headers })
+    // like real fetch: an aborted request rejects before anything is sent
+    if (init.signal?.aborted) throw new DOMException('This operation was aborted', 'AbortError')
 
     if (u.pathname === '/oauth2/token') {
       state.tokenCalls++
@@ -219,13 +221,15 @@ export async function createHarness({ env = {}, enricher, seeds, port = 0, fake,
   })
   const base = `http://127.0.0.1:${server.address().port}`
 
+  const clean = (h) => Object.fromEntries(Object.entries(h).filter(([, v]) => v !== undefined))
   /** A cookie-carrying client. */
   const client = () => {
     let cookie = ''
     const call = async (method, p, body, headers = {}) => {
       const res = await fetch(base + p, {
         method,
-        headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}), ...headers },
+        // a browser sends Origin on every write; tests opt out with { Origin: undefined }
+        headers: clean({ Origin: base, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}), ...headers }),
         body: body ? JSON.stringify(body) : undefined,
         redirect: 'manual',
       })

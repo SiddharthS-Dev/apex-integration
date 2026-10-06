@@ -104,3 +104,39 @@ test('Google sign-in sends the ID token for server-side verification', async () 
   await api.loginWithGoogle({ email: 'demo@x.io' })
   assert.deepEqual(calls[1].body, { demo: true })
 })
+
+test("apiRequest reads the Apex gateway's { error: 'message', code } shape too", async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ error: 'The Showcase API is still starting.', code: 'API_STARTING' }), { status: 503 })
+  await assert.rejects(apiRequest('/api/auth/session', { fetchImpl }), (e) => e.status === 503 && e.code === 'API_STARTING' && /still starting/.test(e.message))
+})
+
+test('refresh: only a 401 (or the server saying "no session") signs out; 5xx, 429 and offline keep the session', async () => {
+  for (const status of [0, 429, 500, 502, 503]) {
+    stubs.reset()
+    let fail = false
+    const { request } = fakeRequest({
+      'POST /api/auth/login': () => ({ session: session('k@x.io') }),
+      'GET /api/auth/session': () => {
+        if (fail) throw new ApiError(status, 'nope')
+        return { session: session('k@x.io') }
+      },
+    })
+    const api = createHttpAuthService({ request })
+    await api.login({ email: 'k@x.io', password: 'x' })
+    fail = true
+    assert.equal((await api.refresh())?.user.email, 'k@x.io', `status ${status} keeps the session`)
+    assert.equal(api.getSession()?.user.email, 'k@x.io')
+  }
+
+  stubs.reset()
+  const { request } = fakeRequest({
+    'POST /api/auth/login': () => ({ session: session('k@x.io') }),
+    'GET /api/auth/session': () => {
+      throw new ApiError(401, 'Sign in to continue.')
+    },
+  })
+  const api = createHttpAuthService({ request })
+  await api.login({ email: 'k@x.io', password: 'x' })
+  assert.equal(await api.refresh(), null)
+  assert.equal(api.getSession(), null)
+})

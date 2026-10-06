@@ -70,7 +70,7 @@ export default function HeroSection({ stats }) {
             custom={3}
             className="mt-10 flex flex-wrap items-stretch gap-3 sm:gap-4"
           >
-            <Stat value={`${stats.totalCount}+`} label="Innovations" accent />
+            <Stat value={stats.totalCount} label="Innovations" accent />
             <Stat value={stats.techs.length} label="Tech Domains" />
             <Stat value={stats.cats.length} label="Categories" />
             <Stat value={stats.iotN} label="IoT-Enabled" />

@@ -7,16 +7,28 @@ const HIGHLIGHTS = [
   ['Portfolio roll-up', 'Cielo Epic turns per-site twins into board-level capital decisions.'],
 ]
 
-const STORE_KEY = 'inspironics.contact.submissions.v1'
+const CONTACT_EMAIL = 'hello@inspironics.net'
+
+/** A mailto: link with the enquiry prefilled — the visitor's own mail app sends it. */
+function contactMailto({ name, email, company, message }) {
+  const subject = `Showcase enquiry from ${name.trim()}${company.trim() ? ` (${company.trim()})` : ''}`
+  const body = [message.trim(), '', '—', name.trim(), company.trim(), email.trim()].filter((l, i) => l || i < 3).join('\n')
+  return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+}
 
 export default function ContactSection() {
   const [form, setForm] = useState({ name: '', email: '', company: '', message: '' })
-  const [state, setState] = useState('idle') // idle | sending | done | error
+  const [state, setState] = useState('idle') // idle | opened | error
   const [error, setError] = useState('')
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
-  const submit = async (e) => {
+  /*
+   * Nothing on this site sends mail, so the form does not pretend to: it opens
+   * the visitor's own mail app with the enquiry written out, addressed to us.
+   * Whether it is sent is up to them — the UI says exactly that.
+   */
+  const submit = (e) => {
     e.preventDefault()
     if (!form.name.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email) || !form.message.trim()) {
       setError('Add your name, a valid email and a message.')
@@ -24,17 +36,8 @@ export default function ContactSection() {
       return
     }
     setError('')
-    setState('sending')
-    await new Promise((r) => setTimeout(r, 900))
-    try {
-      // No mail service is wired into this build; enquiries are queued locally so
-      // nothing is silently lost when a backend is connected.
-      const prev = JSON.parse(localStorage.getItem(STORE_KEY) || '[]')
-      localStorage.setItem(STORE_KEY, JSON.stringify([{ ...form, at: new Date().toISOString() }, ...prev]))
-    } catch {
-      /* storage unavailable — the UI still confirms */
-    }
-    setState('done')
+    window.location.href = contactMailto(form)
+    setState('opened')
   }
 
   return (
@@ -87,24 +90,19 @@ export default function ContactSection() {
         >
           <p className="label-mono">Start a conversation</p>
 
-          {state === 'done' ? (
+          {state === 'opened' ? (
             <div className="py-12 text-center">
-              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-glow/15 text-2xl text-emerald-glow">
-                ✓
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-cyan-glow/15 text-2xl text-cyan-glow">
+                ✉
               </div>
-              <h3 className="mt-5 text-xl font-bold text-chalk">Message received</h3>
+              <h3 className="mt-5 text-xl font-bold text-chalk">Finish in your mail app</h3>
               <p className="mt-2 text-sm text-muted">
-                Thanks {form.name.split(' ')[0]} — we will reply to {form.email} shortly.
+                Your message to {CONTACT_EMAIL} is written out in a new email — press send there and it is on its way. If no
+                mail app opened, <a href={contactMailto(form)} className="text-cyan-glow underline underline-offset-4">try again</a>{' '}
+                or email {CONTACT_EMAIL} directly.
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setForm({ name: '', email: '', company: '', message: '' })
-                  setState('idle')
-                }}
-                className="btn-ghost mt-7"
-              >
-                Send another
+              <button type="button" onClick={() => setState('idle')} className="btn-ghost mt-7">
+                Back to the form
               </button>
             </div>
           ) : (
@@ -132,18 +130,15 @@ export default function ContactSection() {
                 <p className="mt-4 rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs text-rose-300">{error}</p>
               )}
 
-              <button type="submit" disabled={state === 'sending'} className="btn-primary mt-6 w-full">
-                {state === 'sending' ? (
-                  <>
-                    <span className="h-4 w-4 animate-spinSlow rounded-full border-2 border-black/25 border-t-black/70" />
-                    Sending…
-                  </>
-                ) : (
-                  'Send message'
-                )}
+              <button type="submit" className="btn-primary mt-6 w-full">
+                Write the email
               </button>
               <p className="mt-3 text-center text-[11px] text-muted/70">
-                Or email us directly at hello@inspironics.net
+                Opens your mail app addressed to{' '}
+                <a href={`mailto:${CONTACT_EMAIL}`} className="underline underline-offset-4 hover:text-cyan-glow">
+                  {CONTACT_EMAIL}
+                </a>
+                . Nothing is sent from this page.
               </p>
             </>
           )}

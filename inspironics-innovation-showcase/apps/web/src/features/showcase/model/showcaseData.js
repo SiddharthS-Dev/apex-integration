@@ -6,16 +6,17 @@
  *
  *   api    GET /api/entities/plates — the Dropbox-synced catalog. Records carry
  *          same-origin URLs for thumbnails, previews and originals; the API
- *          proxies the bytes. The last good copy is kept in IndexedDB, so the
- *          gallery still opens offline.
+ *          proxies the bytes. The last good copy is kept in IndexedDB, per
+ *          signed-in user, so the gallery still opens offline; it is
+ *          forgotten when that user signs out.
  *   local  public/data/showcase.json, with images served from /images (the
  *          `inspironics-images` plugin in vite.config.js).
  */
 import { CATEGORY_NAMES, TECHS } from '@inspironics/shared'
-import { env, showcaseConfig } from '#shared/config'
+import { appEvents, env, showcaseConfig, storageKeys } from '#shared/config'
 import { apiRequest, apiUrl } from '#shared/lib/apiClient.js'
-import { idbGet, idbPut } from '#shared/lib/idb.js'
-import { enrichmentFor, productKeysFor, PRODUCTS } from './productEnrichment.js'
+import { idbDelete, idbGet, idbKeys, idbPut } from '#shared/lib/idb.js'
+import { productKeysFor, PRODUCTS } from './productEnrichment.js'
 import { loadCustomItems } from './customItems.js'
 
 // Both carry the app's mount path (see shared/config): under the Apex gateway
@@ -65,7 +66,21 @@ export function haystack(item) {
     .toLowerCase()
 }
 
+/**
+ * Product tags: the record's own (an administrator's edit, or the classifier's)
+ * win. The bundled filename map was built from the curated corpus, so it is
+ * only a fallback for records that are that corpus — the demo data, or a plate
+ * the API matched to a seed — never for an unrelated upload that happens to
+ * share a name like IMG_0600.jpg.
+ */
+function productsOf(raw) {
+  if (Array.isArray(raw.products)) return raw.products.filter((k) => PRODUCTS[k])
+  const curated = !raw.classification || raw.classification === 'seed'
+  return curated ? productKeysFor(raw.f) : []
+}
+
 function enrich(raw, flagshipSet) {
+  const products = productsOf(raw)
   const item = {
     ...raw,
     tech: raw.tech || [],
@@ -77,8 +92,8 @@ function enrich(raw, flagshipSet) {
     ai: !!raw.ai,
     iot: !!raw.iot,
     flagship: raw.flagship ?? flagshipSet.has(raw.f),
-    extraKeywords: [...new Set([...(raw.extraKeywords || []), ...enrichmentFor(raw.f)])],
-    products: productKeysFor(raw.f),
+    extraKeywords: [...new Set([...(raw.extraKeywords || []), ...products.flatMap((k) => PRODUCTS[k].phrases)])],
+    products,
   }
   item.thumbUrl = onApi(thumbUrl(item))
   item.fullUrl = onApi(fullUrl(item))
@@ -112,7 +127,31 @@ function aggregate(items) {
 
 let cache = null
 
-const SNAPSHOT_KEY = 'catalog'
+const SNAPSHOT_PREFIX = 'catalog:'
+
+/**
+ * The offline snapshot's key for whoever is signed in, from the session mirror
+ * (see the auth feature's httpAuthService). No user, no snapshot.
+ */
+function snapshotKey() {
+  try {
+    const id = JSON.parse(globalThis.localStorage?.getItem(storageKeys.apiSession) || 'null')?.user?.id
+    return id ? `${SNAPSHOT_PREFIX}${id}` : null
+  } catch {
+    return null
+  }
+}
+
+/** Drop every catalog snapshot (and the pre-per-user 'catalog' one) and the in-memory copy. */
+export async function forgetCatalogSnapshots() {
+  cache = null
+  const keys = await idbKeys('meta')
+  await Promise.all(keys.filter((k) => k === 'catalog' || String(k).startsWith(SNAPSHOT_PREFIX)).map((k) => idbDelete('meta', k)))
+}
+
+globalThis.window?.addEventListener?.(appEvents.signedOut, () => {
+  forgetCatalogSnapshots().catch(() => {})
+})
 
 /**
  * The raw corpus from whichever backend is configured.
@@ -124,13 +163,14 @@ async function fetchCorpus() {
     if (!res.ok) throw new Error(`Could not load showcase data (${res.status})`)
     return res.json()
   }
+  const key = snapshotKey()
   try {
     const raw = await apiRequest('/api/entities/plates')
-    idbPut('meta', SNAPSHOT_KEY, { ...raw, savedAt: new Date().toISOString() })
+    if (key) idbPut('meta', key, { ...raw, savedAt: new Date().toISOString() })
     return raw
   } catch (error) {
     if (error.status !== 0) throw error
-    const snapshot = await idbGet('meta', SNAPSHOT_KEY)
+    const snapshot = key && (await idbGet('meta', key))
     if (!snapshot) throw error
     return { ...snapshot, offline: true }
   }

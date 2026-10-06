@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { storageKeys } from '#shared/config'
+import { baseUrl, env, storageKeys } from '#shared/config'
 import { api } from '../api/authService.js'
 
 const AuthCtx = createContext(null)
@@ -62,9 +62,25 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const logout = useCallback(() => {
+  /*
+   * The Sign out button. Standalone it ends this app's session and the caller
+   * navigates. Under the Apex gateway (mounted at a base other than '/') it
+   * ends the whole Apex session: this app's cookie first, then the gateway's
+   * own (POST /auth/logout, same-origin so the browser sends Origin), then the
+   * Apex sign-in. Resolves true when it has navigated away itself. The session
+   * is not cleared in React state on that path, or ProtectedRoute would race
+   * it to the reauth hand-off.
+   */
+  const logout = useCallback(async () => {
+    if (baseUrl !== '/' && env.backend === 'api') {
+      await api.logout()
+      await fetch('/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
+      window.location.replace('/login')
+      return true
+    }
     api.logout()
     setSession(null)
+    return false
   }, [])
 
   const value = useMemo(

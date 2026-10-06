@@ -12,13 +12,14 @@ export function createFilesRepo(db) {
     /** external_id -> { id, rev, processedRev, status } for every file ever seen. */
     async index() {
       const rows = await db.all(
-        'SELECT id, external_id, rev, processed_rev, status, classification_status, title, title_source, meta, width, height FROM stored_file'
+        'SELECT id, external_id, path_lower, rev, processed_rev, status, classification_status, title, title_source, meta, width, height FROM stored_file'
       )
       return new Map(
         rows.map((r) => [
           r.external_id,
           {
             id: r.id,
+            pathLower: r.path_lower,
             rev: r.rev,
             processedRev: r.processed_rev,
             status: r.status,

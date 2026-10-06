@@ -96,7 +96,7 @@ export default function AboutSection({ stats, heroItem }) {
 
           <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-4">
             {[
-              { v: stats.totalCount, s: '+', l: 'Plates' },
+              { v: stats.totalCount, s: '', l: 'Plates' },
               { v: stats.techs.length, s: '', l: 'Domains' },
               { v: stats.aiN, s: '', l: 'AI-Driven' },
               { v: stats.esgN, s: '', l: 'ESG-Linked' },

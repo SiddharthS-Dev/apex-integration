@@ -21,7 +21,7 @@ async function withLibrary(fn) {
 }
 
 test('register -> verify -> session cookie; login history recorded', async () => {
-  const h = await createHarness()
+  const h = await createHarness({ env: { EXPOSE_DEV_CODES: 'true' } })
   try {
     const c = h.client()
     const reg = await c.json('POST', '/api/auth/register', { email: 'New@X.io', password: 'abcdefg1', name: 'New' })
@@ -52,8 +52,9 @@ test('register -> verify -> session cookie; login history recorded', async () =>
 })
 
 test('password reset revokes existing sessions and cannot enumerate accounts', async () => {
-  const h = await createHarness()
+  const h = await createHarness({ env: { EXPOSE_DEV_CODES: 'true' } })
   try {
+    await h.signIn('a@x.io', 'admin') // otherwise r@x.io claims the role, and admins get no dev reset code
     const u = await h.signIn('r@x.io')
     const unknown = await h.client().json('POST', '/api/auth/forgot', { email: 'nobody@x.io' })
     assert.equal(unknown.status, 200)
@@ -62,6 +63,39 @@ test('password reset revokes existing sessions and cannot enumerate accounts', a
     const r = await h.client().json('POST', '/api/auth/reset', { email: 'r@x.io', token: f.body.devToken, password: 'newpass12' })
     assert.equal(r.status, 200)
     assert.equal((await u.json('GET', '/api/auth/session')).body.session, null, 'old session revoked')
+  } finally {
+    await h.close()
+  }
+})
+
+test('one-time codes stay server-side unless EXPOSE_DEV_CODES=true', async () => {
+  const h = await createHarness()
+  try {
+    assert.equal(h.config.auth.exposeDevCodes, false, 'off by default')
+    assert.equal((await h.client().json('GET', '/api/auth/config')).body.devCodes, false)
+    const reg = await h.client().json('POST', '/api/auth/register', { email: 'quiet@x.io', password: 'abcdefg1' })
+    assert.equal(reg.status, 201)
+    assert.equal(reg.body.devCode, null)
+    await h.signIn('v@x.io')
+    const f = await h.client().json('POST', '/api/auth/forgot', { email: 'v@x.io' })
+    assert.equal(f.status, 200)
+    assert.equal(f.body.devToken, null)
+    assert.ok(await h.services.repos.codes.pending('v@x.io', 'reset'), 'the code is still issued')
+  } finally {
+    await h.close()
+  }
+})
+
+test("an administrator's reset code is never returned, even with dev codes on", async () => {
+  const h = await createHarness({ env: { EXPOSE_DEV_CODES: 'true' } })
+  try {
+    await h.signIn('boss@x.io', 'admin')
+    await h.signIn('v@x.io')
+    const admin = await h.client().json('POST', '/api/auth/forgot', { email: 'boss@x.io' })
+    assert.equal(admin.status, 200)
+    assert.equal(admin.body.devToken, null)
+    const viewer = await h.client().json('POST', '/api/auth/forgot', { email: 'v@x.io' })
+    assert.match(viewer.body.devToken, /^\d{6}$/)
   } finally {
     await h.close()
   }
@@ -153,6 +187,32 @@ test('cross-origin writes are refused', async () => {
   try {
     const res = await h.client().post('/api/auth/guest', {}, { Origin: 'https://evil.example' })
     assert.equal(res.status, 403)
+    const opaque = await h.client().post('/api/auth/guest', {}, { Origin: 'null' })
+    assert.equal(opaque.status, 403)
+  } finally {
+    await h.close()
+  }
+})
+
+test('cookie-authenticated writes need a matching Origin or Referer', async () => {
+  const h = await createHarness()
+  try {
+    const v = await h.signIn('v@x.io')
+    // past the guard this is a 404 (no such plate); the guard answers 403
+    const write = (headers) => v.post('/api/entities/plates/nope/events', { kind: 'view' }, headers)
+    assert.equal((await write({ Origin: undefined })).status, 403, 'a session cookie with neither header is refused')
+    assert.equal((await write({ Origin: undefined, Referer: 'https://evil.example/page' })).status, 403)
+    const goodRef = await write({ Origin: undefined, Referer: `${h.config.webOrigin}/showcase/admin` })
+    assert.equal(goodRef.status, 404, 'Referer from an allowed origin stands in for Origin')
+
+    // sign-out needs only the cookie (the Apex dashboard signs each app out that way)
+    assert.equal((await v.post('/api/auth/logout', {}, { Origin: undefined })).status, 200)
+    assert.equal((await v.json('GET', '/api/auth/session')).body.session, null)
+    assert.equal((await h.client().post('/api/auth/logout', {}, { Origin: 'https://evil.example' })).status, 403, 'a foreign Origin is still refused')
+
+    // no cookie: nothing to forge, so scripts and first sign-ins still work
+    const anon = await h.client().post('/api/auth/guest', {}, { Origin: undefined })
+    assert.equal(anon.status, 200)
   } finally {
     await h.close()
   }
@@ -167,5 +227,48 @@ test('archived files disappear for viewers', async () => {
     await h.syncAndWait()
     assert.equal((await viewer.get(img.thumbUrl)).status, 404)
     assert.equal((await (await viewer.get('/api/entities/plates')).json()).total, 1)
+  })
+})
+
+test('plate events: guests may only count views, archived plates take none, and they are rate-limited', async () => {
+  await withLibrary(async (h) => {
+    const viewer = await h.signIn('v@x.io')
+    const guest = h.client()
+    await guest.json('POST', '/api/auth/guest')
+    const { items } = await (await viewer.get('/api/entities/plates')).json()
+    const img = items.find((i) => i.f === 'IMG_1.jpg')
+    const ev = (who, kind, id = img.id) => who.post(`/api/entities/plates/${encodeURIComponent(id)}/events`, { kind })
+
+    assert.equal((await ev(guest, 'view')).status, 204)
+    assert.equal((await ev(guest, 'download')).status, 403)
+    assert.equal((await ev(guest, 'favourite')).status, 403)
+    const ok = await ev(viewer, 'download')
+    assert.equal(ok.status, 204)
+    assert.equal(ok.headers.get('ratelimit-limit'), '2000', 'the events limiter (not just the global one) is in front')
+
+    h.dropbox.remove('/Showcase/IMG_1.jpg')
+    await h.syncAndWait()
+    assert.equal((await ev(viewer, 'view')).status, 404, 'archived plates record nothing')
+  })
+})
+
+test('the plate count is public and only a number', async () => {
+  await withLibrary(async (h) => {
+    const res = await h.client().json('GET', '/api/entities/plates/count')
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body, { total: 2 })
+  })
+})
+
+test('analytics are for administrators only', async () => {
+  await withLibrary(async (h, admin) => {
+    const viewer = await h.signIn('v@x.io')
+    const guest = h.client()
+    await guest.json('POST', '/api/auth/guest')
+    assert.equal((await guest.get('/api/entities/analytics')).status, 403)
+    assert.equal((await viewer.get('/api/entities/analytics')).status, 403)
+    const res = await admin.get('/api/entities/analytics')
+    assert.equal(res.status, 200)
+    assert.ok(Array.isArray((await res.json()).logins))
   })
 })

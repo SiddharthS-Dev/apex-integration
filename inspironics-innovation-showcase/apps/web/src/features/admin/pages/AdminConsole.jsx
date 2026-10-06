@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '#features/auth'
 import { adminApi } from '../api/adminApi.js'
@@ -12,15 +12,22 @@ const TABS = [
   { id: 'logins', label: 'Login history' },
 ]
 
+/** Only the latest request's answer is kept: a slow earlier one (old page, old filter) cannot overwrite it. */
 function useLoad(fn, deps) {
   const [state, setState] = useState({ data: null, error: '' })
+  const latest = useRef(0)
   const reload = useCallback(() => {
+    const id = ++latest.current
     fn()
-      .then((data) => setState({ data, error: '' }))
-      .catch((e) => setState({ data: null, error: e.message }))
+      .then((data) => id === latest.current && setState({ data, error: '' }))
+      .catch((e) => id === latest.current && setState({ data: null, error: e.message }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
-  useEffect(reload, [reload])
+  useEffect(() => {
+    reload()
+    // unmounted or superseded: drop whatever is still in flight
+    return () => void ++latest.current
+  }, [reload])
   return { ...state, reload }
 }
 

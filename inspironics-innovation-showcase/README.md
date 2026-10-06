@@ -146,8 +146,10 @@ running."*
    file failed.
 
 **Seed overlay.** The original corpus (`apps/web/public/data/showcase.json`, 235 plates with
-hand-written metadata) is loaded at startup. A synced file whose name matches a seed plate takes its
-title and classification as-is, at no model cost.
+hand-written metadata) is loaded at startup. A synced file whose full name (extension included)
+matches a seed plate takes its title and classification as-is, at no model cost. A camera-style name
+(`IMG_0600.jpg`, `DSC_…`, `PXL_…`) must also have the seed's aspect ratio, so an unrelated photo never
+inherits a curated plate's story.
 
 **AI.** Off unless `AI_ENABLED=true` and `ANTHROPIC_API_KEY` are both set; then each new or changed
 file costs one Claude call (image + extracted text, structured JSON output, `claude-opus-5` by
@@ -192,16 +194,18 @@ Blobs stay in the browser sandbox rather than as loose files.
 
 - **API** — `apps/api/.env`; every variable is documented in
   [`apps/api/.env.example`](apps/api/.env.example). In production (`NODE_ENV=production`) the API
-  refuses to start without `ENCRYPTION_KEY` and an https `PUBLIC_API_URL`, never returns dev codes,
+  refuses to start without `ENCRYPTION_KEY` and an https `PUBLIC_API_URL` (a localhost URL, or an
+explicit `COOKIE_SECURE=false`, is allowed with a warning), never returns dev codes,
   and never makes the first registrant an admin — use `BOOTSTRAP_ADMIN_EMAIL`/`_PASSWORD` or
   `npm run create-admin -w @inspironics/api -- you@company.com 'password'`.
 - **Web** — `apps/web/.env.local`; see [`apps/web/.env.example`](apps/web/.env.example).
   `VITE_GOOGLE_CLIENT_ID` enables real Google sign-in; set the same value as `GOOGLE_CLIENT_ID` on
   the API, which verifies the credential server-side.
 
-No mail is sent. Outside production, verification and reset codes are returned to the client and
-shown on screen so the flows complete; production needs a mail transport added in
-`apps/api/src/routes/auth.js` (`issueCode`).
+No mail is sent. With `EXPOSE_DEV_CODES=true` (development only) verification and reset codes are
+returned to the client and shown on screen — never an administrator's reset code. Otherwise the
+screen tells the user to ask their administrator, and (outside production) the code is written to
+the API's log; production needs a mail transport added in `apps/api/src/routes/auth.js` (`issueCode`).
 
 ## Deploying
 

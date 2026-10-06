@@ -94,6 +94,29 @@ test('a discovery failure archives nothing', async () => {
   }
 })
 
+test('an empty listing of the folder the library came from archives nothing', async () => {
+  const { h } = await setup()
+  try {
+    await h.syncAndWait()
+    for (const p of ['/Showcase/IMG_0557.JPG', '/Showcase/decks/Grid Ops Review.pptx', '/Showcase/scan.pdf']) h.dropbox.remove(p)
+    // the folder still exists (notes.txt) but lists no supported file
+    const run = await h.syncAndWait()
+    assert.equal(run.status, 'failed', 'flagged for attention')
+    assert.equal(run.archived, 0)
+    assert.match(run.errors[0].message, /nothing was archived/)
+    assert.equal((await h.services.repos.files.counts()).active, 3, 'library untouched')
+
+    // re-pointing the sync at another (empty) folder is deliberate: that does archive
+    h.dropbox.put('/Fresh/readme.txt', 'nothing supported here')
+    await h.services.repos.settings.set('dropbox.rootPath', '/Fresh')
+    const moved = await h.syncAndWait()
+    assert.equal(moved.status, 'success')
+    assert.equal(moved.archived, 3)
+  } finally {
+    await h.close()
+  }
+})
+
 test('only one sync runs at a time', async () => {
   const { h } = await setup()
   try {

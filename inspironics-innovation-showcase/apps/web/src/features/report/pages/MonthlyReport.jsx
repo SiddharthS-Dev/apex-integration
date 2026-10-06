@@ -105,43 +105,32 @@ export default function MonthlyReport() {
           </div>
         </Section>
 
-        <Section n="04" label="Milestones by category" title="What shipped this cycle">
+        <Section n="04" label={model.milestones.label} title={model.milestones.title}>
           <div className="space-y-8">
-            {model.byCat.map((c) => (
-              <div key={c.name}>
-                <div className="flex items-baseline justify-between border-b border-white/10 pb-2">
-                  <h3 className="text-base font-bold text-chalk">{c.name}</h3>
-                  <span className="font-mono text-[11px] text-emerald-glow">
-                    {c.count} plates · {c.share}%
-                  </span>
+            {!model.byCat.some((c) => c.milestones.length) && <p className="text-sm text-muted">{model.milestones.empty}</p>}
+            {model.byCat
+              .filter((c) => c.milestones.length)
+              .map((c) => (
+                <div key={c.name}>
+                  <div className="flex items-baseline justify-between border-b border-white/10 pb-2">
+                    <h3 className="text-base font-bold text-chalk">{c.name}</h3>
+                    <span className="font-mono text-[11px] text-emerald-glow">
+                      {c.changed === null ? `${c.count} plates · ${c.share}%` : `${c.changed} of ${c.count} plates`}
+                    </span>
+                  </div>
+                  <ul className="mt-4 space-y-3">
+                    {c.milestones.map((m) => (
+                      <li key={m.title} className="flex gap-3">
+                        <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-glow" />
+                        <div>
+                          <p className="text-[13.5px] font-semibold text-chalk">{m.title}</p>
+                          {m.note && <p className="mt-1 text-[12.5px] leading-relaxed text-muted">{m.note}</p>}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="mt-4 space-y-3">
-                  {c.milestones.map((m) => (
-                    <li key={m.title} className="flex gap-3">
-                      <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-glow" />
-                      <div>
-                        <p className="text-[13.5px] font-semibold text-chalk">{m.title}</p>
-                        {m.note && <p className="mt-1 text-[12.5px] leading-relaxed text-muted">{m.note}</p>}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        <Section n="05" label="Roadmap" title="Where the next cycle goes">
-          <div className="space-y-3">
-            {model.roadmap.map(([t, d], i) => (
-              <div key={t} className="glass flex gap-4 rounded-2xl p-5">
-                <span className="font-mono text-sm text-cyan-glow">0{i + 1}</span>
-                <div>
-                  <p className="text-sm font-semibold text-chalk">{t}</p>
-                  <p className="mt-1 text-[13px] leading-relaxed text-muted">{d}</p>
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         </Section>
 

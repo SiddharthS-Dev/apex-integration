@@ -27,7 +27,7 @@ export default function ForgotPassword() {
     <AuthShell
       eyebrow="Password reset"
       title="Forgot your password?"
-      sub="Enter your email and we'll send a reset code."
+      sub="Enter your email to get a reset code."
       footer={
         <Link to="/login" className="text-cyan-glow underline underline-offset-4">
           Back to sign in
@@ -40,14 +40,18 @@ export default function ForgotPassword() {
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-glow/15 text-xl text-emerald-glow">
               ✓
             </div>
-            <p className="mt-4 text-sm text-chalk">If an account exists for {sent.email}, a reset code is on its way.</p>
+            <p className="mt-4 text-sm text-chalk">If an account exists for {sent.email}, a reset code has been issued.</p>
           </div>
 
-          {sent.devToken && (
-            <InfoNote>
-              No mail service is wired into this build — your reset code is <strong>{sent.devToken}</strong>.
-            </InfoNote>
-          )}
+          <InfoNote>
+            {sent.devToken ? (
+              <>
+                No mail service is wired into this build — your reset code is <strong>{sent.devToken}</strong>.
+              </>
+            ) : (
+              'This server cannot send email yet, so the code was not mailed — ask your administrator for it.'
+            )}
+          </InfoNote>
 
           <button onClick={() => navigate('/reset-password', { state: { email: sent.email } })} className="btn-primary w-full">
             Enter reset code →

@@ -32,6 +32,26 @@ const url = (v, fallback = '') => {
     return ''
   }
 }
+/**
+ * TRUST_PROXY the way Express reads `trust proxy`: true/false, a hop count, or
+ * a comma list of names/addresses/CIDRs ('loopback', '10.0.0.0/8, uniquelocal').
+ */
+export const trustProxyValue = (v) => {
+  const s = str(v)
+  if (!s) return false
+  const b = bool(s, null)
+  if (b !== null) return b
+  if (/^\d+$/.test(s)) return Number.parseInt(s, 10)
+  const list = s.split(',').map((x) => x.trim()).filter(Boolean)
+  return list.length === 1 ? list[0] : list
+}
+const isLocalUrl = (u) => {
+  try {
+    return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(u).hostname)
+  } catch {
+    return false
+  }
+}
 const fromRoot = (p) => (path.isAbsolute(p) ? p : path.join(API_ROOT, p))
 
 /** Load `apps/api/.env` if present. Real environment variables win. */
@@ -56,7 +76,7 @@ export function loadConfig(env = process.env) {
     /** Origins allowed to make credentialed, state-changing requests. */
     allowedOrigins: [...new Set([publicUrl, webOrigin, ...str(env.EXTRA_ORIGINS).split(',').map((s) => url(s)).filter(Boolean)])],
     webOrigin,
-    trustProxy: bool(env.TRUST_PROXY, false),
+    trustProxy: trustProxyValue(env.TRUST_PROXY),
     /** Serve apps/web/dist from this process, making the whole product one origin. */
     serveWeb: bool(env.SERVE_WEB, isProd),
     webDist: fromRoot(str(env.WEB_DIST, '../web/dist')),
@@ -76,10 +96,15 @@ export function loadConfig(env = process.env) {
       cookieName: str(env.SESSION_COOKIE, 'insp_session'),
       sessionHours: int(env.SESSION_TTL_HOURS, 12, { min: 1, max: 24 * 30 }),
       cookieSecure: bool(env.COOKIE_SECURE, publicUrl.startsWith('https://')),
+      /** COOKIE_SECURE=false said out loud — the only way production runs on plain http. */
+      cookieInsecureExplicit: bool(env.COOKIE_SECURE, null) === false,
       allowRegistration: bool(env.ALLOW_REGISTRATION, true),
       guestEnabled: bool(env.GUEST_ENABLED, true),
-      /** Registration/reset codes are returned in the response instead of mailed. Never in production. */
-      exposeDevCodes: !isProd && bool(env.EXPOSE_DEV_CODES, true),
+      /**
+       * Registration/reset codes are returned in the response instead of mailed.
+       * Off unless EXPOSE_DEV_CODES=true, never in production, never for an admin's reset.
+       */
+      exposeDevCodes: !isProd && bool(env.EXPOSE_DEV_CODES, false),
       googleClientId: str(env.GOOGLE_CLIENT_ID),
       bootstrapAdminEmail: str(env.BOOTSTRAP_ADMIN_EMAIL).toLowerCase(),
       bootstrapAdminPassword: str(env.BOOTSTRAP_ADMIN_PASSWORD),
@@ -133,7 +158,11 @@ function validate(c) {
 
   need(!c.isProd || c.encryptionKey, 'error', 'ENCRYPTION_KEY is required in production (32 bytes, hex or base64).')
   need(!c.isProd || c.db.url, 'warn', 'DATABASE_URL is not set — production is running on SQLite.')
-  need(!c.isProd || c.auth.cookieSecure, 'error', 'Session cookies must be Secure in production — serve PUBLIC_API_URL over https.')
+  // a local production run (behind a gateway on http://localhost) may opt out of Secure
+  // cookies explicitly; anything public must be https
+  const localHttpOk = c.auth.cookieInsecureExplicit || isLocalUrl(c.publicUrl)
+  need(!c.isProd || c.auth.cookieSecure || localHttpOk, 'error', 'Session cookies must be Secure in production — serve PUBLIC_API_URL over https.')
+  need(!c.isProd || c.auth.cookieSecure || !localHttpOk, 'warn', 'Production is running with non-Secure session cookies over plain http — fine on localhost, never on a public host.')
   need(c.dropbox.appKey && c.dropbox.appSecret, 'warn', 'DROPBOX_APP_KEY / DROPBOX_APP_SECRET are not set — Dropbox cannot be connected.')
   need(!c.ai.requested || c.ai.apiKey, 'warn', 'AI_ENABLED is true but ANTHROPIC_API_KEY is empty — AI stays off.')
   need(!c.isProd || c.publicUrl.startsWith('https://') || c.publicUrl.includes('localhost'), 'warn', 'PUBLIC_API_URL is not https.')

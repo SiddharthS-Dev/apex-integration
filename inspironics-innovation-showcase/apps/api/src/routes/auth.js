@@ -5,9 +5,11 @@
  * session in the shape the web client already uses:
  *   { user: { id, email, name, picture, role }, isGuest, issuedAt, expiresAt }
  *
- * No mail is sent. Outside production the one-time codes come back in the
- * response as `devCode` / `devToken` so the flows complete; in production they
- * are never returned, and a mail transport is the missing piece.
+ * No mail is sent. With EXPOSE_DEV_CODES=true (never in production) the
+ * one-time codes come back in the response as `devCode` / `devToken` so the
+ * flows complete — except an administrator's reset code, which is never
+ * returned. Otherwise they are written to the server log (outside production)
+ * for an administrator to relay; a mail transport is the missing piece.
  */
 import express from 'express'
 import { ROLES } from '@inspironics/shared'
@@ -77,10 +79,13 @@ export function authRoutes({ config, repos, metrics, log }) {
       ? badRequest(`That code is not correct — ${result.attemptsLeft} attempt${result.attemptsLeft === 1 ? '' : 's'} left.`)
       : badRequest(CODE_ERRORS[result.reason])
 
-  const issueCode = async (email, kind, ttl) => {
+  const issueCode = async (email, kind, ttl, { expose = config.auth.exposeDevCodes } = {}) => {
     const code = await repos.codes.issue(email, kind, ttl)
-    if (!config.auth.exposeDevCodes) log.info('One-time code issued (mail transport not configured)', { email, kind })
-    return config.auth.exposeDevCodes ? code : null
+    // no mail transport: whoever runs the server relays the code (the web tells
+    // the user to ask their administrator). Outside production only — production
+    // logs may leave the box.
+    if (!expose) log.info('One-time code issued (mail transport not configured)', { email, kind, ...(!config.isProd && { code }) })
+    return expose ? code : null
   }
 
   /* ------------------------------------------------------------ public -- */
@@ -238,8 +243,10 @@ export function authRoutes({ config, repos, metrics, log }) {
     route(async (req, res) => {
       const email = normaliseEmail(field(req.body, 'email', { max: 254 }))
       const user = await repos.users.findByEmail(email)
-      // the same answer either way, so the response cannot enumerate accounts
-      const devToken = user && !user.disabled ? await issueCode(email, 'reset', config.auth.resetTtlMinutes) : null
+      // the same answer either way, so the response cannot enumerate accounts; an
+      // administrator's reset code is never handed back, even with dev codes on
+      const expose = config.auth.exposeDevCodes && user?.role !== ROLES.ADMIN
+      const devToken = user && !user.disabled ? await issueCode(email, 'reset', config.auth.resetTtlMinutes, { expose }) : null
       res.json({ email, devToken })
     })
   )

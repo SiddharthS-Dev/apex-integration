@@ -49,25 +49,43 @@ export function cors({ allowedOrigins }) {
  *
  * SameSite=Lax already keeps the session cookie off cross-site POSTs; this is
  * the second lock. Browsers always send Origin on a cross-origin POST, so a
- * request whose Origin is present and not ours is rejected outright.
+ * request whose Origin is present and not ours is rejected outright. When
+ * Origin is missing, Referer stands in for it; a write that carries the
+ * session cookie but neither header is refused too, since nothing proves it
+ * came from our pages. Cookie-less writes (sign-in, scripts) have no session
+ * to ride on and pass, and so does a header-less sign-out: the worst a forged
+ * one can do is end a session, and the Apex gateway signs each app out with
+ * only its cookie. A foreign Origin is refused everywhere.
  */
-export function originGuard({ allowedOrigins }) {
+export function originGuard({ allowedOrigins, auth }) {
   const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
+  const ours = (req, origin) => allowedOrigins.includes(origin) || origin === `${req.protocol}://${req.get('host')}`
+  const refererOrigin = (ref) => {
+    try {
+      return new URL(ref).origin
+    } catch {
+      return null
+    }
+  }
   return (req, res, next) => {
     if (SAFE.has(req.method)) return next()
-    const origin = req.headers.origin
-    if (origin && !allowedOrigins.includes(origin) && origin !== `${req.protocol}://${req.get('host')}`) {
-      return next(new HttpError(403, 'Cross-origin request refused.', 'BAD_ORIGIN'))
+    // an opaque 'null' Origin (sandboxed frame, data: URL) is never ours
+    const origin = req.headers.origin || refererOrigin(req.headers.referer)
+    if (origin) return ours(req, origin) ? next() : next(new HttpError(403, 'Cross-origin request refused.', 'BAD_ORIGIN'))
+    if (req.cookies?.[auth?.cookieName] && req.path !== '/auth/logout') {
+      return next(new HttpError(403, 'Request refused: it carries no Origin or Referer.', 'BAD_ORIGIN'))
     }
     next()
   }
 }
 
 /**
- * Fixed-window rate limiter in process memory, keyed by client IP and bucket.
- * Good enough for one instance; behind several, put a shared limit at the edge.
+ * Fixed-window rate limiter in process memory, keyed by client IP (or `key`)
+ * and bucket. `req.ip` is the real client only when TRUST_PROXY names the
+ * proxy in front. Good enough for one instance; behind several, put a shared
+ * limit at the edge.
  */
-export function rateLimit({ windowMs, max, bucket = 'default', metrics }) {
+export function rateLimit({ windowMs, max, bucket = 'default', metrics, key: keyOf = (req) => req.ip }) {
   const hits = new Map()
   const sweep = setInterval(() => {
     const now = Date.now()
@@ -76,7 +94,7 @@ export function rateLimit({ windowMs, max, bucket = 'default', metrics }) {
   sweep.unref()
 
   return (req, res, next) => {
-    const key = `${bucket}:${req.ip}`
+    const key = `${bucket}:${keyOf(req)}`
     const now = Date.now()
     let entry = hits.get(key)
     if (!entry || entry.reset <= now) {

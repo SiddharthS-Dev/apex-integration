@@ -13,13 +13,17 @@
  *   4. Archive   anything active that this run did not see is archived, never
  *                deleted — and only when discovery genuinely succeeded and the
  *                run finished, so a transient failure cannot wipe the library.
+ *                An empty listing of a folder whose files are in the library is
+ *                refused too: that is a Dropbox or permissions problem far more
+ *                often than a deliberate deletion of everything. Pointing the
+ *                sync at a different folder is how the library is replaced.
  *   5. Record    counts, duration and errors to sync_log: success, or partial
  *                if any file failed.
  *
  * Only one run at a time across every instance: the run holds a DB lock,
  * renewed by a heartbeat, for its whole duration.
  */
-import { SYNC_STATUS, fileTypeOf, extensionOf, isSupported } from '@inspironics/shared'
+import { FILE_STATUS, SYNC_STATUS, fileTypeOf, extensionOf, isSupported } from '@inspironics/shared'
 import { mapPool } from '../lib/concurrency.js'
 import { HttpError } from '../lib/http.js'
 import { DropboxApiError } from '../dropbox/client.js'
@@ -111,7 +115,7 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
       }
     }
 
-    const seed = seeds.match(entry.name)
+    const seed = seeds.match(entry.name, dims)
     let meta = {}
     let classificationStatus = 'unclassified'
     let confidence = null
@@ -207,6 +211,21 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
       summary.discovered = discovered.length
 
       const index = await repos.files.index()
+      if (!discovered.length) {
+        const root = (path || '').toLowerCase()
+        const fromThisFolder = [...index.values()].filter(
+          (f) => f.status === FILE_STATUS.ACTIVE && (!root || f.pathLower === root || f.pathLower?.startsWith(`${root}/`))
+        ).length
+        if (fromThisFolder) {
+          summary.errors.push({
+            stage: 'archive',
+            message: `Dropbox listed no files in "${path || '/'}", but the library has ${fromThisFolder} from it — nothing was archived. Check the folder and the app's access, then sync again.`,
+          })
+          status = SYNC_STATUS.FAILED
+          log.error('Sync listing came back empty for a folder the library still holds; refusing to archive', { syncId, path: path || '/', active: fromThisFolder })
+          return
+        }
+      }
       const unchanged = []
       const work = []
       for (const entry of discovered) {

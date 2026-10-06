@@ -8,7 +8,7 @@
  * synchronous `getSession()` the context relies on still works and other tabs
  * hear about sign-in and sign-out. `refresh()` re-checks it against the server.
  */
-import { storageKeys } from '#shared/config'
+import { appEvents, storageKeys } from '#shared/config'
 import { apiRequest } from '#shared/lib/apiClient.js'
 import { UnverifiedAccountError } from './errors.js'
 
@@ -31,7 +31,12 @@ const write = (key, value, store = globalThis.localStorage) => {
 /** @param {{ request?: typeof apiRequest }} [deps] */
 export function createHttpAuthService({ request = apiRequest } = {}) {
   const keep = (session) => {
+    const before = read(storageKeys.apiSession)
     write(storageKeys.apiSession, session)
+    // a session ended (or another account replaced it): per-user caches forget the old one
+    if (before?.user?.id && before.user.id !== session?.user?.id) {
+      globalThis.window?.dispatchEvent?.(new CustomEvent(appEvents.signedOut, { detail: { userId: before.user.id } }))
+    }
     return session
   }
   const pending = (kind, email, minutes) => write(storageKeys.apiPending, { kind, email, expiresAt: Date.now() + minutes * 60_000 })
@@ -40,15 +45,19 @@ export function createHttpAuthService({ request = apiRequest } = {}) {
   return {
     getSession: () => read(storageKeys.apiSession),
 
-    /** Ask the server whether the cookie is still a live session; updates the mirror. */
+    /**
+     * Ask the server whether the cookie is still a live session; updates the mirror.
+     * Only the server saying so — `{ session: null }` or a 401 — signs anyone out.
+     * Offline, a gateway still starting the API (503), a 502, 429 or 500 say
+     * nothing about the session, so the mirror is kept and the next focus re-checks.
+     */
     async refresh() {
       try {
         const { session } = await request('/api/auth/session')
         return keep(session || null)
       } catch (error) {
-        // offline: keep the mirror so the offline library stays reachable
-        if (error.status === 0) return read(storageKeys.apiSession)
-        return keep(null)
+        if (error.status === 401) return keep(null)
+        return read(storageKeys.apiSession)
       }
     },
 
@@ -127,9 +136,10 @@ export function createHttpAuthService({ request = apiRequest } = {}) {
       return { email: r.email }
     },
 
+    /** Clears the mirror at once; the returned promise settles when the server has ended the session. */
     logout() {
       keep(null)
-      request('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {})
+      return request('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {})
     },
   }
 }

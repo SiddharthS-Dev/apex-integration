@@ -97,7 +97,13 @@ function LoginForm() {
           type="button"
           onClick={async () => {
             setBusy(true)
-            land(await api.guest())
+            setError('')
+            try {
+              land(await api.guest())
+            } catch (err) {
+              setError(err.message)
+              setBusy(false)
+            }
           }}
           className="w-full py-2 text-center text-[12px] text-muted underline underline-offset-4 transition hover:text-cyan-glow"
         >
@@ -113,8 +119,10 @@ function LoginForm() {
  * there opens every platform at once. So when this app is mounted under Apex
  * (a base other than '/'), reaching its login means its own session is gone —
  * signed out, or lapsed — and the browser is handed to the Apex sign-in.
- * reauth=1 has Apex sign out everything first, so the form there issues all
- * the sessions afresh instead of bouncing straight back here.
+ * reauth=1 has Apex issue this app a fresh session (other platforms stay
+ * signed in) instead of bouncing straight back here. Only a 401 from the API
+ * ends the session (see httpAuthService.refresh), so a restarting API or a
+ * gateway hiccup never lands here.
  */
 const APEX_MOUNT = baseUrl === '/' ? null : baseUrl
 

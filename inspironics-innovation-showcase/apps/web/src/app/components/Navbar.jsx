@@ -145,9 +145,8 @@ export default function Navbar() {
                       </Link>
                     </div>
                     <button
-                      onClick={() => {
-                        logout()
-                        navigate('/login')
+                      onClick={async () => {
+                        if (!(await logout())) navigate('/login')
                       }}
                       className="mt-3 w-full rounded-lg border border-white/10 px-3 py-2 text-xs text-muted transition hover:border-rose-400/40 hover:text-rose-300"
                     >
@@ -221,9 +220,8 @@ export default function Navbar() {
                   </a>
                 )}
                 <button
-                  onClick={() => {
-                    logout()
-                    navigate('/login')
+                  onClick={async () => {
+                    if (!(await logout())) navigate('/login')
                   }}
                   className="w-full py-3 text-center text-xs text-muted"
                 >

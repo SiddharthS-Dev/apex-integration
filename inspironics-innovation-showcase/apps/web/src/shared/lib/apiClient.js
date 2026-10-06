@@ -56,8 +56,10 @@ export async function apiRequest(path, { method = 'GET', body, signal, fetchImpl
     /* non-JSON error page from a proxy */
   }
   if (!res.ok) {
-    const message = data?.error?.message || `Request failed (${res.status}).`
-    throw new ApiError(res.status, message, data?.error?.code, data)
+    // ours: { error: { message, code } }; the Apex gateway's own: { error: 'message', code }
+    const err = data?.error
+    const message = (typeof err === 'string' ? err : err?.message) || data?.message || `Request failed (${res.status}).`
+    throw new ApiError(res.status, message, (typeof err === 'object' && err?.code) || data?.code, data)
   }
   return data
 }

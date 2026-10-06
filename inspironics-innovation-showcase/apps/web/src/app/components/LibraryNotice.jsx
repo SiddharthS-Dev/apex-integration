@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '#features/auth'
 import { apiRequest, apiUrl } from '#shared/lib/apiClient.js'
@@ -21,6 +21,10 @@ export default function LibraryNotice({ data, onSynced }) {
   const synced = data.raw?.source === 'dropbox'
   const empty = synced && data.baseItems.length === 0
   const admin = user?.role === 'admin'
+  // the last run as first seen here: any later finished run is news to the
+  // gallery, even one that started and ended between two polls (or before the
+  // first). Compared by id, so the server's and browser's clocks never matter.
+  const seen = useRef(undefined)
 
   const loadStatus = useCallback(async () => {
     try {
@@ -37,15 +41,26 @@ export default function LibraryNotice({ data, onSynced }) {
     if (empty) loadStatus()
   }, [empty, admin, loadStatus])
 
-  // while a sync runs, poll; when it ends, reload the gallery
+  // while a sync runs, poll
   useEffect(() => {
     if (!status?.running) return
-    const t = setInterval(async () => {
-      const s = await loadStatus()
-      if (s && !s.running) onSynced?.()
-    }, 2000)
+    const t = setInterval(loadStatus, 2000)
     return () => clearInterval(t)
-  }, [status?.running, loadStatus, onSynced])
+  }, [status?.running, loadStatus])
+
+  // when a run newer than the one seen at mount has finished, reload the gallery — once per run
+  useEffect(() => {
+    if (!status) return
+    const last = status.lastSync
+    const id = last?.finishedAt ? last.id : null
+    if (seen.current === undefined) {
+      seen.current = status.running ? null : id
+      return
+    }
+    if (status.running || !id || id === seen.current) return
+    seen.current = id
+    onSynced?.()
+  }, [status, onSynced])
 
   const runSync = async () => {
     setBusy(true)

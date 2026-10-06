@@ -89,7 +89,7 @@ export default function VerifyOtp() {
     <AuthShell
       eyebrow="Verify email"
       title="Enter your code"
-      sub={`We sent a six-digit code to ${email}. It expires in 10 minutes.`}
+      sub={`A six-digit code was issued for ${email}. It expires in 10 minutes.`}
       footer={
         <Link to="/login" className="text-cyan-glow underline underline-offset-4">
           Back to sign in
@@ -113,11 +113,16 @@ export default function VerifyOtp() {
           ))}
         </div>
 
-        {devCode && (
-          <InfoNote>
-            No mail service is wired into this build — your code is <strong>{devCode}</strong>.
-          </InfoNote>
-        )}
+        <InfoNote>
+          {devCode ? (
+            <>
+              No mail service is wired into this build — your code is <strong>{devCode}</strong>.
+            </>
+          ) : (
+            // codes are not handed to the browser unless the server opts in, and nothing mails them yet
+            'This server cannot send email yet, so the code was not mailed — ask your administrator for it.'
+          )}
+        </InfoNote>
         <ErrorNote>{error}</ErrorNote>
 
         <Submit busy={busy}>Verify and continue</Submit>
