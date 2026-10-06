@@ -19,6 +19,10 @@ export const config = Object.freeze({
   env: env.NODE_ENV || 'development',
   isProduction: env.NODE_ENV === 'production',
   port: num(env.PORT, 4000),
+  // The interface to listen on. Unset means Node's default — every interface, IPv4 and IPv6 alike
+  // (standalone, docker; the dev proxy's "localhost" may resolve to ::1, which a '0.0.0.0' bind would
+  // miss). The Apex gateway passes HOST=127.0.0.1 so the API is reachable only through it.
+  host: env.HOST || undefined,
   appOrigin: new URL(appBaseUrl).origin,
   appBaseUrl,
   apiOrigin: env.API_ORIGIN || `http://localhost:${num(env.PORT, 4000)}`,

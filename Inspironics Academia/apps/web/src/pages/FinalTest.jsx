@@ -5,7 +5,6 @@ import { Award, ClipboardX } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { useAuth } from '@/lib/AuthContext';
-import { generateCertificateId } from '@/lib/progress';
 import { Button } from '@/components/ui/button';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
@@ -13,7 +12,6 @@ import QuizRunner from '@/components/QuizRunner';
 import TestIntroCard from '@/components/quiz/TestIntroCard';
 import TestPageHeader from '@/components/quiz/TestPageHeader';
 import loadTestQuestions from '@/components/quiz/loadTestQuestions';
-import upsertProgress from '@/components/quiz/upsertProgress';
 
 async function loadFinalTest(courseId) {
   const course = await api.entities.Course.get(courseId);
@@ -35,16 +33,6 @@ async function loadFinalTest(courseId) {
     limit: 30,
   });
   return { course: course?.status === 'published' ? course : null, assessment, questions };
-}
-
-async function issueCertificate(user, course, score) {
-  const existing = await api.entities.Certificate.filter({ user_id: user.id, course_id: course.id });
-  if (existing.length) return existing[0];
-  return api.entities.Certificate.create({
-    user_id: user.id, course_id: course.id, course_title: course.title,
-    user_name: user.full_name || user.email, score,
-    completion_date: new Date().toISOString().slice(0, 10), certificate_id: generateCertificateId(),
-  });
 }
 
 export default function FinalTest() {
@@ -76,19 +64,13 @@ export default function FinalTest() {
 
   const handleComplete = async (r) => {
     try {
-      await api.entities.QuizAttempt.create({
-        user_id: user.id, course_id: course.id, assessment_id: assessment?.id,
-        type: 'final', score: r.score, total: r.total, percentage: r.percentage, passed: r.passed,
+      // The server re-grades the answers against its own copy of the test, records the attempt and
+      // progress, and issues the certificate on a pass — learners cannot create certificates.
+      const { data: graded } = await api.functions.invoke('submitFinalTest', {
+        course_id: course.id,
+        answers: r.answers.map(({ question_id, selected }) => ({ question_id, selected })),
       });
-      await upsertProgress({
-        userId: user.id, courseId: course.id,
-        patch: (p) => ({
-          final_score: Math.max(p?.final_score || 0, r.percentage),
-          final_passed: !!p?.final_passed || r.passed,
-        }),
-      });
-      if (r.passed) {
-        await issueCertificate(user, course, r.percentage);
+      if (graded.passed) {
         setCertified(true);
         toast.success('Congratulations — your certificate is ready!');
       }

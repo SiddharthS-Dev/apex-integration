@@ -8,7 +8,7 @@ import { mapPool } from '../lib/pool.js';
 import { concatMp3 } from '../media/mp3.js';
 import { generateNarration, generateVideo, mediaEnabled, mediaUnavailableError } from '../media/index.js';
 import { entities } from '../repo/entities.js';
-import { asHttpError, errMsg } from './util.js';
+import { asHttpError, errMsg, withLessonLock } from './util.js';
 
 // generateLessonMedia — turns a lesson's teaching script into a scene-by-scene explainer video.
 // The script is split into scenes; each scene gets its own narration audio and an explainer slide —
@@ -269,6 +269,12 @@ async function narrate(lessonId, segments, log) {
 }
 
 export default async function generateLessonMedia(payload = {}, ctx = {}) {
+  const lessonId = payload?.lesson_id ? String(payload.lesson_id) : '';
+  if (!lessonId) throw badRequest('lesson_id is required');
+  return withLessonLock(lessonId, () => generate(payload, ctx));
+}
+
+async function generate(payload = {}, ctx = {}) {
   const log = ctx.log || defaultLog;
   const lessonId = payload?.lesson_id ? String(payload.lesson_id) : '';
   if (!lessonId) throw badRequest('lesson_id is required');

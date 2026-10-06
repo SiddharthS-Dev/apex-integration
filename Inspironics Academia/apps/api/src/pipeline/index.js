@@ -4,6 +4,7 @@ import generateLessonContent from './generateLessonContent.js';
 import generateLessonMedia from './generateLessonMedia.js';
 import processPlaybookExtract from './processPlaybookExtract.js';
 import processPlaybookStructure from './processPlaybookStructure.js';
+import submitFinalTest from './submitFinalTest.js';
 import verifyCertificate from './verifyCertificate.js';
 
 // Backend functions exposed at POST /api/functions/:name (auth checks happen in functions/routes.js).
@@ -13,6 +14,7 @@ export const handlers = {
   generateLessonContent,
   generateLessonMedia,
   generateAssessment,
+  submitFinalTest,
   verifyCertificate,
 };
 

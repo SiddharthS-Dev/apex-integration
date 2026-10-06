@@ -5,7 +5,8 @@ import { log } from '../lib/logger.js';
 import { metrics } from '../http/metrics.js';
 import { handlers } from '../pipeline/index.js';
 
-// POST /api/functions/:name — backend functions (the content pipeline + certificate verification).
+// POST /api/functions/:name — backend functions (the content pipeline, final-test grading and
+// certificate verification).
 // Each handler: async (payload, ctx) => result object. ctx = { user, log }.
 const router = express.Router();
 

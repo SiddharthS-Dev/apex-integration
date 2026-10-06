@@ -33,11 +33,6 @@ export async function markLessonComplete(api, { user, courseId, lessonId, totalL
   return api.entities.CourseProgress.create({ user_id: user.id, course_id: courseId, ...data });
 }
 
-export function generateCertificateId() {
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `IEA-${Date.now().toString(36).toUpperCase()}-${rand}`;
-}
-
 // SM-2 spaced repetition. quality: 0–5.
 export function sm2(schedule = {}, quality) {
   let ease = schedule.ease_factor ?? 2.5;

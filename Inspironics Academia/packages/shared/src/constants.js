@@ -24,6 +24,7 @@ export const FUNCTIONS = Object.freeze({
   generateLessonContent: { admin: true },
   generateLessonMedia: { admin: true },
   generateAssessment: { admin: true },
+  submitFinalTest: {},
   verifyCertificate: { public: true },
 });
 

@@ -26,6 +26,16 @@ export async function withPlaybookLock(playbookId, fn) {
   return result;
 }
 
+// One content or media run per lesson at a time. The lock also tells a restarted server which lessons
+// marked 'generating' are still being worked on (see releaseInterruptedLessons).
+export const lessonLockName = (lessonId) => `pipeline:lesson:${lessonId}`;
+
+export async function withLessonLock(lessonId, fn) {
+  const { acquired, result } = await withLock(lessonLockName(lessonId), fn, { ttlMs: 60 * 60 * 1000 });
+  if (!acquired) throw conflict('This lesson is already being generated — try again when the current run finishes');
+  return result;
+}
+
 /** Resolve an MCQ answer to exactly one of the options (handles letters / case drift). */
 export function resolveAnswer(options, answer) {
   const a = String(answer || '').trim();

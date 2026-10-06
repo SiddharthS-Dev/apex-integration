@@ -178,7 +178,9 @@ export const ENTITIES = {
         ]
       },
       "create": {
-        "data.user_id": "{{user.id}}"
+        "user_condition": {
+          "role": "admin"
+        }
       },
       "update": {
         "user_condition": {

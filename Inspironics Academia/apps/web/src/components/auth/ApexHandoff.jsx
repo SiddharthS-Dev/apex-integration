@@ -10,8 +10,8 @@ const AUTH_PAGES = new Set(['/login', '/register']);
 // Under the Apex gateway there is one sign-in, and it is Apex's: signing in there opens every platform
 // at once, with the one shared account. So reaching this app's own login (or register, or a protected
 // page) signed out under Apex means its session is gone — signed out, or lapsed — and the browser is
-// handed to the Apex sign-in. reauth=1 has Apex sign out everything first, so its form issues every
-// session afresh instead of bouncing straight back here.
+// handed to the Apex sign-in. reauth=1 makes Apex show its form even though its own session is still
+// valid; signing in there issues this app's session afresh without touching the other platforms.
 export default function ApexHandoff() {
   const { isAuthenticated, isLoadingAuth } = useAuth();
   const { pathname, search } = useLocation();

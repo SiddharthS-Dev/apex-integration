@@ -8,7 +8,8 @@ import { startScheduler, stopScheduler } from './sync/scheduler.js';
 import { SYNC_LOCK } from './sync/pipeline.js';
 import { closeStaleRuns } from './sync/log.js';
 import { isLocked } from './db/locks.js';
-import { list as listEntities, update as updateEntity } from './repo/entities.js';
+import { get as getEntity, list as listEntities, update as updateEntity } from './repo/entities.js';
+import { lessonLockName } from './pipeline/util.js';
 import { createUser, findUserByEmail } from './repo/users.js';
 import { hashPassword, validatePassword } from './auth/passwords.js';
 
@@ -40,9 +41,25 @@ for (const p of await listEntities('Playbook', { query: { status: 'processing' }
   log.warn('pipeline.interrupted_run_closed', { playbook_id: p.id });
 }
 
+// A lesson left 'generating' with no live lock was being generated when its server stopped, and the
+// Studio would show it busy forever. Put it back so Generate is offered again. Runs at startup and
+// every few minutes, because on SQLite a killed run's lock only lapses when its lease expires.
+async function releaseInterruptedLessons() {
+  for (const l of await listEntities('Lesson', { query: { status: 'generating' } })) {
+    if (await isLocked(lessonLockName(l.id))) continue;
+    const fresh = await getEntity('Lesson', l.id); // the run may have finished since the list
+    if (fresh?.status !== 'generating') continue;
+    const status = String(fresh.teaching_script || '').trim() ? 'pending_review' : 'pending';
+    await updateEntity('Lesson', l.id, { status });
+    log.warn('pipeline.interrupted_lesson_released', { lesson_id: l.id, status });
+  }
+}
+await releaseInterruptedLessons();
+
 const app = createApp();
-const server = app.listen(config.port, () => {
+const server = app.listen(config.port, config.host, () => {
   log.info('api.listening', {
+    host: config.host,
     port: config.port,
     ai: config.aiEnabled,
     model: config.aiEnabled ? (config.aiProvider === 'base44' ? 'base44' : config.anthropicModel) : undefined,
@@ -55,6 +72,9 @@ startScheduler();
 
 const sessionSweep = setInterval(() => purgeExpiredSessions().catch(() => {}), 3600_000);
 sessionSweep.unref();
+
+const lessonSweep = setInterval(() => releaseInterruptedLessons().catch(() => {}), 5 * 60_000);
+lessonSweep.unref();
 
 async function shutdown(signal) {
   log.info('api.shutdown', { signal });

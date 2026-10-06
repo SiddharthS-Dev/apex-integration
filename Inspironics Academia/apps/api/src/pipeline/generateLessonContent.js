@@ -2,7 +2,7 @@ import { invokeLLM, requireAI } from '../ai/claude.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { log as defaultLog } from '../lib/logger.js';
 import { entities } from '../repo/entities.js';
-import { asHttpError, cleanMcq, errMsg, norm, pipelineError } from './util.js';
+import { asHttpError, cleanMcq, errMsg, norm, pipelineError, withLessonLock } from './util.js';
 
 // generateLessonContent — generate instructor-led teaching content, 6 MCQs and
 // 5 flashcards for one lesson, grounded in its source playbook chapter. Requires AI.
@@ -93,6 +93,12 @@ const SCHEMA = {
 };
 
 export default async function generateLessonContent(payload = {}, ctx = {}) {
+  const lessonId = payload?.lesson_id ? String(payload.lesson_id) : '';
+  if (!lessonId) throw badRequest('lesson_id is required');
+  return withLessonLock(lessonId, () => generate(payload, ctx));
+}
+
+async function generate(payload = {}, ctx = {}) {
   const log = ctx.log || defaultLog;
   const lessonId = payload?.lesson_id ? String(payload.lesson_id) : '';
   if (!lessonId) throw badRequest('lesson_id is required');
