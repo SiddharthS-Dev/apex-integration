@@ -11,11 +11,11 @@
  */
 import { Router } from 'express';
 import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 
 import { asyncHandler, notFound } from '../../../http/errors.js';
 import { requireAdmin, requireAuth, clientIp } from '../../../http/auth.js';
 import { setEmbeddableHeaders } from '../../../http/security.js';
+import { sendUnsatisfiable, setRangeHeaders, sliceStream, streamBody } from '../../../http/range.js';
 import { optionalString, requireBoolean, requireInt, requireString, requireUuid } from '../../../http/validate.js';
 import { ConnectionRepository } from '../../../db/repositories/connectionRepository.js';
 import { StoredFileRepository } from '../../../db/repositories/storedFileRepository.js';
@@ -34,12 +34,12 @@ export function createDropboxRouter(container) {
     adminDownload,
     rename,
     files,
-    analytics,
     audit,
     logger,
   } = container;
 
   const router = Router();
+  const isAdmin = (req) => req.user?.role === 'admin';
 
   /* ------------------------------------------------------------- status */
 
@@ -266,7 +266,7 @@ export function createDropboxRouter(container) {
     asyncHandler(async (req, res) => {
       const file = await files.findById(requireUuid(req.params.id, 'id'));
       if (!file || file.status !== 'active') throw notFound('That presentation is not in the library.');
-      res.json(StoredFileRepository.toPresentation(file));
+      res.json(StoredFileRepository.toPresentation(file, { admin: isAdmin(req) }));
     })
   );
 
@@ -274,7 +274,7 @@ export function createDropboxRouter(container) {
     '/files/:id/preview',
     requireAuth,
     asyncHandler(async (req, res) => {
-      res.json(await content.resolvePreview(requireUuid(req.params.id, 'id')));
+      res.json(await content.resolvePreview(requireUuid(req.params.id, 'id'), { allowArchived: isAdmin(req) }));
     })
   );
 
@@ -284,13 +284,27 @@ export function createDropboxRouter(container) {
    * This is what keeps Dropbox URLs away from users: the bytes pass through
    * the application, under the application's authorization, and the client
    * only ever sees a path on this server (spec §42).
+   *
+   * It honours a single byte range, so a PDF viewer or a video element can
+   * fetch the part it needs. It counts no views: a viewer makes several
+   * requests per open, so views are reported once, by the viewer, through
+   * POST /api/analytics/view.
    */
   router.get(
     '/files/:id/content',
     requireAuth,
     asyncHandler(async (req, res) => {
       const id = requireUuid(req.params.id, 'id');
-      const opened = await content.openContent(id, { preferPreview: req.query.original !== 'true' });
+      const opened = await content.openContent(id, {
+        preferPreview: req.query.original !== 'true',
+        allowArchived: isAdmin(req),
+        range: req.headers.range,
+      });
+
+      if (opened.unsatisfiable) {
+        sendUnsatisfiable(res, opened.size);
+        return;
+      }
 
       setEmbeddableHeaders(res, {
         origins: config.corsOrigins,
@@ -298,7 +312,7 @@ export function createDropboxRouter(container) {
         html: opened.contentType.startsWith('text/html'),
       });
       res.setHeader('Content-Type', opened.contentType);
-      if (opened.contentLength) res.setHeader('Content-Length', String(opened.contentLength));
+      setRangeHeaders(res, { range: opened.range, size: opened.size });
       res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(opened.fileName ?? 'file')}"`);
       res.setHeader('Cache-Control', 'private, max-age=300');
 
@@ -306,17 +320,7 @@ export function createDropboxRouter(container) {
       // pipeline() tears the upstream down if the client disconnects mid-file,
       // which is what stops an abandoned download from holding a Dropbox
       // connection open for the full timeout.
-      await pipeline(source, res);
-
-      analytics
-        ?.recordView({
-          presentationId: id,
-          viewerId: req.user.id,
-          viewerName: req.user.full_name,
-          offline: false,
-        })
-        .catch(() => {});
-      files.incrementViews(id).catch(() => {});
+      await streamBody(res, source, opened.slice ? sliceStream(opened.slice.start, opened.slice.end) : null);
     })
   );
 

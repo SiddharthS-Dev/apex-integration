@@ -115,12 +115,15 @@ export class DropboxClient {
 
   /* -------------------------------------------------------------- content */
 
-  /** Raw download. Returns the Response so the body can be streamed. */
-  download(pathOrId) {
+  /**
+   * Raw download. Returns the Response so the body can be streamed.
+   * @param {{range?: string}} [options] an HTTP Range value, e.g. "bytes=0-1023"
+   */
+  download(pathOrId, { range } = {}) {
     return this.executor.content(
       'files/download',
       { path: toPathArgument(pathOrId) },
-      { operation: 'download' }
+      { operation: 'download', headers: range ? { Range: range } : {} }
     );
   }
 

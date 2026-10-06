@@ -44,6 +44,8 @@ export function fromDropboxEntry(entry) {
  * @property {number} size
  * @property {string} contentType
  * @property {string} [fileName]
+ * @property {number} [status]        206 when the provider served a byte range
+ * @property {string} [contentRange]  the provider's Content-Range, on a 206
  */
 
 /** Wraps a fetch Response as a StorageObject without buffering the body. */
@@ -53,6 +55,8 @@ export function toStorageObject(response, { contentType, fileName } = {}) {
     size: Number(response.headers.get('content-length') ?? 0),
     contentType: contentType || response.headers.get('content-type') || 'application/octet-stream',
     fileName,
+    status: response.status,
+    contentRange: response.headers.get('content-range') ?? '',
     /** Buffers the whole body. Only for files already known to be small. */
     async buffer() {
       return Buffer.from(await response.arrayBuffer());

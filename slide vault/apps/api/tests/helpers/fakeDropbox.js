@@ -76,6 +76,8 @@ export function createFakeDropbox({ files = [], account = {}, team = false } = {
       noRefreshTokenInExchange: false,
       thumbnailUnsupported: false,
       previewUnsupported: false,
+      /** Answer a ranged download with the whole file, as a server may. */
+      ignoreRange: false,
       /** Force list_folder to paginate in pages of this size. */
       pageSize: 2000,
     },
@@ -232,7 +234,7 @@ export function createFakeDropbox({ files = [], account = {}, team = false } = {
     const apiArg = request.headers.get('Dropbox-API-Arg');
     const args = apiArg ? JSON.parse(apiArg) : body;
 
-    state.calls.push({ url: target, args, pathRoot: request.headers.get('Dropbox-API-Path-Root') });
+    state.calls.push({ url: target, args, pathRoot: request.headers.get('Dropbox-API-Path-Root'), range: request.headers.get('Range') });
 
     /* ------------------------------------------------------------ oauth */
     if (target.includes('/oauth2/token')) {
@@ -373,6 +375,22 @@ export function createFakeDropbox({ files = [], account = {}, team = false } = {
     if (target.includes('/2/files/download')) {
       const entry = findByIdOrPath(args.path, ns);
       if (!entry) return dropboxError('path/not_found', 409);
+      const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('Range') ?? '');
+      if (range && !state.behavior.ignoreRange) {
+        const size = entry.content.length;
+        const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+        const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+        if (start >= size) return dropboxError('range_not_satisfiable', 416);
+        return new Response(entry.content.subarray(start, end + 1), {
+          status: 206,
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': String(end - start + 1),
+            'Content-Range': `bytes ${start}-${end}/${size}`,
+            'Dropbox-API-Result': JSON.stringify(publicEntry(entry)),
+          },
+        });
+      }
       return new Response(entry.content, {
         status: 200,
         headers: {

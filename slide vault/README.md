@@ -35,8 +35,8 @@ npm run build        # production bundle in apps/web/dist/
 npm run preview      # serve the production build
 ```
 
-The app runs **without any cloud credentials**. With no backend configured it uses a
-bundled local backend (`apps/web/src/api/localClient.js`): a seeded 32-deck catalog, localStorage
+The app runs **without any cloud credentials**. With `VITE_DEMO_MODE=true` (and no other backend
+configured) it uses a bundled local backend (`apps/web/src/api/localClient.js`): a seeded 32-deck catalog, localStorage
 persistence, working analytics, RBAC, and a keyword-scored copilot. Presentations render as
 generated PDFs so the viewer, downloads and offline mode are all live.
 
@@ -58,7 +58,7 @@ it (`entities.js`, `functions.js`, `integrations.js`) has an identical API which
 | ---- | ----------- | ---------- |
 | **API server** | `VITE_API_BASE_URL` | The enterprise Dropbox integration layer in [`server/`](server/) |
 | Base44 | `VITE_BASE44_APP_ID` | The serverless functions in [`base44/`](base44/) |
-| Local | neither | The bundled demo backend |
+| Local | `VITE_DEMO_MODE=true` | The bundled demo backend (opt-in; with nothing configured the app reports an error) |
 
 ### API server (recommended)
 

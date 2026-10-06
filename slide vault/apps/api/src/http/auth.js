@@ -10,20 +10,38 @@ import { UserRepository } from '../db/repositories/userRepository.js';
 
 export const ROLE = { ADMIN: 'admin', USER: 'user' };
 
-/** The caller's IP, honouring a proxy header only when one is configured. */
+/**
+ * The caller's IP, honouring X-Forwarded-For only as far as "trust proxy" says.
+ *
+ * req.ip is Express's answer: it walks X-Forwarded-For from the right and
+ * stops at the first hop that is not trusted. Taking the *leftmost* entry
+ * instead — what this used to do — reads a value the client wrote itself,
+ * since a proxy appends to whatever header it was sent; any caller could then
+ * pick a fresh address per request and walk straight past the rate limiter.
+ */
 export function clientIp(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (req.app?.get('trust proxy') && typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
-  }
-  return req.socket?.remoteAddress ?? '';
+  return req.ip || req.socket?.remoteAddress || '';
 }
 
 /**
  * Resolves the session cookie into req.user. Never rejects — routes decide
  * whether anonymous is acceptable.
  */
-export function attachUser({ sessions, users, cookieName }) {
+export function attachUser({ sessions, users, cookieName, activityTouchMs = 5 * 60_000 }) {
+  // Users whose last_active_at write is in flight, so a burst of parallel
+  // requests from one page load does not become a burst of UPDATEs.
+  const touching = new Set();
+
+  const touchActivity = (user) => {
+    const last = user.last_active_at ? Date.parse(user.last_active_at) : 0;
+    if (Date.now() - last < activityTouchMs || touching.has(user.id)) return;
+    touching.add(user.id);
+    // Fire and forget: presence is a statistic, never a reason to fail a request.
+    Promise.resolve(users.touchActive?.(user.id))
+      .catch(() => {})
+      .finally(() => touching.delete(user.id));
+  };
+
   return async (req, _res, next) => {
     req.user = null;
     req.sessionToken = null;
@@ -37,6 +55,7 @@ export function attachUser({ sessions, users, cookieName }) {
       const user = await users.findById(session.user_id);
       if (!user || user.status !== 'active') return next();
 
+      touchActivity(user);
       req.user = UserRepository.sanitize(user);
       req.sessionToken = token;
       return next();

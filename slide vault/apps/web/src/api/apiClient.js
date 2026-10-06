@@ -234,12 +234,35 @@ const functions = {
       limit: payload.limit ?? 50,
     }),
 
+  /**
+   * One call per open, from the viewer. The shared call site speaks the demo
+   * backend's names (reading_time_secs, source); the server's are
+   * reading_seconds and a boolean offline, so both spellings are accepted.
+   */
   trackView: (payload = {}) =>
     post('/api/analytics/view', {
       presentation_id: payload.presentation_id ?? payload.id,
-      reading_seconds: payload.reading_seconds ?? 0,
-      offline: payload.offline === true,
+      reading_seconds: Math.min(
+        14_400,
+        Math.max(0, Math.round(Number(payload.reading_seconds ?? payload.reading_time_secs ?? 0) || 0))
+      ),
+      offline: payload.offline === true || payload.source === 'offline',
+      ...(Number.isFinite(Number(payload.completion_pct))
+        ? { completion_pct: Math.min(100, Math.max(0, Math.round(Number(payload.completion_pct)))) }
+        : {}),
     }),
+
+  /**
+   * The library Copilot. The server builds the prompt from its own catalog;
+   * this sends only the question and a short history.
+   */
+  async askCopilot(payload = {}) {
+    const result = await post('/api/ai/copilot', {
+      question: payload.question,
+      history: (payload.history ?? []).map(({ role, content }) => ({ role, content })),
+    });
+    return { reply: result.reply, picks: (result.picks ?? []).map(withAbsoluteUrls) };
+  },
 
   // Sign-in is already recorded server-side by the login endpoint; this exists
   // so the shared call site keeps working.
@@ -292,7 +315,7 @@ const auth = {
     } catch {
       // An unreachable API is reported elsewhere; for the sign-in screen the
       // safe answer is the method that needs no configuration.
-      return { password: true, google: false };
+      return { password: true, google: false, ai: false };
     }
   },
 
@@ -336,7 +359,8 @@ const auth = {
 
 const integrations = {
   Core: {
-    // AI runs server-side, inside the sync pipeline, where the API key lives.
+    // AI runs server-side, where the API key lives: the Copilot goes through
+    // functions.askCopilot, and nothing else asks the browser for a prompt.
     InvokeLLM: async () => {
       throw new Error('AI calls are made by the backend, not the browser.');
     },

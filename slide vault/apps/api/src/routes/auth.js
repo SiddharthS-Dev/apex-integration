@@ -8,12 +8,12 @@
 import { Router } from 'express';
 import { asyncHandler } from '../http/errors.js';
 import { clientIp, requireAuth, sessionCookieOptions } from '../http/auth.js';
-import { createRateLimiter, byLoginTarget } from '../http/rateLimit.js';
+import { createRateLimiter, byIp, byLoginAccount, byLoginTarget } from '../http/rateLimit.js';
 import { requireEmail, requireString, optionalString } from '../http/validate.js';
 import { ROLES, UserRepository, verifyPassword } from '../db/repositories/userRepository.js';
 import { AUDIT } from '../services/audit/AuditService.js';
 
-export function createAuthRouter({ config, users, sessions, loginHistory, audit, googleAuth }) {
+export function createAuthRouter({ config, users, sessions, loginHistory, audit, googleAuth, ai }) {
   const router = Router();
 
   // Slow enough to make guessing pointless, generous enough that a person who
@@ -25,8 +25,33 @@ export function createAuthRouter({ config, users, sessions, loginHistory, audit,
     message: 'Too many sign-in attempts. Try again in a few minutes.',
   });
 
+  // A softer, per-account ceiling across every address — the defence against
+  // a guessing run spread over many IPs. It counts *failed* attempts only and
+  // sits well above what a person mistyping produces, so the account owner
+  // signing in correctly is never the one who trips it, and an attacker needs
+  // a sustained run (not a handful of requests) to make the account wait.
+  const accountLimiter = createRateLimiter({
+    windowMs: 15 * 60_000,
+    max: 50,
+    keyFn: byLoginAccount,
+    countIf: (_req, res) => res.statusCode === 401,
+    message: 'Too many failed sign-in attempts for this account. Try again in a few minutes.',
+  });
+
+  // And a ceiling per source address across every account, so one client
+  // cannot spray a password over the whole user list.
+  const sourceLimiter = createRateLimiter({
+    windowMs: 15 * 60_000,
+    max: 100,
+    keyFn: byIp,
+    countIf: (_req, res) => res.statusCode === 401,
+    message: 'Too many sign-in attempts. Try again in a few minutes.',
+  });
+
   router.post(
     '/login',
+    sourceLimiter,
+    accountLimiter,
     loginLimiter,
     asyncHandler(async (req, res) => {
       const email = requireEmail(req.body?.email);
@@ -89,6 +114,9 @@ export function createAuthRouter({ config, users, sessions, loginHistory, audit,
     res.json({
       password: true,
       google: Boolean(googleAuth?.configured),
+      // Whether the library Copilot can answer — AI_ENABLED with a key. The
+      // client hides the Copilot otherwise instead of showing it "online".
+      ai: Boolean(config.ai.enabled && ai?.available),
     });
   });
 

@@ -11,20 +11,35 @@ import { apiClient, isApiMode } from './apiClient';
  * - Otherwise, with VITE_BASE44_APP_ID set, the @base44/sdk client is used, so
  *   the app reads the live catalog from the deployed Base44 app and calls the
  *   serverless functions in base44/functions/.
- * - With neither, a local backend (localStorage + a seeded demo catalog) is
- *   used so the app still runs end to end on a laptop with no cloud account.
+ * - With VITE_DEMO_MODE=true (and neither of the above), a local backend
+ *   (localStorage + a seeded demo catalog) is used so the app runs end to end
+ *   on a laptop with no cloud account.
+ *
+ * The demo backend is opt-in, never a fallback. A build with no backend
+ * configured, or a Base44 SDK that fails to load, reports the problem instead
+ * of quietly serving seeded demo data and demo accounts — which looks like a
+ * working library and is not one.
  *
  * Each backend's API is normalised into the single shape the rest of the app
  * consumes, so no page or hook knows which one is in play.
  */
 const APP_ID = import.meta.env.VITE_BASE44_APP_ID;
 const SERVER_URL = import.meta.env.VITE_BASE44_SERVER_URL || 'https://base44.app';
+const DEMO = /^(1|true|yes)$/i.test(String(import.meta.env.VITE_DEMO_MODE ?? '').trim());
 
-export const isLocalMode = !isApiMode && !APP_ID;
+export const isLocalMode = !isApiMode && !APP_ID && DEMO;
 export { isApiMode };
 
-/** 'api' | 'base44' | 'local' — for the few places that must adapt. */
-export const backendMode = isApiMode ? 'api' : APP_ID ? 'base44' : 'local';
+/** 'api' | 'base44' | 'local' | 'none' — for the few places that must adapt. */
+export const backendMode = isApiMode ? 'api' : APP_ID ? 'base44' : isLocalMode ? 'local' : 'none';
+
+/** The error every caller sees when there is no usable backend. */
+function backendUnavailable(message, cause) {
+  const error = new Error(message);
+  error.code = 'BACKEND_UNAVAILABLE';
+  if (cause) error.cause = cause;
+  return error;
+}
 
 let clientPromise = null;
 
@@ -116,16 +131,26 @@ async function createRemoteClient() {
 export async function getClient() {
   if (isApiMode) return apiClient;
   if (isLocalMode) return localClient;
+  if (backendMode === 'none') {
+    throw backendUnavailable(
+      'No backend is configured for this build. Set VITE_API_BASE_URL (the SlidesVault API), ' +
+        'VITE_BASE44_APP_ID, or VITE_DEMO_MODE=true for the local demo.'
+    );
+  }
   if (!clientPromise) {
     clientPromise = createRemoteClient().catch((err) => {
-      // A broken SDK must not take the whole app down — fall back loudly.
-      console.error('[SlidesVault] Base44 SDK unavailable, falling back to the local backend.', err);
-      return localClient;
+      console.error('[SlidesVault] The Base44 SDK could not be loaded.', err);
+      // Not cached: a reload or a later call may succeed (a flaky CDN, a
+      // deploy in progress).
+      clientPromise = null;
+      throw backendUnavailable('The Base44 backend could not be loaded. Reload the page to try again.', err);
     });
   }
   return clientPromise;
 }
 
+/** The synchronously-known client, or null when it has to be loaded (Base44) or none exists. */
 export function getClientSync() {
-  return isApiMode ? apiClient : localClient;
+  if (isApiMode) return apiClient;
+  return isLocalMode ? localClient : null;
 }

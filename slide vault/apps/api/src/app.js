@@ -18,6 +18,20 @@ import { createDropboxRouter } from './integrations/dropbox/routes/index.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createEntityRouter } from './routes/entities.js';
 import { createSystemRouter } from './routes/system.js';
+import { createAiRouter } from './routes/ai.js';
+
+/**
+ * The Dropbox routes an ordinary user calls while reading — the file record,
+ * its preview descriptor and its bytes. Everything else under /api/dropbox is
+ * administration.
+ */
+const READER_DROPBOX_ROUTE = /^\/files\/[^/]+(?:\/(?:preview|content))?\/?$/;
+
+/** A ranged read of file bytes — one of the many requests a viewer makes per open. */
+const isRangedByteRead = (req) =>
+  req.method === 'GET' &&
+  Boolean(req.headers.range) &&
+  /^\/api\/(?:assets\/[^/]+|dropbox\/files\/[^/]+\/content)\/?$/.test(req.originalUrl.split('?')[0]);
 
 export function createApp(container) {
   const { config, logger, metrics } = container;
@@ -26,8 +40,9 @@ export function createApp(container) {
 
   // Behind a reverse proxy the client IP is in X-Forwarded-For; trusting it
   // unconditionally would let any caller spoof their address past the rate
-  // limiter, so it is opt-in.
-  if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY);
+  // limiter, so it is opt-in. config.trustProxy is already converted to what
+  // Express expects ("true" -> true, "1" -> 1, "loopback" stays a string).
+  if (config.trustProxy) app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');
 
   app.use(securityHeaders({ isProduction: config.isProduction }));
@@ -63,13 +78,17 @@ export function createApp(container) {
       sessions: container.sessions,
       users: container.users,
       cookieName: config.session.cookieName,
+      activityTouchMs: config.analytics.activityTouchMinutes * 60_000,
     })
   );
 
   const generalLimiter = createRateLimiter({
     windowMs: config.rateLimit.windowMs,
     max: config.rateLimit.maxRequests,
-    keyFn: byUserOrIp,
+    // A PDF viewer or video element reading a large file in ranges can issue
+    // hundreds of requests for one open; counting each would cut the reader
+    // off mid-document. They are authenticated, and bounded by the file size.
+    keyFn: (req) => (isRangedByteRead(req) ? null : byUserOrIp(req)),
   });
   const adminLimiter = createRateLimiter({
     windowMs: config.rateLimit.windowMs,
@@ -81,7 +100,14 @@ export function createApp(container) {
   app.use('/api', generalLimiter);
   app.use('/api/auth', createAuthRouter(container));
   app.use('/api', createSystemRouter({ ...container, startedAt }));
-  app.use('/api/dropbox', adminLimiter, createDropboxRouter(container));
+  // The administrative limiter is for administration: a reader opening decks
+  // goes through /api/dropbox/files/:id/{preview,content} too, and must not
+  // share the admins' tighter budget.
+  const adminOnlyLimiter = (req, res, next) =>
+    req.method === 'GET' && READER_DROPBOX_ROUTE.test(req.path) ? next() : adminLimiter(req, res, next);
+
+  app.use('/api/ai', createAiRouter(container));
+  app.use('/api/dropbox', adminOnlyLimiter, createDropboxRouter(container));
   app.use('/api', createEntityRouter(container));
 
   app.use(notFoundHandler);

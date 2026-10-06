@@ -109,8 +109,9 @@ export class DropboxStorageProvider extends StorageProvider {
     return fromDropboxEntry(entry);
   }
 
-  async download(idOrPath) {
-    const response = await this.client.download(idOrPath);
+  /** @param {{range?: string}} [options] an HTTP Range value to pass upstream */
+  async download(idOrPath, { range } = {}) {
+    const response = await this.client.download(idOrPath, { range });
     // Dropbox echoes the metadata in a header — useful for the file name
     // without paying for a second metadata round trip.
     let fileName;

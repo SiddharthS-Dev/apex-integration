@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { Presentation } from '@/api/entities';
 import { InvokeLLM } from '@/api/integrations';
+import { askCopilot } from '@/api/functions';
+import { backendMode } from '@/api/base44Client';
+import { useAuth } from '@/lib/AuthContext';
 import { getDomain } from '@/lib/domains';
 import { cn } from '@/lib/utils';
 
@@ -91,7 +94,26 @@ function RecommendationCard({ presentation, onOpen }) {
   );
 }
 
+/**
+ * Asks the API server's Copilot endpoint, which builds the prompt from its own
+ * catalog and holds the model key. The other backends answer through
+ * InvokeLLM with the prompt built here.
+ */
+async function askServer(question, history) {
+  const { data } = await askCopilot({ question, history });
+  return { reply: data?.reply || '', picks: data?.picks || [] };
+}
+
+/**
+ * Only mounted when the backend can actually answer — see `aiEnabled` in the
+ * AuthContext. The "online" dot below is therefore true by construction.
+ */
 export default function AiCopilot() {
+  const { aiEnabled } = useAuth();
+  return aiEnabled ? <Copilot /> : null;
+}
+
+function Copilot() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [catalog, setCatalog] = useState([]);
@@ -130,47 +152,59 @@ export default function AiCopilot() {
       setMessages((m) => [...m, { role: 'user', content: clean }]);
       setBusy(true);
 
-      const history = messages
-        .slice(-HISTORY_TURNS)
-        .map((m) => `${m.role === 'user' ? 'User' : 'Copilot'}: ${m.content}`)
-        .join('\n');
-
-      const prompt = [
-        'You are the SlidesVault Copilot, an assistant inside the Inspironics presentation knowledge hub.',
-        'You know only the catalog below. Never invent a presentation that is not listed.',
-        'Answer in short, helpful markdown (2-4 sentences max, lists welcome).',
-        'Return JSON only, shaped: { "reply": "<markdown>", "picks": [<catalog index numbers, max 5>] }.',
-        'Pick the presentations that best answer the question; use an empty array when nothing fits.',
-        '',
-        '## Catalog',
-        catalogText,
-        '',
-        '## Conversation so far',
-        history || '(new conversation)',
-        '',
-        `## User question\n${clean}`,
-      ].join('\n');
-
       try {
-        const raw = await InvokeLLM({
-          prompt,
-          response_json_schema: {
-            type: 'object',
-            properties: {
-              reply: { type: 'string' },
-              picks: { type: 'array', items: { type: 'number' } },
-            },
-            required: ['reply'],
-          },
-          // Consumed only by the local backend; ignored by the hosted model.
-          __local: { kind: 'copilot', question: clean, catalog },
-        });
+        let reply;
+        let cards;
+        if (backendMode === 'api') {
+          const answer = await askServer(
+            clean,
+            messages.slice(-HISTORY_TURNS).map(({ role, content }) => ({ role, content }))
+          );
+          reply = answer.reply;
+          cards = answer.picks.slice(0, 5);
+        } else {
+          const history = messages
+            .slice(-HISTORY_TURNS)
+            .map((m) => `${m.role === 'user' ? 'User' : 'Copilot'}: ${m.content}`)
+            .join('\n');
 
-        const { reply, picks } = parseReply(raw);
-        const cards = picks
-          .map((n) => catalog[Number(n) - 1])
-          .filter(Boolean)
-          .slice(0, 5);
+          const prompt = [
+            'You are the SlidesVault Copilot, an assistant inside the Inspironics presentation knowledge hub.',
+            'You know only the catalog below. Never invent a presentation that is not listed.',
+            'Answer in short, helpful markdown (2-4 sentences max, lists welcome).',
+            'Return JSON only, shaped: { "reply": "<markdown>", "picks": [<catalog index numbers, max 5>] }.',
+            'Pick the presentations that best answer the question; use an empty array when nothing fits.',
+            '',
+            '## Catalog',
+            catalogText,
+            '',
+            '## Conversation so far',
+            history || '(new conversation)',
+            '',
+            `## User question\n${clean}`,
+          ].join('\n');
+
+          const raw = await InvokeLLM({
+            prompt,
+            response_json_schema: {
+              type: 'object',
+              properties: {
+                reply: { type: 'string' },
+                picks: { type: 'array', items: { type: 'number' } },
+              },
+              required: ['reply'],
+            },
+            // Consumed only by the local backend; ignored by the hosted model.
+            __local: { kind: 'copilot', question: clean, catalog },
+          });
+
+          const parsed = parseReply(raw);
+          reply = parsed.reply;
+          cards = parsed.picks
+            .map((n) => catalog[Number(n) - 1])
+            .filter(Boolean)
+            .slice(0, 5);
+        }
 
         setMessages((m) => [...m, { role: 'assistant', content: reply, picks: cards, query: clean }]);
       } catch (err) {
@@ -179,7 +213,10 @@ export default function AiCopilot() {
           ...m,
           {
             role: 'assistant',
-            content: 'Something went wrong reaching the assistant. Please try again in a moment.',
+            content:
+              err?.status === 429
+                ? err.message
+                : 'Something went wrong reaching the assistant. Please try again in a moment.',
             picks: [],
           },
         ]);

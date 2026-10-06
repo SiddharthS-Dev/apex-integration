@@ -4,11 +4,16 @@ import { trackView as trackViewFn, recordLogin as recordLoginFn } from '@/api/fu
 export async function trackView(presentationId, { source = 'online', readingTimeSecs = 0, completionPct = 0 } = {}) {
   if (!presentationId) return null;
   try {
+    // Both spellings: the demo backend reads source / reading_time_secs, the
+    // API server reads offline / reading_seconds (apiClient maps either).
+    const seconds = Math.min(14_400, Math.max(0, Math.round(readingTimeSecs)));
     const { data } = await trackViewFn({
       presentation_id: presentationId,
       source,
-      reading_time_secs: Math.round(readingTimeSecs),
-      completion_pct: Math.round(completionPct),
+      offline: source === 'offline',
+      reading_time_secs: seconds,
+      reading_seconds: seconds,
+      completion_pct: Math.min(100, Math.max(0, Math.round(completionPct))),
     });
     return data;
   } catch (err) {

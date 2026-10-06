@@ -124,6 +124,15 @@ export class UserRepository {
     ]);
   }
 
+  /**
+   * Presence: "this person used the app recently". Written on authenticated
+   * requests, throttled by the caller, and deliberately not touching
+   * updated_at — that column means "the account record changed".
+   */
+  async touchActive(id) {
+    await this.db.execute('UPDATE app_user SET last_active_at = ? WHERE id = ?', [now(), id]);
+  }
+
   async list({ limit = 200 } = {}) {
     const rows = await this.db.query('SELECT * FROM app_user ORDER BY created_at ASC LIMIT ?', [
       Math.min(Number(limit) || 200, 1000),
@@ -146,6 +155,7 @@ export class UserRepository {
       role: user.role,
       status: user.status,
       last_login_at: user.last_login_at,
+      last_active_at: user.last_active_at ?? null,
       created_date: user.created_at,
     };
   }

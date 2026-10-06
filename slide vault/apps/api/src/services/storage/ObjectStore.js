@@ -96,8 +96,9 @@ export class ObjectStore {
     return fsp.readFile(this.pathFor(key));
   }
 
-  createReadStream(key) {
-    return fs.createReadStream(this.pathFor(key));
+  /** @param {{start?: number, end?: number}} [range] inclusive byte offsets */
+  createReadStream(key, range) {
+    return fs.createReadStream(this.pathFor(key), range ?? undefined);
   }
 
   async stat(key) {

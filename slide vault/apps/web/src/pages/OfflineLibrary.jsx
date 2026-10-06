@@ -31,7 +31,9 @@ export default function OfflineLibrary() {
       const [files, acts, rows, storage] = await Promise.all([
         getAllCached(),
         getAllActivity(),
-        listAll(Presentation, { query: { status: 'active' } }),
+        // With no network the catalog cannot load; the records saved with
+        // each download stand in for it below.
+        listAll(Presentation, { query: { status: 'active' } }).catch(() => []),
         getStorageEstimate(),
       ]);
       setCached(files);
@@ -49,9 +51,10 @@ export default function OfflineLibrary() {
 
   const byId = useMemo(() => {
     const map = new Map();
+    cached.forEach((c) => c.presentation && map.set(c.id, c.presentation));
     presentations.forEach((p) => map.set(p.id, p));
     return map;
-  }, [presentations]);
+  }, [presentations, cached]);
 
   const activityById = useMemo(() => {
     const map = new Map();

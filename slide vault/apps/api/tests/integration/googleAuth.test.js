@@ -280,7 +280,7 @@ test('/api/auth/config hides Google until it is configured', async () => {
   try {
     const response = await server.get('/api/auth/config');
     assert.equal(response.status, 200);
-    assert.deepEqual(response.body, { password: true, google: false });
+    assert.deepEqual(response.body, { password: true, google: false, ai: false });
   } finally {
     await server.close();
     await stack.close();

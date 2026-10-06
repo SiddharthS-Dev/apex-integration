@@ -12,6 +12,26 @@ import crypto from 'node:crypto';
 
 const now = () => new Date().toISOString();
 
+/**
+ * Sortable columns, by the name a client may ask for. The client speaks the
+ * entity names (created_date, updated_date) the presentation shape uses; the
+ * table names are accepted too. Anything else falls back to updated_at rather
+ * than reaching the SQL.
+ */
+const SORT_COLUMNS = {
+  updated_at: 'updated_at',
+  updated_date: 'updated_at',
+  created_at: 'created_at',
+  created_date: 'created_at',
+  title: 'title',
+  modified_at: 'modified_at',
+  modified_date: 'modified_at',
+  view_count: 'view_count',
+  trend_score: 'trend_score',
+  last_synced_at: 'last_synced_at',
+  last_synced: 'last_synced_at',
+};
+
 const parseJson = (value, fallback) => {
   if (value == null || value === '') return fallback;
   try {
@@ -172,24 +192,33 @@ export class StoredFileRepository {
   async list({ status = 'active', limit = 200, offset = 0, sort = '-updated_at' } = {}) {
     const descending = sort.startsWith('-');
     const columnName = descending ? sort.slice(1) : sort;
-    const sortable = new Set([
-      'updated_at',
-      'created_at',
-      'title',
-      'modified_at',
-      'view_count',
-      'trend_score',
-      'last_synced_at',
-    ]);
-    const column = sortable.has(columnName) ? columnName : 'updated_at';
+    const column = SORT_COLUMNS[columnName] ?? 'updated_at';
+    const direction = descending ? 'DESC' : 'ASC';
 
     const where = status === 'all' ? '' : 'WHERE status = ?';
     const params = status === 'all' ? [] : [status];
+    // id breaks ties: rows sharing a sort value (every file indexed by one
+    // sync shares a created_at to the millisecond) would otherwise come back
+    // in an engine-defined order that may differ between two pages, and
+    // offset paging would skip some rows and repeat others.
     const rows = await this.db.query(
-      `SELECT * FROM stored_file ${where} ORDER BY ${column} ${descending ? 'DESC' : 'ASC'} LIMIT ? OFFSET ?`,
+      `SELECT * FROM stored_file ${where} ORDER BY ${column} ${direction}, id ${direction} LIMIT ? OFFSET ?`,
       [...params, Math.min(Number(limit) || 200, 1000), Math.max(Number(offset) || 0, 0)]
     );
     return rows.map(StoredFileRepository.hydrate);
+  }
+
+  /**
+   * The record a cached asset URL belongs to, or null when no record points at
+   * it any more (a previous revision's preview, an invalidated thumbnail).
+   */
+  async findByAssetUrl(url) {
+    const row = await this.db.queryOne(
+      `SELECT * FROM stored_file WHERE preview_url = ? OR thumbnail_url = ? OR file_url = ?
+       ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END LIMIT 1`,
+      [url, url, url]
+    );
+    return row ? StoredFileRepository.hydrate(row) : null;
   }
 
   async count(status = 'active') {
@@ -202,11 +231,13 @@ export class StoredFileRepository {
     return Number(row?.n ?? 0);
   }
 
+  /**
+   * Leaves updated_at alone on purpose: a view is not an edit, and bumping it
+   * reorders the default "-updated_at" listing under a client that is paging
+   * through it — every open would shift the offsets by one.
+   */
   async incrementViews(id) {
-    await this.db.execute(
-      'UPDATE stored_file SET view_count = view_count + 1, updated_at = ? WHERE id = ?',
-      [now(), id]
-    );
+    await this.db.execute('UPDATE stored_file SET view_count = view_count + 1 WHERE id = ?', [id]);
   }
 
   /** Row -> in-memory record: JSON columns parsed, numbers coerced. */
@@ -227,17 +258,23 @@ export class StoredFileRepository {
   /**
    * The public "Presentation" shape the frontend consumes.
    *
-   * Dropbox internals (revision, content hash, processing state) are kept out
-   * of it; the admin surface reads those from the sync log instead.
+   * Dropbox internals (content hash, processing state) are kept out of it; the
+   * admin surface reads those from the sync log instead. Where a file lives in
+   * Dropbox — its id and its folder path, which can say more than the title
+   * does — is for administrators only. The revision is not an internal in that
+   * sense: it is an opaque version tag, and it is what lets a client tell an
+   * offline copy is out of date.
+   *
+   * @param {object} file
+   * @param {{admin?: boolean}} [options]
    */
-  static toPresentation(file) {
+  static toPresentation(file, { admin = false } = {}) {
     if (!file) return null;
     return {
       id: file.id,
       title: file.title || file.name,
       description: file.description || '',
-      dropbox_id: file.external_id,
-      dropbox_path: file.path_display || file.path,
+      ...(admin ? { dropbox_id: file.external_id, dropbox_path: file.path_display || file.path } : {}),
       dropbox_rev: file.revision,
       file_url: file.file_url || '',
       thumbnail_url: file.thumbnail_url || '',

@@ -243,6 +243,32 @@ export const MIGRATIONS = [
       `ALTER TABLE storage_connection ADD COLUMN home_path TEXT NOT NULL DEFAULT ''`,
     ],
   },
+
+  {
+    /**
+     * Presence and honest view counting.
+     *
+     * last_active_at is "used the app recently" — distinct from last_login_at,
+     * because a session lasts hours and a sign-in says nothing about whether
+     * the person is still there.
+     *
+     * presentation_view holds the last counted view per (presentation, viewer),
+     * which is what lets the view endpoint treat a reload, a re-render or a
+     * quick back-and-forth as the same open instead of three views.
+     */
+    id: '003_activity_and_view_dedupe',
+    statements: [
+      `ALTER TABLE app_user ADD COLUMN last_active_at TEXT`,
+      `CREATE TABLE IF NOT EXISTS presentation_view (
+        presentation_id TEXT NOT NULL,
+        viewer_id TEXT NOT NULL,
+        viewed_at TEXT NOT NULL,
+        PRIMARY KEY (presentation_id, viewer_id)
+      )`,
+      // The library's "Recently added" order, which pages by created_at.
+      `CREATE INDEX IF NOT EXISTS idx_stored_file_created ON stored_file (created_at)`,
+    ],
+  },
 ];
 
 /** Applies every migration that has not been recorded yet. */

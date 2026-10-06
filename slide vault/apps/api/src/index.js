@@ -48,15 +48,20 @@ async function main() {
 
   /* --------------------------------------------------------- 5. listen */
   const app = createApp(container);
-  const server = app.listen(cfg.port, () => {
+  // HOST is set by a gateway that wants the API on loopback only; unset keeps
+  // Node's all-interfaces default, which a container port mapping needs.
+  const onListening = () => {
     logger.info('SlidesVault API listening', {
+      host: cfg.host || '(all interfaces)',
       port: cfg.port,
       env: cfg.nodeEnv,
       db: cfg.db.driver,
       appBaseUrl: cfg.appBaseUrl,
       redirectUri: cfg.dropbox.redirectUri,
+      trustProxy: cfg.trustProxy,
     });
-  });
+  };
+  const server = cfg.host ? app.listen(cfg.port, cfg.host, onListening) : app.listen(cfg.port, onListening);
 
   /* ------------------------------------------------------ 6. scheduler */
   container.scheduler.start();

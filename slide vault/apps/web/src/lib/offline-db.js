@@ -8,22 +8,76 @@
  *   activity — per-user reading state: bookmarks, progress, favourites, views.
  */
 
-const DB_NAME = 'slidesvault';
+/**
+ * One database per signed-in user, named after their id.
+ *
+ * Offline copies and reading history are personal, and a browser is often
+ * shared — a kiosk, a meeting-room PC, a colleague's laptop. With one
+ * database per origin, the next person to sign in would see (and could open)
+ * everything the last one downloaded. The AuthProvider sets the owner on
+ * sign-in and deletes the database on sign-out or when a different user signs
+ * in; until an owner is set, every call fails closed.
+ */
+const DB_PREFIX = 'slidesvault:';
+/** The unscoped database earlier builds wrote; its owner is unknown. */
+const LEGACY_DB_NAME = 'slidesvault';
 const DB_VERSION = 1;
 const FILES = 'files';
 const ACTIVITY = 'activity';
 
+let owner = null;
 let dbPromise = null;
+
+const dbName = (userId) => `${DB_PREFIX}${userId}`;
+
+function closeCurrent() {
+  const pending = dbPromise;
+  dbPromise = null;
+  pending?.then((db) => db.close()).catch(() => {});
+}
+
+function deleteDatabase(name) {
+  return new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') return resolve(false);
+    const request = indexedDB.deleteDatabase(name);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => resolve(false);
+    // Another tab still has it open; it is deleted once that tab lets go.
+    request.onblocked = () => resolve(false);
+  });
+}
+
+/** Points every call below at this user's database (or none, with null). */
+export function setOfflineOwner(userId) {
+  const next = userId ? String(userId) : null;
+  if (next === owner) return;
+  closeCurrent();
+  owner = next;
+}
+
+/** Deletes a user's offline copies and reading state from this browser. */
+export async function deleteOfflineData(userId) {
+  if (!userId) return false;
+  if (String(userId) === owner) closeCurrent();
+  return deleteDatabase(dbName(userId));
+}
+
+/** Drops the pre-scoping database: nothing says whose files are in it. */
+export function deleteLegacyOfflineData() {
+  return deleteDatabase(LEGACY_DB_NAME);
+}
 
 function openDb() {
   if (dbPromise) return dbPromise;
+  if (!owner) return Promise.reject(new Error('No signed-in user owns the offline library.'));
 
+  const name = dbName(owner);
   dbPromise = new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
       reject(new Error('IndexedDB is not available in this browser.'));
       return;
     }
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(name, DB_VERSION);
 
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -37,7 +91,15 @@ function openDb() {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      // Lets deleteOfflineData() in another tab proceed instead of blocking.
+      db.onversionchange = () => {
+        db.close();
+        if (owner && dbName(owner) === name) dbPromise = null;
+      };
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
   }).catch((err) => {
     dbPromise = null;

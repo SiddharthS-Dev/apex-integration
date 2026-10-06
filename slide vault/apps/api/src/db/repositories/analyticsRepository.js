@@ -31,19 +31,54 @@ export class AnalyticsRepository {
     return row ? AnalyticsRepository.hydrate(row) : null;
   }
 
-  async list({ limit = 200 } = {}) {
+  async list({ limit = 200, offset = 0 } = {}) {
+    // presentation_id breaks ties so paging with offset is stable.
     const rows = await this.db.query(
-      'SELECT * FROM presentation_analytics ORDER BY total_views DESC LIMIT ?',
-      [Math.min(Number(limit) || 200, 1000)]
+      'SELECT * FROM presentation_analytics ORDER BY total_views DESC, presentation_id ASC LIMIT ? OFFSET ?',
+      [Math.min(Number(limit) || 200, 1000), Math.max(Number(offset) || 0, 0)]
     );
     return rows.map(AnalyticsRepository.hydrate);
+  }
+
+  /**
+   * Claims "a view of this presentation by this viewer, now".
+   *
+   * Returns false when the same viewer already had a view counted inside the
+   * window — a reload, a re-render, a quick back-and-forth — so the caller
+   * does not count it again. The check and the claim are one transaction so
+   * two parallel requests cannot both see "no recent view".
+   */
+  async claimView({ presentationId, viewerId, windowMs }) {
+    if (!viewerId) return true;
+    return this.db.transaction(async (tx) => {
+      const existing = await tx.queryOne(
+        'SELECT viewed_at FROM presentation_view WHERE presentation_id = ? AND viewer_id = ?',
+        [presentationId, viewerId]
+      );
+      const timestamp = now();
+      if (existing && Date.now() - Date.parse(existing.viewed_at) < windowMs) return false;
+      await tx.execute(
+        `INSERT INTO presentation_view (presentation_id, viewer_id, viewed_at) VALUES (?, ?, ?)
+         ON CONFLICT (presentation_id, viewer_id) DO UPDATE SET viewed_at = ?`,
+        [presentationId, viewerId, timestamp, timestamp]
+      );
+      return true;
+    });
   }
 
   /**
    * Records one view. Runs in a transaction so two concurrent viewers cannot
    * both read total_views = 4 and both write 5.
    */
-  async recordView({ presentationId, presentationTitle = '', viewerId = '', viewerName = '', offline = false, readingSeconds = 0 }) {
+  async recordView({
+    presentationId,
+    presentationTitle = '',
+    viewerId = '',
+    viewerName = '',
+    offline = false,
+    readingSeconds = 0,
+    completionPct = null,
+  }) {
     return this.db.transaction(async (tx) => {
       const existing = await tx.queryOne(
         'SELECT * FROM presentation_analytics WHERE presentation_id = ?',
@@ -55,9 +90,9 @@ export class AnalyticsRepository {
         await tx.execute(
           `INSERT INTO presentation_analytics
              (id, presentation_id, presentation_title, total_views, unique_views, viewer_ids_json,
-              online_views, offline_views, avg_reading_time, last_viewed_at, last_viewed_by,
+              online_views, offline_views, avg_reading_time, completion_pct, last_viewed_at, last_viewed_by,
               last_viewed_by_name, daily_breakdown_json, created_at, updated_at)
-           VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             crypto.randomUUID(),
             presentationId,
@@ -67,6 +102,7 @@ export class AnalyticsRepository {
             offline ? 0 : 1,
             offline ? 1 : 0,
             readingSeconds,
+            completionPct ?? 0,
             timestamp,
             viewerId,
             viewerName,
@@ -85,6 +121,12 @@ export class AnalyticsRepository {
       const avgReading = readingSeconds
         ? (Number(existing.avg_reading_time) * Number(existing.total_views) + readingSeconds) / totalViews
         : Number(existing.avg_reading_time);
+      // A running mean over the views that reported a completion, like the
+      // reading time above; a view that did not report one leaves it alone.
+      const avgCompletion =
+        completionPct == null
+          ? Number(existing.completion_pct)
+          : (Number(existing.completion_pct) * Number(existing.total_views) + completionPct) / totalViews;
 
       const today = timestamp.slice(0, 10);
       const cutoff = new Date(Date.now() - DAILY_WINDOW_DAYS * 24 * 3600_000).toISOString().slice(0, 10);
@@ -103,7 +145,7 @@ export class AnalyticsRepository {
       await tx.execute(
         `UPDATE presentation_analytics SET
            presentation_title = ?, total_views = ?, unique_views = ?, viewer_ids_json = ?,
-           online_views = ?, offline_views = ?, avg_reading_time = ?, trend_score = ?,
+           online_views = ?, offline_views = ?, avg_reading_time = ?, completion_pct = ?, trend_score = ?,
            daily_breakdown_json = ?, last_viewed_at = ?, last_viewed_by = ?, last_viewed_by_name = ?,
            updated_at = ?
          WHERE presentation_id = ?`,
@@ -115,6 +157,7 @@ export class AnalyticsRepository {
           Number(existing.online_views) + (offline ? 0 : 1),
           Number(existing.offline_views) + (offline ? 1 : 0),
           avgReading,
+          avgCompletion,
           trendScore,
           JSON.stringify(daily),
           timestamp,
@@ -128,6 +171,23 @@ export class AnalyticsRepository {
       await tx.execute('UPDATE stored_file SET trend_score = ? WHERE id = ?', [trendScore, presentationId]);
       return this.findByPresentation(presentationId);
     });
+  }
+
+  /**
+   * What a non-administrator may see: the aggregate numbers, never who
+   * viewed. The per-viewer columns are a record of what colleagues read,
+   * which is the administrators' business only.
+   */
+  static toAggregate(row) {
+    if (!row) return null;
+    const {
+      viewer_ids: _viewerIds,
+      viewer_ids_json: _viewerIdsJson,
+      last_viewed_by: _lastViewedBy,
+      last_viewed_by_name: _lastViewedByName,
+      ...aggregate
+    } = row;
+    return aggregate;
   }
 
   static hydrate(row) {

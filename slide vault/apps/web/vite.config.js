@@ -14,9 +14,32 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 // place.
 const BASE = '/vault/';
 
+/**
+ * Writes precache-manifest.json: every file of this build, relative to BASE.
+ * public/sw.js reads it to cache the whole app shell — including route chunks
+ * never opened online — so the offline library loads with no network.
+ */
+function precacheManifest() {
+  // Public files are copied, not bundled, so they are listed by hand.
+  const publicFiles = ['logo.svg', 'manifest.webmanifest'];
+  return {
+    name: 'slidesvault-precache-manifest',
+    apply: 'build',
+    enforce: 'post',
+    generateBundle(_options, bundle) {
+      const files = Object.keys(bundle).filter((name) => !name.endsWith('.map'));
+      this.emitFile({
+        type: 'asset',
+        fileName: 'precache-manifest.json',
+        source: JSON.stringify([...new Set([...files, ...publicFiles])]),
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: BASE,
-  plugins: [react()],
+  plugins: [react(), precacheManifest()],
   resolve: {
     alias: { '@': path.resolve(rootDir, 'src') },
   },

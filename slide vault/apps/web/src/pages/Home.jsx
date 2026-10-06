@@ -85,6 +85,13 @@ export default function Home() {
     return counts;
   }, [presentations]);
 
+  // Domains the library actually covers — not the length of the fixed list,
+  // which reads the same for an empty library as for a full one.
+  const domainsPresent = useMemo(
+    () => new Set(presentations.map((p) => p.primary_domain).filter(Boolean)).size,
+    [presentations]
+  );
+
   return (
     <div className="mx-auto max-w-[1500px] space-y-10 px-4 py-6 sm:px-6 sm:py-8">
       {/* ------------------------------------------------------------ hero */}
@@ -155,7 +162,7 @@ export default function Home() {
         <StatCard
           icon={Layers}
           label="Domains"
-          value={DOMAIN_NAMES.length}
+          value={loading ? '—' : domainsPresent}
           tint="from-fuchsia-500 to-pink-500"
         />
       </section>

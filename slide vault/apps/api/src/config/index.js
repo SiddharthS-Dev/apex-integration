@@ -64,6 +64,22 @@ const csvLower = (value) => [
 const trimSlash = (value) => String(value ?? '').replace(/\/+$/, '');
 
 /**
+ * TRUST_PROXY as Express wants it. The env var is always a string, and Express
+ * reads the string "true" as a proxy *address* named "true" and "1" as one
+ * named "1" — neither of which trusts anything — so booleans and hop counts are
+ * converted here. Anything else ("loopback", "10.0.0.0/8, loopback") is passed
+ * through, which Express understands. Unset means "trust nothing".
+ */
+export function parseTrustProxy(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return false;
+  if (/^(true|yes|on)$/i.test(raw)) return true;
+  if (/^(false|no|off)$/i.test(raw)) return false;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return raw;
+}
+
+/**
  * Builds the config object from an env bag (process.env by default).
  * Tests pass their own bag so no test depends on the developer's shell.
  */
@@ -77,6 +93,10 @@ export function buildConfig(env = process.env) {
     nodeEnv,
     isProduction,
     port,
+    /** Interface to bind. Unset keeps Node's default (all interfaces), which docker-compose relies on. */
+    host: String(env.HOST ?? '').trim(),
+    /** Express "trust proxy" — set behind a gateway so req.ip is the real client. */
+    trustProxy: parseTrustProxy(env.TRUST_PROXY),
     logLevel: env.LOG_LEVEL || (isProduction ? 'info' : 'debug'),
 
     /** Where the browser app lives — OAuth returns the admin here when it is done. */
@@ -159,6 +179,15 @@ export function buildConfig(env = process.env) {
       visionEnabled: bool(env.AI_VISION_ENABLED, true),
       maxTokens: int(env.AI_MAX_TOKENS, 1024),
       timeoutMs: int(env.AI_TIMEOUT_SECONDS, 60) * 1000,
+      /** Copilot questions per user per minute — each one is a paid model call. */
+      copilotPerMinute: int(env.AI_COPILOT_MAX_PER_MINUTE, 10),
+    },
+
+    analytics: {
+      /** Re-opening the same deck within this window is the same view, not a new one. */
+      viewDedupeMinutes: int(env.VIEW_DEDUPE_MINUTES, 10),
+      /** last_active_at is written at most this often per user. */
+      activityTouchMinutes: int(env.ACTIVITY_TOUCH_MINUTES, 5),
     },
 
     objectStore: {

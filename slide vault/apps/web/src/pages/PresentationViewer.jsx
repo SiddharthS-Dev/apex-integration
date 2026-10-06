@@ -20,13 +20,65 @@ import { cn, formatBytes, formatDate, timeAgo } from '@/lib/utils';
 
 const ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 175, 200];
 
+/** The longest reading time the API accepts for one view (four hours). */
+const MAX_READING_SECS = 14_400;
+
+/**
+ * Mirrors the policy the API puts on a synced .html file it serves
+ * (`Content-Security-Policy: sandbox allow-popups`): no scripts, no forms, and
+ * — the part that matters — no allow-same-origin, so the document runs in an
+ * opaque origin. The app shares its origin with every other Apex app, so an
+ * HTML deck rendered same-origin could call all of their APIs as the viewer.
+ */
+const MARKUP_SANDBOX = 'allow-popups';
+
+/**
+ * What an offline copy really is, from its first bytes — never from the type
+ * stored next to it, which came from whatever served it. Only a PDF or a
+ * raster image is handed to the browser as a blob URL; everything else is
+ * either markup for the sandbox or not previewable.
+ */
+async function sniffOfflineCopy(blob, fileType) {
+  const head = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+  const ascii = String.fromCharCode(...head);
+  if (ascii.startsWith('%PDF-')) return 'application/pdf';
+  if (head[0] === 0x89 && ascii.slice(1, 4) === 'PNG') return 'image/png';
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
+  if (ascii.startsWith('GIF8')) return 'image/gif';
+  if (ascii.startsWith('RIFF') && ascii.slice(8, 12) === 'WEBP') return 'image/webp';
+  const type = String(blob.type || '').toLowerCase();
+  if (/html|svg|xml|^text\//.test(type) || ['html', 'htm'].includes(String(fileType).toLowerCase())) {
+    return 'markup';
+  }
+  return 'binary';
+}
+
+/**
+ * Builds the frame for an offline copy.
+ * @returns {Promise<{kind: 'url', src: string, pdf: boolean, revoke: string}
+ *   | {kind: 'srcdoc', srcdoc: string} | {kind: 'none'}>}
+ */
+async function offlineFrame(blob, fileType) {
+  const sniffed = await sniffOfflineCopy(blob, fileType);
+  if (sniffed === 'markup') return { kind: 'srcdoc', srcdoc: await blob.text() };
+  if (sniffed === 'binary') return { kind: 'none' };
+  // Re-typed from the sniffed bytes, so the browser renders it as exactly that.
+  const src = URL.createObjectURL(new Blob([blob], { type: sniffed }));
+  return { kind: 'url', src, pdf: sniffed === 'application/pdf', revoke: src };
+}
+
 export default function PresentationViewer() {
   const { id } = useParams();
   const navigate = useNavigate();
 
   const [presentation, setPresentation] = useState(null);
   const [related, setRelated] = useState([]);
+  // What the viewer frame shows: a URL (online stream, or a PDF/image offline
+  // copy), sandboxed markup, or nothing previewable.
+  const [frame, setFrame] = useState(null);
+  // The streamable URL online, which is also what a download fetches.
   const [fileUrl, setFileUrl] = useState('');
+  const [offlineStale, setOfflineStale] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -49,7 +101,14 @@ export default function PresentationViewer() {
   const maxPage = useRef(1);
   const containerRef = useRef(null);
 
+  // Read by the unmount cleanup, which would otherwise see the values from the
+  // render that first scheduled it — "online, 0 pages" — not the final ones.
+  const servedOfflineRef = useRef(false);
+  const totalPagesRef = useRef(0);
+
   const totalPages = presentation?.slide_count || 0;
+  totalPagesRef.current = totalPages;
+  servedOfflineRef.current = servedOffline;
   const progress = totalPages > 0 ? Math.min(100, Math.round((page / totalPages) * 100)) : 0;
 
   const flash = useCallback((message, tone = 'success') => {
@@ -76,12 +135,31 @@ export default function PresentationViewer() {
     maxPage.current = 1;
     setLoading(true);
     setError(null);
+    setFrame(null);
     setFileUrl('');
+    setOfflineStale(false);
     setServedOffline(false);
 
     (async () => {
       try {
-        const record = await Presentation.get(id);
+        const cached = await getCachedFile(id);
+        if (cancelled) return;
+        setIsOffline(Boolean(cached));
+
+        // The record comes from the server when it can; with no network, the
+        // copy saved alongside the offline file stands in for it.
+        let record;
+        try {
+          record = await Presentation.get(id);
+        } catch (err) {
+          if (!cached?.blob || navigator.onLine) throw err;
+          record = cached.presentation || {
+            id,
+            title: cached.title,
+            file_type: cached.file_type,
+            dropbox_rev: cached.rev,
+          };
+        }
         if (cancelled) return;
         setPresentation(record);
 
@@ -91,14 +169,26 @@ export default function PresentationViewer() {
         setPage(act.current_page || 1);
         maxPage.current = act.current_page || 1;
 
-        // An offline copy always wins: instant, and works with no network.
-        const cached = await getCachedFile(id);
-        if (cancelled) return;
-        setIsOffline(Boolean(cached));
+        // The offline copy is used when there is no network, or when it is
+        // provably the current revision. Online, a copy of an older revision —
+        // or one saved before revisions were recorded — is stale: the live
+        // file is shown instead and the copy is offered for refresh.
+        const current = record?.dropbox_rev;
+        const copyIsCurrent = Boolean(cached?.blob && cached.rev && current && cached.rev === current);
+        const useCopy = Boolean(cached?.blob) && (!navigator.onLine || copyIsCurrent);
+        if (cached?.blob && !useCopy) setOfflineStale(true);
 
-        if (cached?.blob) {
-          blobUrlRef.current = URL.createObjectURL(cached.blob);
-          setFileUrl(blobUrlRef.current);
+        if (useCopy) {
+          const built = await offlineFrame(cached.blob, cached.file_type || record?.file_type);
+          if (cancelled) {
+            if (built.revoke) URL.revokeObjectURL(built.revoke);
+            return;
+          }
+          if (built.revoke) blobUrlRef.current = built.revoke;
+          if (built.kind === 'none') {
+            setError('This offline copy cannot be previewed. Connect to the network to open it.');
+          }
+          setFrame(built);
           setServedOffline(true);
         } else if (!navigator.onLine) {
           setError('You are offline and this presentation has not been downloaded yet.');
@@ -107,6 +197,9 @@ export default function PresentationViewer() {
           if (cancelled) return;
           if (!data?.url) throw new Error('No streamable file was returned.');
           setFileUrl(data.url);
+          const markup = /html/i.test(data.contentType || '') ||
+            ['html', 'htm'].includes(String(record?.file_type).toLowerCase());
+          setFrame({ kind: 'url', src: data.url, pdf: !markup, sandbox: markup ? MARKUP_SANDBOX : undefined });
         }
 
         Presentation.filter({ primary_domain: record.primary_domain, status: 'active' }, '-view_count', 13)
@@ -152,11 +245,14 @@ export default function PresentationViewer() {
     }).catch(() => {});
 
     return () => {
-      const secs = (Date.now() - startedAt.current) / 1000;
-      const pct = totalPages > 0 ? Math.min(100, Math.round((maxPage.current / totalPages) * 100)) : 0;
+      // Refs, not state: this closure was created on the first render after
+      // load and would otherwise report that render's values.
+      const pages = totalPagesRef.current;
+      const secs = Math.min(MAX_READING_SECS, (Date.now() - startedAt.current) / 1000);
+      const pct = pages > 0 ? Math.min(100, Math.round((maxPage.current / pages) * 100)) : 0;
       if (secs > 3) {
         trackView(id, {
-          source: servedOffline ? 'offline' : 'online',
+          source: servedOfflineRef.current ? 'offline' : 'online',
           readingTimeSecs: secs,
           completionPct: pct,
         });
@@ -200,16 +296,20 @@ export default function PresentationViewer() {
         rev: presentation?.dropbox_rev,
         title: presentation?.title,
         file_type: presentation?.file_type,
+        // The record itself, so the viewer and the offline library can show
+        // the deck with no network.
+        presentation,
       });
       setIsOffline(true);
-      flash('Saved for offline reading');
+      setOfflineStale(false);
+      flash(offlineStale ? 'Offline copy updated' : 'Saved for offline reading');
     } catch (err) {
       console.error('[viewer] download failed', err);
       flash(err.message || 'Download failed', 'danger');
     } finally {
       setDownloading(false);
     }
-  }, [downloading, fileUrl, id, presentation, flash]);
+  }, [downloading, fileUrl, id, presentation, offlineStale, flash]);
 
   const handleRemoveOffline = useCallback(async () => {
     await removeCachedFile(id);
@@ -277,12 +377,16 @@ export default function PresentationViewer() {
   const domain = getDomain(presentation?.primary_domain);
 
   // #toolbar=0&navpanes=0 hides the browser's own download/print controls.
+  // The PDF open parameters mean nothing to an image or markup, so they are
+  // only appended for a PDF.
   const frameSrc = useMemo(() => {
-    if (!fileUrl) return '';
+    if (frame?.kind !== 'url' || !frame.src) return '';
+    if (!frame.pdf) return frame.src;
     const hash = [`page=${page}`, 'toolbar=0', 'navpanes=0', 'scrollbar=0', 'view=FitH'];
     if (searchTerm) hash.push(`search=${encodeURIComponent(searchTerm)}`);
-    return `${fileUrl}#${hash.join('&')}`;
-  }, [fileUrl, page, searchTerm]);
+    return `${frame.src}#${hash.join('&')}`;
+  }, [frame, page, searchTerm]);
+  const hasFrame = Boolean(frameSrc) || frame?.kind === 'srcdoc';
 
   if (loading) {
     return (
@@ -293,7 +397,7 @@ export default function PresentationViewer() {
     );
   }
 
-  if (error && !fileUrl) {
+  if (error && !hasFrame) {
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center px-6 text-center">
         <span className="grid h-14 w-14 place-items-center rounded-2xl bg-amber-500/15 text-amber-400">
@@ -366,12 +470,20 @@ export default function PresentationViewer() {
               <Star className={cn('h-4 w-4', activity?.favorite && 'fill-amber-400 text-amber-400')} />
             </IconButton>
             <IconButton
-              label={isOffline ? 'Downloaded for offline' : 'Download for offline'}
-              onClick={isOffline ? handleRemoveOffline : handleDownload}
+              label={
+                offlineStale
+                  ? 'Offline copy is out of date — update it'
+                  : isOffline
+                    ? 'Downloaded for offline'
+                    : 'Download for offline'
+              }
+              onClick={isOffline && !offlineStale ? handleRemoveOffline : handleDownload}
               active={isOffline}
             >
               {downloading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
+              ) : offlineStale ? (
+                <AlertTriangle className="h-4 w-4 text-amber-400" />
               ) : isOffline ? (
                 <CheckCircle2 className="h-4 w-4 text-emerald-400" />
               ) : (
@@ -556,10 +668,17 @@ export default function PresentationViewer() {
             className="relative h-[calc(100vh-8.5rem)] w-full select-none overflow-auto"
             onContextMenu={(e) => e.preventDefault()}
           >
-            {frameSrc ? (
+            {hasFrame ? (
               <iframe
                 title={presentation?.title || 'Presentation'}
-                src={frameSrc}
+                // Markup — an offline .html copy as srcdoc, or the live HTML
+                // stream — always goes in a sandbox without allow-same-origin.
+                // A PDF is not sandboxed: the browser's PDF viewer refuses to
+                // run in one, and a PDF cannot script the embedding origin.
+                {...(frame?.kind === 'srcdoc'
+                  ? { srcDoc: frame.srcdoc, sandbox: MARKUP_SANDBOX }
+                  : { src: frameSrc, ...(frame?.sandbox !== undefined ? { sandbox: frame.sandbox } : {}) })}
+                referrerPolicy="no-referrer"
                 className="h-full w-full border-0 bg-neutral-900"
                 style={{
                   transform: `scale(${zoom / 100})`,

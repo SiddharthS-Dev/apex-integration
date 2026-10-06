@@ -101,8 +101,14 @@ export default function Admin() {
     const weekAgo = now - 7 * 86400000;
     const todayKey = new Date().toISOString().slice(0, 10);
 
-    const activeUsers = users.filter((u) => u.last_active && new Date(u.last_active).getTime() >= dayAgo);
-    const onlineNow = users.filter((u) => u.last_active && new Date(u.last_active).getTime() >= fifteenMin);
+    // last_active_at is written by the API on authenticated requests (at most
+    // every few minutes per user), so "online now" is "used the app in the
+    // last 15 minutes". The demo backend's names (last_active, last_login)
+    // are read too.
+    const lastSeen = (u) =>
+      new Date(u.last_active_at || u.last_active || u.last_login_at || u.last_login || 0).getTime();
+    const activeUsers = users.filter((u) => lastSeen(u) >= dayAgo);
+    const onlineNow = users.filter((u) => lastSeen(u) >= fifteenMin);
 
     const viewsToday = analytics.reduce(
       (sum, a) => sum + ((a.daily_breakdown || []).find((d) => d.date === todayKey)?.count || 0),
@@ -139,7 +145,10 @@ export default function Admin() {
         (sum, a) => sum + ((a.daily_breakdown || []).find((d) => d.date === date)?.count || 0),
         0
       );
-      const sessions = logins.filter((l) => String(l.login_at).slice(0, 10) === date).length;
+      // Successful sign-ins only: login_history also records failed attempts.
+      const sessions = logins.filter(
+        (l) => (l.status ?? 'success') === 'success' && String(l.login_at).slice(0, 10) === date
+      ).length;
       days.push({ date: date.slice(5), views, sessions });
     }
     return days;
@@ -189,10 +198,22 @@ export default function Admin() {
     setNotice(null);
     try {
       const { data } = await syncDropbox({ trigger: 'manual' });
+      // The API reports { total, new, updated, deleted, errors: [{ file, error }] };
+      // a busy lock comes back as { status: 'skipped', reason }.
+      const errors = data?.errors ?? [];
+      const firstError = errors[0];
+      const errorText =
+        typeof firstError === 'string'
+          ? firstError
+          : firstError
+            ? `${firstError.file ? `${firstError.file}: ` : ''}${firstError.error || 'failed'}`
+            : '';
       setNotice({
-        tone: data?.errors?.length ? 'warning' : 'success',
-        message: `Sync ${data?.status || 'finished'} — ${data?.indexed ?? 0} indexed, ${data?.new ?? 0} new, ${data?.updated ?? 0} updated, ${data?.deleted ?? 0} archived.${
-          data?.errors?.length ? ` ${data.errors[0]}` : ''
+        tone: errors.length || data?.status === 'partial' ? 'warning' : 'success',
+        message: `Sync ${data?.status || 'finished'} — ${data?.total ?? data?.indexed ?? 0} files, ${data?.new ?? 0} new, ${
+          data?.updated ?? 0
+        } updated, ${data?.deleted ?? 0} archived.${data?.reason ? ` ${data.reason}` : ''}${
+          errorText ? ` ${errors.length > 1 ? `${errors.length} errors, first: ` : ''}${errorText}` : ''
         }`,
       });
       await load();
@@ -380,7 +401,8 @@ export default function Admin() {
               <div className="flex items-center justify-between">
                 <dt className="text-muted-foreground">Counts</dt>
                 <dd className="font-medium">
-                  {lastSync.new_count} new · {lastSync.updated_count} updated · {lastSync.deleted_count} archived
+                  {lastSync.new_files ?? lastSync.new_count ?? 0} new · {lastSync.updated_files ?? lastSync.updated_count ?? 0} updated ·{' '}
+                  {lastSync.deleted_files ?? lastSync.deleted_count ?? 0} archived
                 </dd>
               </div>
               <div className="flex items-center justify-between">
@@ -439,7 +461,11 @@ export default function Admin() {
                 Joined {formatDate(u.created_date)}
               </span>
               <span className="hidden text-xs text-muted-foreground md:block">
-                Active {timeAgo(u.last_active || u.last_login)}
+                {u.last_active_at || u.last_active
+                  ? `Active ${timeAgo(u.last_active_at || u.last_active)}`
+                  : u.last_login_at || u.last_login
+                    ? `Signed in ${timeAgo(u.last_login_at || u.last_login)}`
+                    : 'Never signed in'}
               </span>
               {u.role === 'admin' ? (
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-400">
@@ -482,9 +508,9 @@ export default function Admin() {
                       {log.status}
                     </td>
                     <td className="py-2 pr-3 capitalize">{log.trigger}</td>
-                    <td className="py-2 pr-3">{log.new_count}</td>
-                    <td className="py-2 pr-3">{log.updated_count}</td>
-                    <td className="py-2 pr-3">{log.deleted_count}</td>
+                    <td className="py-2 pr-3">{log.new_files ?? log.new_count ?? 0}</td>
+                    <td className="py-2 pr-3">{log.updated_files ?? log.updated_count ?? 0}</td>
+                    <td className="py-2 pr-3">{log.deleted_files ?? log.deleted_count ?? 0}</td>
                     <td className="py-2">{log.total_files}</td>
                   </tr>
                 ))}

@@ -222,8 +222,11 @@ function LoginForm() {
  * there opens every platform at once. So when this app is mounted under Apex
  * (a base other than '/'), reaching its login means its own session is gone —
  * signed out, or lapsed — and the browser is handed to the Apex sign-in.
- * reauth=1 has Apex sign out everything first, so the form there issues all
- * the sessions afresh instead of bouncing straight back here.
+ * reauth=1 tells Apex this app's session needs re-issuing (it does not sign
+ * the other apps out), and `next` brings the browser back here afterwards.
+ *
+ * Only a definite 401 from the API leads here: ProtectedRoute shows a retry
+ * screen instead when the session simply could not be checked.
  */
 const APEX_MOUNT = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/' ? import.meta.env.BASE_URL : null;
 

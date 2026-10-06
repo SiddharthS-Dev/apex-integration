@@ -9,8 +9,9 @@ import { Router } from 'express';
 import { asyncHandler, notFound } from '../http/errors.js';
 import { requireAdmin, requireAuth } from '../http/auth.js';
 import { setEmbeddableHeaders } from '../http/security.js';
+import { parseRange, sendUnsatisfiable, setRangeHeaders, streamBody } from '../http/range.js';
 
-export function createSystemRouter({ config, db, metrics, objectStore, startedAt }) {
+export function createSystemRouter({ config, db, metrics, objectStore, files, startedAt }) {
   const router = Router();
 
   router.get(
@@ -60,6 +61,15 @@ export function createSystemRouter({ config, db, metrics, objectStore, startedAt
       const key = String(req.params.key);
       if (!(await objectStore.has(key))) throw notFound('That asset is no longer cached.');
 
+      // The asset is only as visible as the record it belongs to. A preview
+      // outlives its file on disk until the retention sweep, so without this an
+      // archived deck — or an old revision of a live one — stays readable to
+      // anyone who kept the URL.
+      if (req.user.role !== 'admin') {
+        const owner = await files?.findByAssetUrl(objectStore.urlFor(key));
+        if (!owner || owner.status !== 'active') throw notFound('That asset is no longer cached.');
+      }
+
       const stat = await objectStore.stat(key);
       const extension = key.slice(key.lastIndexOf('.') + 1).toLowerCase();
       const contentType =
@@ -71,15 +81,25 @@ export function createSystemRouter({ config, db, metrics, objectStore, startedAt
               ? 'image/webp'
               : 'image/jpeg';
 
+      const range = parseRange(req.headers.range, stat.size);
+      if (range === 'unsatisfiable') {
+        sendUnsatisfiable(res, stat.size);
+        return;
+      }
+
       // Thumbnails are embedded in <img> and previews in an iframe, so the
       // JSON-oriented defaults would block them.
       setEmbeddableHeaders(res, { origins: config.corsOrigins, isProduction: config.isProduction });
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Length', String(stat.size));
+      setRangeHeaders(res, { range, size: stat.size });
       // Immutable because the key contains the file revision: the bytes behind
       // a given key never change.
       res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
-      objectStore.createReadStream(key).pipe(res);
+
+      // streamBody, not .pipe(): a read error (the retention sweep deleting
+      // the file between stat and read) must reach the error handler instead
+      // of crashing the process as an unhandled 'error' event.
+      await streamBody(res, objectStore.createReadStream(key, range ?? undefined));
     })
   );
 

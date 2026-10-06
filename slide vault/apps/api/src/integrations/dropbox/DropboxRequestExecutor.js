@@ -171,7 +171,7 @@ export class DropboxRequestExecutor {
    * Content endpoints (content.dropboxapi.com). Returns the raw Response so the
    * caller can stream it — large files must never be buffered here.
    */
-  async content(endpoint, args, { body = null, operation = endpoint, timeoutMs } = {}) {
+  async content(endpoint, args, { body = null, operation = endpoint, timeoutMs, headers = {} } = {}) {
     return this.execute(`https://content.dropboxapi.com/2/${endpoint}`, {
       method: 'POST',
       operation,
@@ -182,6 +182,9 @@ export class DropboxRequestExecutor {
         // be ASCII — non-Latin filenames would otherwise break the request.
         'Dropbox-API-Arg': escapeApiArg(args),
         ...(body ? { 'Content-Type': 'application/octet-stream' } : {}),
+        // Only a Range header is passed through — the content endpoints honour
+        // it on download, which is what makes a seek in a large file cheap.
+        ...(headers.Range ? { Range: headers.Range } : {}),
       },
       body,
     });

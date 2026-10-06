@@ -18,6 +18,7 @@
 import { M } from '../../services/metrics/metrics.js';
 import { AUDIT } from '../../services/audit/AuditService.js';
 import { DropboxNotFoundError } from './errors.js';
+import { parseContentRange, parseRange } from '../../http/range.js';
 
 /** Formats Dropbox can render to PDF for us. */
 const RENDERABLE = new Set(['pptx', 'ppt', 'doc', 'docx', 'xls', 'xlsx']);
@@ -38,12 +39,8 @@ export class DropboxContentService {
    *
    * @returns {Promise<{kind: 'cached'|'stream', url?: string, contentType: string, fileType: string}>}
    */
-  async resolvePreview(fileId) {
-    const file = await this.files.findById(fileId);
-    if (!file) throw new DropboxNotFoundError('That presentation is not in the library.');
-    if (file.status === 'archived') {
-      throw new DropboxNotFoundError('That presentation has been removed from Dropbox.');
-    }
+  async resolvePreview(fileId, { allowArchived = false } = {}) {
+    const file = await this.#findViewable(fileId, { allowArchived });
 
     const extension = (file.extension || '').toLowerCase();
 
@@ -110,26 +107,65 @@ export class DropboxContentService {
   }
 
   /**
-   * The bytes themselves, for the proxy endpoint.
+   * A record the caller may open, or a not-found error.
    *
-   * Returns a node/web stream plus the headers to copy — the route pipes it
-   * straight to the response without the process ever holding the whole file.
+   * An archived record is a file that has left Dropbox, and so has left the
+   * library: to anyone but an administrator it must be as gone as a file that
+   * never existed — including its cached preview, which outlives it on disk.
    */
-  async openContent(fileId, { preferPreview = true } = {}) {
+  async #findViewable(fileId, { allowArchived = false } = {}) {
     const file = await this.files.findById(fileId);
     if (!file) throw new DropboxNotFoundError('That presentation is not in the library.');
+    if (file.status !== 'active' && !allowArchived) {
+      throw new DropboxNotFoundError('That presentation has been removed from Dropbox.');
+    }
+    return file;
+  }
+
+  /** A cached object as a (possibly partial) stream. */
+  async #openCached(key, { contentType, fileName, source, rangeHeader }) {
+    const { size } = await this.objectStore.stat(key);
+    const range = parseRange(rangeHeader, size);
+    if (range === 'unsatisfiable') return { unsatisfiable: true, size };
+    return {
+      source,
+      stream: this.objectStore.createReadStream(key, range ?? undefined),
+      contentType,
+      fileName,
+      size,
+      range,
+    };
+  }
+
+  /**
+   * The bytes themselves, for the proxy endpoint.
+   *
+   * Returns a node/web stream plus what the route needs for its headers — it
+   * pipes the stream straight to the response without the process ever
+   * holding the whole file.
+   *
+   * With a Range header the result carries `range` (serve a 206) or
+   * `unsatisfiable` (serve a 416). When the bytes come from Dropbox the range
+   * is asked of Dropbox; if it answers with the whole file instead, `slice`
+   * tells the route to cut the range out itself.
+   *
+   * @param {string} fileId
+   * @param {{preferPreview?: boolean, allowArchived?: boolean, range?: string}} [options]
+   */
+  async openContent(fileId, { preferPreview = true, allowArchived = false, range: rangeHeader } = {}) {
+    const file = await this.#findViewable(fileId, { allowArchived });
 
     const extension = (file.extension || '').toLowerCase();
 
     if (preferPreview && RENDERABLE.has(extension)) {
       const key = this.objectStore.key(file.external_id, file.revision, 'preview', 'application/pdf');
+      const cached = {
+        contentType: 'application/pdf',
+        fileName: `${file.title || file.name}.pdf`,
+        rangeHeader,
+      };
       if (await this.objectStore.has(key)) {
-        return {
-          source: 'cache',
-          stream: this.objectStore.createReadStream(key),
-          contentType: 'application/pdf',
-          fileName: `${file.title || file.name}.pdf`,
-        };
+        return this.#openCached(key, { ...cached, source: 'cache' });
       }
       const rendered = await this.provider.getPreview(file.external_id);
       if (rendered) {
@@ -139,28 +175,53 @@ export class DropboxContentService {
           file_url: this.objectStore.urlFor(key),
           preview_cached_at: new Date().toISOString(),
         });
-        return {
-          source: 'dropbox',
-          stream: this.objectStore.createReadStream(key),
-          contentType: 'application/pdf',
-          fileName: `${file.title || file.name}.pdf`,
-        };
+        return this.#openCached(key, { ...cached, source: 'dropbox' });
       }
     }
 
-    const object = await this.provider.download(file.external_id);
-    return {
+    const contentTypeFor = (object) =>
+      extension === 'pdf'
+        ? 'application/pdf'
+        : extension === 'html' || extension === 'htm'
+          ? 'text/html; charset=utf-8'
+          : object.contentType;
+
+    // A range that starts past the end of the file as we know it is refused
+    // without a Dropbox round trip.
+    const known = parseRange(rangeHeader, file.file_size || Number.NaN);
+    if (known === 'unsatisfiable' && file.file_size > 0) {
+      return { unsatisfiable: true, size: file.file_size };
+    }
+    const wantsRange = parseRange(rangeHeader, Number.MAX_SAFE_INTEGER) !== null;
+
+    const object = await this.provider.download(
+      file.external_id,
+      wantsRange ? { range: String(rangeHeader).replace(/\s+/g, '') } : {}
+    );
+    const base = {
       source: 'dropbox',
       stream: object.stream,
-      contentType:
-        extension === 'pdf'
-          ? 'application/pdf'
-          : extension === 'html' || extension === 'htm'
-            ? 'text/html; charset=utf-8'
-            : object.contentType,
-      contentLength: object.size || file.file_size,
+      contentType: contentTypeFor(object),
       fileName: file.name,
     };
+
+    if (object.status === 206) {
+      const served = parseContentRange(object.contentRange);
+      if (served && served.size !== null) {
+        return { ...base, size: served.size, range: { start: served.start, end: served.end } };
+      }
+    }
+
+    const size = object.size || file.file_size;
+    if (!wantsRange) return { ...base, size, range: null };
+
+    // Dropbox sent the whole file: honour the range by cutting it out here.
+    const range = parseRange(rangeHeader, size);
+    if (range === 'unsatisfiable') {
+      await object.stream?.cancel?.().catch(() => {});
+      return { unsatisfiable: true, size };
+    }
+    return { ...base, size, range, slice: range };
   }
 
   /** Drops cached derivatives for a file — used when a preview goes stale. */
