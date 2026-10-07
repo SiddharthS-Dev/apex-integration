@@ -6,6 +6,7 @@ import { AboutSection, ContactSection, Footer, HeroSection, IntroSequence } from
 import { EcosystemExplorer } from '#features/ecosystem'
 import { DailySpotlight, Gallery, Lightbox, loadShowcase, rebuildWithCustom, spotlightFor } from '#features/showcase'
 import { CopilotPanel } from '#features/copilot'
+import { SYNCED_EVENT } from '#features/admin'
 
 export default function Home() {
   const [data, setData] = useState(null)
@@ -43,6 +44,12 @@ export default function Home() {
       .then((next) => setData({ ...next }))
       .catch((e) => setError(e.message))
   }, [])
+
+  // a sync started from the navbar re-reads the catalog when it ends
+  useEffect(() => {
+    window.addEventListener(SYNCED_EVENT, reload)
+    return () => window.removeEventListener(SYNCED_EVENT, reload)
+  }, [reload])
 
   // keep the dataset in step with locally-added plates
   useEffect(() => {

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import Logo from '#shared/ui/Logo'
 import { useAuth } from '#features/auth'
+import { DropboxSyncButton } from '#features/admin'
 import { baseUrl } from '#shared/config'
 
 /*
@@ -111,6 +112,7 @@ export default function Navbar() {
           </div>
 
           <div className="ml-auto flex items-center gap-2 lg:ml-3">
+            {user?.role === 'admin' && <DropboxSyncButton className="hidden sm:block" />}
             <button onClick={() => go('gallery')} className="btn-primary hidden !px-4 !py-2.5 text-[13px] sm:inline-flex">
               Explore Gallery
             </button>
@@ -211,6 +213,7 @@ export default function Navbar() {
                     Admin console
                   </Link>
                 )}
+                {user?.role === 'admin' && <DropboxSyncButton className="sm:hidden [&>button]:w-full [&>button]:justify-center" />}
                 <button onClick={() => go('gallery')} className="btn-primary w-full">
                   Explore Gallery
                 </button>
