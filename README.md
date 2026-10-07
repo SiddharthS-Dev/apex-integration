@@ -307,3 +307,5 @@ the error is in there.
 that ignores the mount. Look in the browser's network tab for a request to
 `/something` rather than `/showcase/something`, and route it through
 `import.meta.env.BASE_URL`.
+#   A P E X  
+ 
