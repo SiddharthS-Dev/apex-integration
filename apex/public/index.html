@@ -110,6 +110,17 @@
           radial-gradient(800px 500px at 10% 90%, rgba(8, 47, 73, 0.4), transparent 70%),
           linear-gradient(180deg, var(--bg-2), var(--bg) 60%);
       }
+      /* Nothing on the page is editable except the search box, so never show a
+         text caret in it — with caret browsing on (F7), a click would leave one
+         blinking in the headline. */
+      body {
+        caret-color: transparent;
+      }
+      input,
+      textarea,
+      [contenteditable='true'] {
+        caret-color: auto;
+      }
       a {
         color: inherit;
       }
@@ -483,38 +494,6 @@
         width: 100%;
         height: 100%;
         display: block;
-      }
-      .globe__hint {
-        position: absolute;
-        left: 50%;
-        bottom: 2px;
-        transform: translateX(-50%);
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 5px 12px;
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        background: color-mix(in srgb, var(--surface-solid) 80%, transparent);
-        font-family: 'JetBrains Mono', ui-monospace, monospace;
-        font-size: 0.64rem;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--muted);
-        pointer-events: none;
-        white-space: nowrap;
-        transition: color 0.3s, border-color 0.3s;
-      }
-      .globe__hint i {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: var(--green);
-        animation: pulse 1.8s ease-out infinite;
-      }
-      .globe:hover .globe__hint {
-        color: var(--text-2);
-        border-color: var(--border-2);
       }
       /* a node around the globe: an icon tile and its caption */
       .node {
@@ -949,7 +928,7 @@
         color: #fff;
       }
       .facts--dark li svg {
-        color: #93c5fd;
+        color: color-mix(in srgb, var(--a) 55%, #ffffff);
       }
       .corner {
         position: absolute;
@@ -1467,7 +1446,6 @@
             </span>
             <span class="node__label"><b>Automation</b><span>Agents &amp; workflows</span></span>
           </a>
-          <span class="globe__hint"><i></i>Live network · drag to rotate</span>
         </div>
 
       </section>
@@ -1496,12 +1474,11 @@
         </a>
 
         <a class="card card--vault" href="/vault/" data-probe="/vault/" data-app="vault">
-          <ul class="facts" id="facts-vault" aria-label="SlidesVault at a glance" hidden>
+          <ul class="facts facts--dark" id="facts-vault" aria-label="SlidesVault at a glance" hidden>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2" /><path d="M12 17v3" /></svg><span><b data-fact="presentations">—</b> presentations</span></li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg><span><b data-fact="slides">—</b> slides</span></li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg><span><b data-fact="previewed">—</b> previewed</span></li>
           </ul>
-          <span class="corner" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9" /></svg></span>
           <div class="card__body">
             <div class="card__top">
               <span class="card__icon">
@@ -1518,12 +1495,11 @@
         </a>
 
         <a class="card card--academia" href="/academia/" data-probe="/academia/" data-app="academia">
-          <ul class="facts" id="facts-academia" aria-label="Academia at a glance" hidden>
+          <ul class="facts facts--dark" id="facts-academia" aria-label="Academia at a glance" hidden>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9.5 12 5l10 4.5-10 4.5L2 9.5Z" /></svg><span><b data-fact="courses">—</b> courses</span></li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4" /></svg><span><b data-fact="lessons">—</b> lessons</span></li>
             <li data-fact-row="learners"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6" /></svg><span><b data-fact="learners">—</b> learners</span></li>
           </ul>
-          <span class="corner" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9" /></svg></span>
           <div class="card__body">
             <div class="card__top">
               <span class="card__icon">
@@ -2498,17 +2474,17 @@
 
           // atmosphere
           const halo = g.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.35)
-          halo.addColorStop(0, lt ? 'rgba(37,99,235,0.4)' : 'rgba(37,99,235,0.55)')
-          halo.addColorStop(0.35, lt ? 'rgba(56,189,248,0.16)' : 'rgba(56,189,248,0.18)')
+          halo.addColorStop(0, lt ? 'rgba(96,165,250,0.28)' : 'rgba(37,99,235,0.55)')
+          halo.addColorStop(0.35, lt ? 'rgba(125,211,252,0.12)' : 'rgba(56,189,248,0.18)')
           halo.addColorStop(1, 'rgba(0,0,0,0)')
           g.fillStyle = halo
           g.fillRect(0, 0, GW, GH)
 
           // the ocean body
           const body = g.createRadialGradient(cx - R * 0.3, cy - R * 0.35, R * 0.1, cx, cy, R)
-          body.addColorStop(0, lt ? 'rgba(59,130,246,0.95)' : 'rgba(30,64,175,0.55)')
-          body.addColorStop(0.7, lt ? 'rgba(30,58,138,0.97)' : 'rgba(15,23,80,0.8)')
-          body.addColorStop(1, lt ? 'rgba(37,99,235,0.95)' : 'rgba(37,99,235,0.75)')
+          body.addColorStop(0, lt ? 'rgba(186,230,253,0.95)' : 'rgba(30,64,175,0.55)')
+          body.addColorStop(0.55, lt ? 'rgba(96,165,250,0.92)' : 'rgba(15,23,80,0.8)')
+          body.addColorStop(1, lt ? 'rgba(59,130,246,0.9)' : 'rgba(37,99,235,0.75)')
           g.fillStyle = body
           g.beginPath()
           g.arc(cx, cy, R, 0, Math.PI * 2)
@@ -2538,14 +2514,14 @@
             const p = project(pt)
             if (p[2] < 0.02) continue
             const a = 0.25 + p[2] * 0.75
-            g.fillStyle = `rgba(125,211,252,${a})`
+            g.fillStyle = lt ? `rgba(255,255,255,${0.35 + a * 0.6})` : `rgba(125,211,252,${a})`
             g.fillRect(cx + p[0] * R - 0.9, cy - p[1] * R - 0.9, 1.8, 1.8)
           }
 
           // rim light
           const rim = g.createRadialGradient(cx, cy, R * 0.82, cx, cy, R * 1.02)
           rim.addColorStop(0, 'rgba(0,0,0,0)')
-          rim.addColorStop(0.85, 'rgba(56,189,248,0.55)')
+          rim.addColorStop(0.85, lt ? 'rgba(255,255,255,0.55)' : 'rgba(56,189,248,0.55)')
           rim.addColorStop(1, 'rgba(0,229,255,0)')
           g.fillStyle = rim
           g.beginPath()
