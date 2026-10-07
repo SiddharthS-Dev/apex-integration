@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import UserProfileChip from '@/components/UserProfileChip';
 import AiCopilot from '@/components/AiCopilot';
+import DropboxSyncButton from '@/components/DropboxSyncButton';
 import { useAuth } from '@/lib/AuthContext';
 import { useTheme } from '@/lib/useTheme';
 import { cn } from '@/lib/utils';
@@ -115,6 +116,8 @@ export default function Layout() {
                 ⌘K
               </kbd>
             </Link>
+
+            {user?.role === 'admin' && <DropboxSyncButton />}
 
             <button
               type="button"
