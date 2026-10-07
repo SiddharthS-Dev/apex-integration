@@ -4,6 +4,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Only form fields and editors take typing, so only they show a text caret.
+   With the browser's caret browsing on (F7), a click would otherwise leave one
+   blinking in ordinary headings and labels. */
+@layer base {
+  body {
+    caret-color: transparent;
+  }
+  input,
+  textarea,
+  select,
+  [contenteditable='true'],
+  [contenteditable=''],
+  [contenteditable='plaintext-only'] {
+    caret-color: auto;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

@@ -7,6 +7,7 @@ import NavLinks from '@/components/shell/NavLinks';
 import ThemeToggle from '@/components/shell/ThemeToggle';
 import UserBadge from '@/components/shell/UserBadge';
 import DemoBanner from '@/components/shell/DemoBanner';
+import DropboxSyncButton from '@/components/shell/DropboxSyncButton';
 import { APEX_MOUNT } from '@/lib/mount';
 
 export default function AppShell({ children }) {
@@ -39,6 +40,7 @@ export default function AppShell({ children }) {
             <NavLinks isAdmin={isAdmin} />
           </nav>
           <div className="flex items-center gap-1 sm:gap-2 ml-auto">
+            {isAdmin && <DropboxSyncButton />}
             <ThemeToggle />
             <UserBadge user={user} onLogout={logout} />
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen((o) => !o)} aria-label="Menu" aria-expanded={open}>
