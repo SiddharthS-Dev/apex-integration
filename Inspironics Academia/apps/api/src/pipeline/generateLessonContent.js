@@ -1,14 +1,20 @@
 import { invokeLLM, requireAI } from '../ai/claude.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { log as defaultLog } from '../lib/logger.js';
+import { mediaEnabled } from '../media/index.js';
 import { entities } from '../repo/entities.js';
+import generateLessonMedia from './generateLessonMedia.js';
 import { asHttpError, cleanMcq, errMsg, norm, pipelineError, withLessonLock } from './util.js';
 
 // generateLessonContent — generate instructor-led teaching content, 6 MCQs and
 // 5 flashcards for one lesson, grounded in its source playbook chapter. Requires AI.
 //
+// When a media provider is configured the lesson's video (narrated slides) is generated straight after,
+// from the new script, so a lesson never reaches learners as narration only. A media failure does not
+// fail the content: the lesson keeps its new script and reports media_error; Generate Media retries it.
+//
 // Payload: { lesson_id }
-// Returns: { ok: true, lesson_id, question_count, flashcard_count }
+// Returns: { ok: true, lesson_id, question_count, flashcard_count, media_scenes?, media_error? }
 
 const DIFFICULTIES = ['basic', 'intermediate', 'advanced'];
 const COGNITIVE = ['recall', 'understanding', 'application', 'analysis'];
@@ -95,7 +101,15 @@ const SCHEMA = {
 export default async function generateLessonContent(payload = {}, ctx = {}) {
   const lessonId = payload?.lesson_id ? String(payload.lesson_id) : '';
   if (!lessonId) throw badRequest('lesson_id is required');
-  return withLessonLock(lessonId, () => generate(payload, ctx));
+  const result = await withLessonLock(lessonId, () => generate(payload, ctx));
+  if (!mediaEnabled()) return result;
+  try {
+    const media = await generateLessonMedia({ lesson_id: lessonId }, ctx);
+    return { ...result, media_scenes: media.scenes.length, ...(media.audio_error ? { media_error: media.audio_error } : {}) };
+  } catch (e) {
+    (ctx.log || defaultLog).warn('pipeline.lesson_content.media_failed', { lesson_id: lessonId, error: errMsg(e) });
+    return { ...result, media_error: errMsg(e) };
+  }
 }
 
 async function generate(payload = {}, ctx = {}) {
