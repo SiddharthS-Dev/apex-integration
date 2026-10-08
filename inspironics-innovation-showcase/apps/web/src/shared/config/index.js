@@ -103,6 +103,8 @@ export const storageKeys = {
  */
 export const appEvents = {
   signedOut: 'inspironics:signed-out',
+  /** A plate's content was written on demand; `detail` is the updated dataset. */
+  plateDescribed: 'inspironics:plate-described',
 }
 
 /** Auth policy. A server would own these; they live here until one does. */

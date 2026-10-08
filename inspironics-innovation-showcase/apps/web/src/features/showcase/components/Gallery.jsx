@@ -4,19 +4,21 @@ import FlipCard from './FlipCard'
 import GalleryFilters from './GalleryFilters'
 import AddImageModal from './AddImageModal'
 import SectionHead from '#shared/ui/SectionHead'
+import { plateKey } from '../model/showcaseData.js'
 
 const PAGE = 48
+const NO_FLAGS = { esg: false, ai: false, iot: false, claude: false }
 
 export default function Gallery({ data, activeFilter, onClearActive, onAdded, onOpenPlate }) {
   const [cat, setCat] = useState('')
   const [tech, setTech] = useState([])
-  const [flags, setFlags] = useState({ esg: false, ai: false, iot: false })
+  const [flags, setFlags] = useState(NO_FLAGS)
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('featured')
   const [limit, setLimit] = useState(PAGE)
   const [adding, setAdding] = useState(false)
 
-  const { items, cats, techs } = data
+  const { items, cats, techs, claudeN } = data
 
   // A node click in the 3D explorer overrides whatever is set locally.
   useEffect(() => {
@@ -25,7 +27,7 @@ export default function Gallery({ data, activeFilter, onClearActive, onAdded, on
     setCat(type === 'cat' ? value : '')
     setTech(type === 'tech' ? [value] : [])
     setQ(type === 'q' ? value : '')
-    setFlags({ esg: false, ai: false, iot: false })
+    setFlags(NO_FLAGS)
     setLimit(PAGE)
   }, [activeFilter])
 
@@ -38,12 +40,15 @@ export default function Gallery({ data, activeFilter, onClearActive, onAdded, on
       if (flags.esg && !it.esg) return false
       if (flags.ai && !it.ai) return false
       if (flags.iot && !it.iot) return false
+      if (flags.claude && !it.claude) return false
       if (tokens.length && !tokens.every((t) => it._hay.includes(t))) return false
       return true
     })
 
     if (sort === 'title') out = [...out].sort((a, b) => a.title.localeCompare(b.title))
     else if (sort === 'cat') out = [...out].sort((a, b) => a.cat.localeCompare(b.cat) || a.title.localeCompare(b.title))
+    // the Claude Skills collection reads as a feed: the latest sync first
+    else if (flags.claude) out = [...out].sort((a, b) => (b.firstSyncedAt || '').localeCompare(a.firstSyncedAt || ''))
     else
       out = [...out].sort(
         (a, b) => (b.custom ? 2 : 0) - (a.custom ? 2 : 0) || (b.flagship ? 1 : 0) - (a.flagship ? 1 : 0)
@@ -60,12 +65,12 @@ export default function Gallery({ data, activeFilter, onClearActive, onAdded, on
     fn(value)
   }
 
-  const dirty = !!(cat || tech.length || q || flags.esg || flags.ai || flags.iot)
+  const dirty = !!(cat || tech.length || q || Object.values(flags).some(Boolean))
 
   const clearAll = () => {
     setCat('')
     setTech([])
-    setFlags({ esg: false, ai: false, iot: false })
+    setFlags(NO_FLAGS)
     setQ('')
     onClearActive?.()
   }
@@ -114,6 +119,7 @@ export default function Gallery({ data, activeFilter, onClearActive, onAdded, on
         setTech={manual(setTech)}
         flags={flags}
         setFlags={manual(setFlags)}
+        claudeN={claudeN}
         q={q}
         setQ={manual(setQ)}
         sort={sort}
@@ -139,12 +145,12 @@ export default function Gallery({ data, activeFilter, onClearActive, onAdded, on
           <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {visible.map((item, i) => (
               <FlipCard
-                key={item.f}
+                key={plateKey(item)}
                 item={item}
                 index={i % PAGE}
                 // the viewer lives in Home; hand it the filtered list so
                 // prev/next still steps through what is on screen
-                onOpen={(it) => onOpenPlate?.(filtered, filtered.findIndex((x) => x.f === it.f))}
+                onOpen={(it) => onOpenPlate?.(filtered, filtered.findIndex((x) => plateKey(x) === plateKey(it)))}
               />
             ))}
           </div>

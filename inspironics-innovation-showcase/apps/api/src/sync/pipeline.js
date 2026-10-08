@@ -23,7 +23,8 @@
  * Only one run at a time across every instance: the run holds a DB lock,
  * renewed by a heartbeat, for its whole duration.
  */
-import { FILE_STATUS, SYNC_STATUS, fileTypeOf, extensionOf, isSupported } from '@inspironics/shared'
+import { CLAUDE_SKILLS_CATEGORY, FILE_STATUS, SYNC_STATUS, fileTypeOf, extensionOf, isSupported } from '@inspironics/shared'
+import { parseJson } from '../db/index.js'
 import { mapPool } from '../lib/concurrency.js'
 import { HttpError } from '../lib/http.js'
 import { DropboxApiError } from '../dropbox/client.js'
@@ -31,7 +32,15 @@ import { extractContent, imageSize } from './extract.js'
 import { resolveTitle } from './titles.js'
 
 export const THUMB_SIZE = 'w640h480'
+/** What the classifier reads an image at: text on a dense infographic is illegible at THUMB_SIZE. */
+export const VISION_SIZE = 'w2048h1536'
 export const SETTINGS_ROOT_KEY = 'dropbox.rootPath'
+
+/** Files the Claude Skill Up Tools collection claims: AI tooling, filed under its own category. */
+export function claudeSkillsMeta(meta = {}) {
+  const tech = meta.tech?.includes('Agentic AI') ? meta.tech : [...(meta.tech || []), 'Agentic AI']
+  return { ...meta, cat: CLAUDE_SKILLS_CATEGORY, tag: undefined, tech, ai: true }
+}
 
 export class SyncBusyError extends HttpError {
   constructor() {
@@ -74,6 +83,12 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
     return files
   }
 
+  /** First synced on or after the collection's start — or arriving in this very run. */
+  const inClaudeSkills = (existing) => {
+    const since = config.sync.claudeSkillsSince
+    return !!since && (existing?.firstSeenAt || new Date().toISOString()) >= since
+  }
+
   /** Does this stored record need (re)processing? */
   function needsWork(entry, existing) {
     if (!existing) return true
@@ -81,7 +96,22 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
     if (existing.classificationStatus === 'failed') return true
     // AI switched on since this file was indexed: classify what was left unclassified
     if (enricher.enabled && existing.classificationStatus === 'unclassified') return true
+    // the collection was switched on after this file was indexed
+    if (existing.classificationStatus === 'unclassified' && inClaudeSkills(existing)) return true
+    // filed under the collection while AI was off: it has a category but nothing read from the artwork
+    if (enricher.enabled && existing.classificationStatus === 'classified' && inClaudeSkills(existing) && !existing.meta?.objective) return true
     return false
+  }
+
+  /** The image at the size the classifier reads it, or null if Dropbox cannot render one. */
+  async function visionRender(externalId) {
+    try {
+      return await dropbox.thumbnail(externalId, VISION_SIZE)
+    } catch (error) {
+      if (!(error instanceof DropboxApiError)) throw error
+      // the small rendering still classifies; the content may just be thinner
+      return null
+    }
   }
 
   /* --------------------------------------------------------- process -- */
@@ -131,8 +161,9 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
       classificationStatus = 'seed'
       confidence = 1
     } else if (enricher.enabled) {
+      const image = (thumb && entry.kind === 'image' && (await visionRender(entry.externalId))) || thumb
       try {
-        const result = await enricher.enrich({ filename: entry.name, text: content?.text || '', image: thumb || undefined, hint: entry.pathDisplay })
+        const result = await enricher.enrich({ filename: entry.name, text: content?.text || '', image: image || undefined, hint: entry.pathDisplay })
         if (result) {
           meta = result.meta
           aiTitle = result.title
@@ -145,6 +176,15 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
       } catch (error) {
         classificationStatus = 'failed'
         warn(`Classification failed: ${error.message}`)
+      }
+    }
+
+    // the collection outranks the classifier's category, but keeps its tags
+    if (classificationStatus !== 'admin' && !seed && inClaudeSkills(existing)) {
+      meta = claudeSkillsMeta(meta)
+      if (classificationStatus === 'unclassified') {
+        classificationStatus = 'classified'
+        confidence = 1
       }
     }
 
@@ -179,6 +219,65 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
     })
     metrics?.inc('sync_files_processed_total', { kind: entry.kind, classification: classificationStatus })
     return { added: !existing, warnings }
+  }
+
+  /* -------------------------------------------------------- describe -- */
+
+  /** Plates being described right now, so a burst of flips costs one model call per file. */
+  const describing = new Map()
+
+  /** A synced plate with nothing read from it yet. Curated and admin-edited plates are never rewritten. */
+  const describable = (row) =>
+    row.status === FILE_STATUS.ACTIVE && !['admin', 'seed'].includes(row.classification_status) && !parseJson(row.meta, {}).objective
+
+  /**
+   * Write a plate's content on demand — the gallery asks when a card is flipped
+   * and its back is empty, so a file synced while AI was off (or before the
+   * next sync gets to it) does not stay blank.
+   * @returns {Promise<object>} the stored_file row, described or untouched
+   */
+  async function describe(row) {
+    if (!describable(row)) return row
+    if (!enricher.enabled) throw new HttpError(503, 'AI content generation is not configured on this server.', 'AI_DISABLED')
+    if (!describing.has(row.id)) describing.set(row.id, describeNow(row).finally(() => describing.delete(row.id)))
+    return describing.get(row.id)
+  }
+
+  async function describeNow(row) {
+    let text = ''
+    if (row.kind === 'document' && Number(row.size) <= config.sync.maxExtractMb * 1048576) {
+      try {
+        text = (await extractContent(row.ext, await dropbox.downloadBuffer(row.external_id)))?.text || ''
+      } catch (error) {
+        log.warn('Content extraction failed while describing a plate', { id: row.id, error: error.message })
+      }
+    }
+    const image = (row.kind === 'image' && (await visionRender(row.external_id))) || (await store.get(row.external_id, row.rev, 'thumb'))?.data
+
+    let result
+    try {
+      result = await enricher.enrich({ filename: row.name, text, image: image || undefined, hint: row.path_display })
+    } catch (error) {
+      if (error.retryable) throw new HttpError(503, error.message, 'AI_BUSY')
+      throw new HttpError(502, error.message, 'AI_FAILED')
+    }
+    if (!result) throw new HttpError(422, 'The model declined to describe this file.', 'AI_DECLINED')
+
+    // the model's reading fills the plate; a category it could not place keeps the one already filed
+    const read = Object.fromEntries(Object.entries(result.meta).filter(([, v]) => v !== undefined))
+    let meta = { ...parseJson(row.meta, {}), ...read }
+    if (inClaudeSkills({ firstSeenAt: row.first_seen_at })) meta = claudeSkillsMeta(meta)
+
+    // a better title only replaces one made from the filename
+    const { title, source } =
+      row.title_source === 'filename'
+        ? resolveTitle({ filename: row.name, text, model: text ? result.title : '', vision: text ? '' : result.title })
+        : { title: row.title, source: row.title_source }
+
+    await repos.files.describe(row.id, { title, titleSource: source, meta, confidence: result.confidence })
+    metrics?.inc('plates_described_total', { kind: row.kind })
+    log.info('Plate described on demand', { id: row.id, name: row.name })
+    return repos.files.get(row.id)
   }
 
   /* ------------------------------------------------------------- run -- */
@@ -321,6 +420,8 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
       const done = execute({ syncId, lock, path, started })
       return { id: syncId, done }
     },
+
+    describe,
 
     /** Progress of a run owned by this instance, or null. */
     progress: () => (current ? { ...current } : null),

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { PlateActions, noteView } from '#features/offline'
 import { useAuth } from '#features/auth'
-import { downloadUrl, relatedTo, trackPlateEvent } from '../model/showcaseData.js'
+import { downloadUrl, plateKey, relatedTo, trackPlateEvent } from '../model/showcaseData.js'
 import { useDialog } from '#shared/lib/useDialog.js'
 
 /** Download extension per image type — the corpus is webp, uploads are not. */
@@ -187,14 +187,14 @@ export default function Lightbox({ items, index, onIndex, onClose }) {
               {item.kind === 'document' ? (
                 // PDF, PowerPoint (rendered to PDF by the API) or HTML, through the same-origin proxy
                 <iframe
-                  key={item.f}
+                  key={plateKey(item)}
                   title={item.title}
                   src={item.fullUrl}
                   className="h-full w-full rounded-lg border border-white/10 bg-white shadow-lift"
                 />
               ) : (
                 <motion.img
-                  key={item.f}
+                  key={plateKey(item)}
                   src={item.fullUrl}
                   alt={item.title}
                   initial={{ opacity: 0, scale: 0.985 }}
@@ -313,9 +313,9 @@ export default function Lightbox({ items, index, onIndex, onClose }) {
                   <div className="grid grid-cols-3 gap-2">
                     {related.map((r) => (
                       <button
-                        key={r.f}
+                        key={plateKey(r)}
                         onClick={() => {
-                          const i = items.findIndex((x) => x.f === r.f)
+                          const i = items.findIndex((x) => plateKey(x) === plateKey(r))
                           if (i >= 0) {
                             onIndex(i)
                             reset()

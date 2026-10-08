@@ -41,7 +41,7 @@ export async function fakePptx({ title, slides }) {
 const json = (status, body, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } })
 
-/** @param {{ thumbnail?: (file: { name: string, bytes: Buffer }) => Buffer }} [opts] */
+/** @param {{ thumbnail?: (file: { name: string, bytes: Buffer }, size: string) => Buffer }} [opts] */
 export function createFakeDropbox({ thumbnail = () => fakeJpeg(640, 480) } = {}) {
   const state = {
     /** path_lower -> { id, name, path_display, rev, bytes, thumbable } */
@@ -167,7 +167,7 @@ export function createFakeDropbox({ thumbnail = () => fakeJpeg(640, 480) } = {})
       const f = byId(arg.resource.path)
       if (!f) return json(409, { error_summary: 'path/not_found/' })
       if (!f.thumbable) return json(409, { error_summary: 'unsupported_image/' })
-      return new Response(thumbnail(f), { status: 200, headers: { 'Content-Type': 'image/jpeg' } })
+      return new Response(thumbnail(f, arg.size), { status: 200, headers: { 'Content-Type': 'image/jpeg' } })
     }
     if (u.pathname === '/2/files/get_preview') {
       return new Response(Buffer.from('%PDF-1.4 preview'), { status: 200 })
@@ -205,6 +205,8 @@ export async function createHarness({ env = {}, enricher, seeds, port = 0, fake,
     SEED_PATH: path.join(dir, 'no-seed.json'),
     DROPBOX_ROOT_PATH: '/Showcase',
     SYNC_CONCURRENCY: '3',
+    // every file a test syncs is "new"; tests that want the collection turn it on
+    CLAUDE_SKILLS_SINCE: 'off',
     ...env,
   })
   const dropbox = createFakeDropbox(fake)

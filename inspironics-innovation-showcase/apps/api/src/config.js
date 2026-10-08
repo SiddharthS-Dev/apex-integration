@@ -19,6 +19,13 @@ const bool = (v, fallback) => {
   if (['0', 'false', 'no', 'off'].includes(s)) return false
   return fallback
 }
+/** An ISO instant, normalised so it compares as a string against stored stamps; 'off' is ''. */
+const since = (v, fallback) => {
+  const s = str(v, fallback)
+  if (s.toLowerCase() === 'off') return ''
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? fallback : d.toISOString()
+}
 const int = (v, fallback, { min = -Infinity, max = Infinity } = {}) => {
   const n = Number.parseInt(str(v), 10)
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
@@ -131,6 +138,12 @@ export function loadConfig(env = process.env) {
       /** Lock lease; renewed by a heartbeat while a run is alive. */
       lockTtlSeconds: int(env.SYNC_LOCK_TTL_SECONDS, 120, { min: 30 }),
       seedPath: fromRoot(str(env.SEED_PATH, '../web/public/data/showcase.json')),
+      /**
+       * Files first synced on or after this instant are filed under the Claude
+       * Skill Up Tools category. The first batch arrived on 7 Oct 2026. 'off'
+       * disables the rule.
+       */
+      claudeSkillsSince: since(env.CLAUDE_SKILLS_SINCE, '2026-10-07T00:00:00.000Z'),
     },
 
     ai: {

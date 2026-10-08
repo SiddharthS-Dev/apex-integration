@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import SectionHead from '#shared/ui/SectionHead'
+import { plateKey } from '../model/showcaseData.js'
 
 export default function DailySpotlight({ item, items, onOpenPlate }) {
   if (!item) return null
@@ -23,7 +24,7 @@ export default function DailySpotlight({ item, items, onOpenPlate }) {
       >
         <div className="grid lg:grid-cols-[1.15fr_1fr]">
           <button
-            onClick={() => onOpenPlate?.(items, items.findIndex((x) => x.f === item.f))}
+            onClick={() => onOpenPlate?.(items, items.findIndex((x) => plateKey(x) === plateKey(item)))}
             className="group relative min-h-[300px] overflow-hidden bg-black/40 lg:min-h-[520px]"
           >
             <img

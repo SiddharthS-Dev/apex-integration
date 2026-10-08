@@ -4,9 +4,10 @@ import LibraryNotice from '../components/LibraryNotice'
 import Loader from '#shared/ui/Loader'
 import { AboutSection, ContactSection, Footer, HeroSection, IntroSequence } from '#features/site'
 import { EcosystemExplorer } from '#features/ecosystem'
-import { DailySpotlight, Gallery, Lightbox, loadShowcase, rebuildWithCustom, spotlightFor } from '#features/showcase'
+import { DailySpotlight, Gallery, Lightbox, loadShowcase, plateKey, rebuildWithCustom, spotlightFor } from '#features/showcase'
 import { CopilotPanel } from '#features/copilot'
 import { SYNCED_EVENT } from '#features/admin'
+import { appEvents } from '#shared/config'
 
 export default function Home() {
   const [data, setData] = useState(null)
@@ -50,6 +51,13 @@ export default function Home() {
     window.addEventListener(SYNCED_EVENT, reload)
     return () => window.removeEventListener(SYNCED_EVENT, reload)
   }, [reload])
+
+  // a flipped card had its content written: show it everywhere the plate appears
+  useEffect(() => {
+    const onDescribed = (e) => setData({ ...e.detail })
+    window.addEventListener(appEvents.plateDescribed, onDescribed)
+    return () => window.removeEventListener(appEvents.plateDescribed, onDescribed)
+  }, [])
 
   // keep the dataset in step with locally-added plates
   useEffect(() => {
@@ -126,7 +134,7 @@ export default function Home() {
 
       <Footer cats={data.cats} techs={data.techs} onRoute={route} />
 
-      <CopilotPanel onOpenItem={(it) => openPlate(data.items, data.items.findIndex((x) => x.f === it.f))} />
+      <CopilotPanel onOpenItem={(it) => openPlate(data.items, data.items.findIndex((x) => plateKey(x) === plateKey(it)))} />
 
       <Lightbox
         items={viewer?.items ?? data.items}

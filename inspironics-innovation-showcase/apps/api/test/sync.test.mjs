@@ -173,3 +173,130 @@ test('AI classification runs when enabled, and a declined file is retried next s
     await h.close()
   }
 })
+
+test('files first synced since the Claude Skills start are filed under Claude Skill Up Tools; seeds keep theirs', async () => {
+  const { h } = await setup({ env: { CLAUDE_SKILLS_SINCE: '2020-01-01T00:00:00Z' } })
+  try {
+    await h.syncAndWait()
+    const plates = new Map((await h.services.repos.files.listActive()).map((r) => [r.name, r]))
+
+    const deck = plates.get('Grid Ops Review.pptx')
+    assert.equal(deck.classification_status, 'classified')
+    const meta = JSON.parse(deck.meta)
+    assert.equal(meta.cat, 'Claude Skill Up Tools')
+    assert.equal(meta.ai, true)
+    assert.deepEqual(meta.tech, ['Agentic AI'])
+
+    assert.equal(JSON.parse(plates.get('IMG_0557.JPG').meta).cat, 'Systems & Architecture', 'a curated seed is not claimed')
+  } finally {
+    await h.close()
+  }
+})
+
+test('a file indexed as unclassified is filed under Claude Skill Up Tools by the next sync once it qualifies', async () => {
+  const { h } = await setup()
+  try {
+    await h.syncAndWait()
+    h.services.config.sync.claudeSkillsSince = '2020-01-01T00:00:00.000Z'
+    const run = await h.syncAndWait()
+    assert.equal(run.updated, 2, 'the deck and the pdf, both unclassified')
+    const deck = (await h.services.repos.files.listActive()).find((r) => r.name === 'Grid Ops Review.pptx')
+    assert.equal(JSON.parse(deck.meta).cat, 'Claude Skill Up Tools')
+  } finally {
+    await h.close()
+  }
+})
+
+test('with AI on, images are read at the vision size, and collection plates filed while AI was off are enriched', async () => {
+  const sizes = []
+  const seen = []
+  const ai = { on: false }
+  const enricher = {
+    get enabled() {
+      return ai.on
+    },
+    async enrich({ filename, image }) {
+      seen.push({ filename, bytes: image?.length || 0 })
+      return { title: '', confidence: 0.9, meta: { cat: 'Data & Analytics', tech: ['Analytics'], objective: 'Read from the artwork.' } }
+    },
+  }
+  const { h } = await setup({ enricher, env: { CLAUDE_SKILLS_SINCE: '2020-01-01T00:00:00Z' }, fake: { thumbnail: (f, size) => (sizes.push(size), fakeJpeg(10, 10)) } })
+  try {
+    h.dropbox.put('/Showcase/Context7 Infographic.png', fakeJpeg(1536, 1024))
+    await h.syncAndWait()
+    let row = (await h.services.repos.files.listActive()).find((r) => r.name === 'Context7 Infographic.png')
+    assert.equal(JSON.parse(row.meta).cat, 'Claude Skill Up Tools', 'filed by the rule while AI is off')
+    assert.equal(JSON.parse(row.meta).objective, undefined)
+    assert.ok(!sizes.includes('w2048h1536'), 'no large render without AI')
+
+    ai.on = true
+    await h.syncAndWait()
+    row = (await h.services.repos.files.listActive()).find((r) => r.name === 'Context7 Infographic.png')
+    const meta = JSON.parse(row.meta)
+    assert.equal(meta.objective, 'Read from the artwork.', 'content extracted once AI is on')
+    assert.equal(meta.cat, 'Claude Skill Up Tools', 'the collection still outranks the model category')
+    assert.ok(meta.tech.includes('Analytics') && meta.tech.includes('Agentic AI'), 'model tags kept, collection tag added')
+    assert.ok(sizes.includes('w2048h1536'), 'the image was read at the vision size')
+    assert.ok(seen.some((s) => s.filename === 'Context7 Infographic.png'))
+
+    const calls = seen.length
+    await h.syncAndWait()
+    assert.equal(seen.length, calls, 'an enriched plate is not re-read')
+  } finally {
+    await h.close()
+  }
+})
+
+test('a flipped plate with an empty back is described on demand, once; curated plates are left alone', async () => {
+  const calls = []
+  const ai = { on: false }
+  const enricher = {
+    get enabled() {
+      return ai.on
+    },
+    async enrich({ filename, image }) {
+      calls.push({ filename, bytes: image?.length || 0 })
+      await new Promise((r) => setTimeout(r, 20))
+      return { title: 'Context Engineering Playbook', confidence: 0.8, meta: { tech: ['Analytics'], objective: 'Written on flip.', components: ['Retriever'] } }
+    },
+  }
+  const { h, admin } = await setup({ enricher, env: { CLAUDE_SKILLS_SINCE: '2020-01-01T00:00:00Z' } })
+  try {
+    h.dropbox.put('/Showcase/IMG_9001.png', fakeJpeg(1536, 1024))
+    await h.syncAndWait()
+    const rows = new Map((await h.services.repos.files.listActive()).map((r) => [r.name, r]))
+    const fresh = rows.get('IMG_9001.png')
+    const seed = rows.get('IMG_0557.JPG')
+
+    const off = await admin.json('POST', `/api/entities/plates/${fresh.id}/describe`)
+    assert.equal(off.status, 503)
+    assert.equal(off.body.error.code, 'AI_DISABLED')
+
+    ai.on = true
+    const [a, b] = await Promise.all([
+      admin.json('POST', `/api/entities/plates/${fresh.id}/describe`),
+      admin.json('POST', `/api/entities/plates/${fresh.id}/describe`),
+    ])
+    assert.equal(a.status, 200)
+    assert.equal(calls.length, 1, 'concurrent flips share one model call')
+    assert.equal(a.body.plate.objective, 'Written on flip.')
+    assert.deepEqual(b.body.plate.components, ['Retriever'])
+    assert.equal(a.body.plate.cat, 'Claude Skill Up Tools', 'the collection keeps its category')
+    assert.equal(a.body.plate.title, 'Context Engineering Playbook', 'a filename title gives way to the read one')
+    assert.equal(a.body.plate.classification, 'classified')
+
+    await admin.json('POST', `/api/entities/plates/${fresh.id}/describe`)
+    assert.equal(calls.length, 1, 'a described plate is not read again')
+
+    const curated = await admin.json('POST', `/api/entities/plates/${seed.id}/describe`)
+    assert.equal(curated.status, 200)
+    assert.equal(curated.body.plate.title, 'Operating System for Sustainable Infrastructure')
+    assert.equal(calls.length, 1, 'seed plates never reach the model')
+
+    await h.syncAndWait()
+    // the deck and pdf, filed while AI was off, are now enriched by the sync; the described plate is not
+    assert.equal(calls.filter((c) => c.filename === 'IMG_9001.png').length, 1, 'the next sync does not re-read it either')
+  } finally {
+    await h.close()
+  }
+})

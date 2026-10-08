@@ -12,7 +12,7 @@
  *   local  public/data/showcase.json, with images served from /images (the
  *          `inspironics-images` plugin in vite.config.js).
  */
-import { CATEGORY_NAMES, TECHS } from '@inspironics/shared'
+import { CATEGORY_NAMES, CLAUDE_SKILLS_CATEGORY, TECHS } from '@inspironics/shared'
 import { appEvents, env, showcaseConfig, storageKeys } from '#shared/config'
 import { apiRequest, apiUrl } from '#shared/lib/apiClient.js'
 import { idbDelete, idbGet, idbKeys, idbPut } from '#shared/lib/idb.js'
@@ -44,6 +44,13 @@ const joinUrl = (rel) => {
   if (/^(https?:|data:|blob:|\/)/i.test(rel)) return rel
   return `${BASE}/${rel.replace(/^\/+/, '')}`
 }
+
+/**
+ * A plate's identity. Synced plates have a server id; the file name alone is
+ * not unique — the same file can sit in two Dropbox folders. Locally added
+ * plates have no id, but their `f` is generated and unique.
+ */
+export const plateKey = (item) => String(item?.id || item?.f || '')
 
 export const thumbUrl = (item) => item?.thumbUrl || joinUrl(item?.t)
 export const fullUrl = (item) => item?.fullUrl || joinUrl(item?.full || item?.t)
@@ -79,6 +86,12 @@ function productsOf(raw) {
   return curated ? productKeysFor(raw.f) : []
 }
 
+/**
+ * Is this plate in the Claude Skill Up Tools collection? The API's sync files
+ * every plate it first brings in from 7 Oct 2026 on under that category.
+ */
+export const isClaudeSkill = (raw) => raw.cat === CLAUDE_SKILLS_CATEGORY
+
 function enrich(raw, flagshipSet) {
   const products = productsOf(raw)
   const item = {
@@ -92,6 +105,7 @@ function enrich(raw, flagshipSet) {
     ai: !!raw.ai,
     iot: !!raw.iot,
     flagship: raw.flagship ?? flagshipSet.has(raw.f),
+    claude: isClaudeSkill(raw),
     extraKeywords: [...new Set([...(raw.extraKeywords || []), ...products.flatMap((k) => PRODUCTS[k].phrases)])],
     products,
   }
@@ -118,6 +132,7 @@ function aggregate(items) {
     esgN: items.filter((i) => i.esg).length,
     aiN: items.filter((i) => i.ai).length,
     iotN: items.filter((i) => i.iot).length,
+    claudeN: items.filter((i) => i.claude).length,
     flagshipN: items.filter((i) => i.flagship).length,
     productCounts: Object.fromEntries(
       Object.keys(PRODUCTS).map((k) => [k, items.filter((i) => i.products?.includes(k)).length])
@@ -212,6 +227,57 @@ export function rebuildWithCustom() {
   return cache
 }
 
+/* ------------------------------------------------ on-demand content -- */
+
+/** Requests in flight by plate, so flipping a card back and forth asks once. */
+const describing = new Map()
+/** Set once the API says it has no model: no card asks again this page load. */
+let describeUnavailable = false
+
+/**
+ * Does this plate's back face still need writing? Only synced plates the
+ * classifier has not read — not the curated corpus, not an admin's edit.
+ */
+export function needsDescription(item) {
+  return (
+    env.backend === 'api' &&
+    !describeUnavailable &&
+    !!item?.id &&
+    !item.custom &&
+    !item.objective &&
+    !['admin', 'seed'].includes(item.classification)
+  )
+}
+
+/**
+ * Have the API write a plate's content, then fold it into the cached dataset
+ * so the viewer, search and filters see it too. Resolves to the updated item.
+ */
+export function describePlate(item) {
+  const key = plateKey(item)
+  if (!describing.has(key)) {
+    const request = apiRequest(`/api/entities/plates/${encodeURIComponent(item.id)}/describe`, { method: 'POST' })
+      .then(({ plate }) => absorbPlate(plate))
+      .catch((error) => {
+        if (error.code === 'AI_DISABLED') describeUnavailable = true
+        throw error
+      })
+      .finally(() => describing.delete(key))
+    describing.set(key, request)
+  }
+  return describing.get(key)
+}
+
+function absorbPlate(raw) {
+  const item = enrich(raw, new Set(cache?.raw.flagship || []))
+  if (!cache) return item
+  const swap = (list) => list.map((i) => (plateKey(i) === plateKey(item) ? item : i))
+  const items = swap(cache.items)
+  cache = { ...cache, items, baseItems: swap(cache.baseItems), ...aggregate(items) }
+  globalThis.window?.dispatchEvent(new CustomEvent(appEvents.plateDescribed, { detail: cache }))
+  return item
+}
+
 /** Item shown by the Daily Spotlight — rotates by day-of-year. */
 export function spotlightFor(items, date = new Date()) {
   if (!items?.length) return null
@@ -225,7 +291,7 @@ export function spotlightFor(items, date = new Date()) {
 export function relatedTo(items, item, limit = 6) {
   if (!item) return []
   return items
-    .filter((i) => i.f !== item.f)
+    .filter((i) => plateKey(i) !== plateKey(item))
     .map((i) => ({
       i,
       score:

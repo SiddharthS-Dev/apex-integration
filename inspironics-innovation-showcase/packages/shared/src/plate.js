@@ -34,6 +34,7 @@
  * @property {number | null} confidence   classifier confidence, null if not classified
  * @property {string} titleSource   'seed' | 'metadata' | 'content' | 'model' | 'vision' | 'filename'
  * @property {string} modifiedAt
+ * @property {string} firstSyncedAt when a sync first indexed the file
  */
 
 /** Fields a plate always has, so the client never guards `undefined.length`. */

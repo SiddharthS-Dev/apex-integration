@@ -7,6 +7,7 @@ export default function GalleryFilters({
   setTech,
   flags,
   setFlags,
+  claudeN = 0,
   q,
   setQ,
   sort,
@@ -68,6 +69,19 @@ export default function GalleryFilters({
         ))}
 
         <span className="mx-1 hidden h-4 w-px bg-white/12 sm:block" />
+
+        {claudeN > 0 && (
+          <button
+            onClick={() => toggleFlag('claude')}
+            aria-pressed={flags.claude}
+            title="Claude Skill Up Tools: plates synced from Dropbox since 7 Oct 2026, newest first"
+            className={`chip ${
+              flags.claude ? '!border-amber-400/60 !bg-amber-400/12 !text-amber-300' : 'hover:text-chalk'
+            }`}
+          >
+            {flags.claude ? '●' : '○'} Claude Skill Up Tools <span className="font-mono opacity-70">{claudeN}</span>
+          </button>
+        )}
 
         {[
           ['esg', 'ESG'],

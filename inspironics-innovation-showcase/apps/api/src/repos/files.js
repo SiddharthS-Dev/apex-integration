@@ -12,7 +12,7 @@ export function createFilesRepo(db) {
     /** external_id -> { id, rev, processedRev, status } for every file ever seen. */
     async index() {
       const rows = await db.all(
-        'SELECT id, external_id, path_lower, rev, processed_rev, status, classification_status, title, title_source, meta, width, height FROM stored_file'
+        'SELECT id, external_id, path_lower, rev, processed_rev, status, classification_status, title, title_source, meta, width, height, first_seen_at FROM stored_file'
       )
       return new Map(
         rows.map((r) => [
@@ -29,6 +29,7 @@ export function createFilesRepo(db) {
             meta: parseJson(r.meta, {}),
             width: r.width,
             height: r.height,
+            firstSeenAt: r.first_seen_at,
           },
         ])
       )
@@ -127,6 +128,18 @@ export function createFilesRepo(db) {
       return true
     },
 
+    /**
+     * Content written on demand for a plate. Guarded in SQL as well: an admin
+     * edit or a sync that landed while the model was reading wins.
+     */
+    async describe(id, { title, titleSource, meta, confidence }) {
+      await db.run(
+        `UPDATE stored_file SET meta = ?, title = ?, title_source = ?, classification_status = 'classified',
+           confidence = ?, updated_at = ? WHERE id = ? AND classification_status NOT IN ('admin', 'seed')`,
+        [JSON.stringify(meta), title, titleSource, confidence ?? null, nowIso(), id]
+      )
+    },
+
     async counts() {
       const rows = await db.all('SELECT status, CAST(COUNT(*) AS INTEGER) AS n FROM stored_file GROUP BY status')
       return Object.fromEntries(rows.map((r) => [r.status, Number(r.n)]))
@@ -162,6 +175,8 @@ export function toPlate(row) {
     classification: row.classification_status,
     views: Number(row.views) || 0,
     modifiedAt: row.server_modified,
+    // when a sync first brought this file in; never moves on a later revision
+    firstSyncedAt: row.first_seen_at,
     // the rev in the query string makes each revision its own cache entry in the browser
     thumbUrl: `/api/dropbox/files/${row.id}/thumbnail?v=${rev}`,
     fullUrl: `/api/dropbox/files/${row.id}/preview?v=${rev}`,

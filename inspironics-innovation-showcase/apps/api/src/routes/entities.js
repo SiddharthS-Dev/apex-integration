@@ -5,6 +5,7 @@
  *   GET   /plates/count         { total } — public, for the Apex dashboard's tile
  *   GET   /plates/:id
  *   POST  /plates/:id/events    view / download / favourite / offline (guests: view only)
+ *   POST  /plates/:id/describe  write a synced plate's content with the model, once
  *   PATCH /plates/:id           admin correction of title or classification
  *   GET   /analytics            admin dashboard aggregates
  *   GET   /sync-logs            admin
@@ -20,7 +21,7 @@ import { EVENT_KINDS, toPlate } from '../repos/files.js'
 const EDITABLE_TEXT = ['objective', 'architecture', 'takeaway']
 const EDITABLE_LISTS = ['flow', 'components', 'bizben', 'techben', 'extraKeywords']
 
-export function entityRoutes({ config, repos, metrics }) {
+export function entityRoutes({ config, repos, sync, metrics }) {
   const r = express.Router()
   // a person browsing records a few events a minute; this only stops a script inflating counts
   const eventLimiter = rateLimit({
@@ -83,6 +84,26 @@ export function entityRoutes({ config, repos, metrics }) {
       await repos.events.record(row.id, req.user.id, kind)
       if (kind === 'view') await repos.files.incrementViews(row.id)
       res.status(204).end()
+    })
+  )
+
+  // a flip asks at most once per plate, and a described plate never calls the model again
+  const describeLimiter = rateLimit({
+    windowMs: 60_000,
+    max: config.isProd ? 30 : 500,
+    bucket: 'describe',
+    metrics,
+    key: (req) => (req.user && req.user.role !== ROLES.GUEST ? `u:${req.user.id}` : `ip:${req.ip}`),
+  })
+
+  r.post(
+    '/plates/:id/describe',
+    requireAuth,
+    describeLimiter,
+    route(async (req, res) => {
+      const row = await repos.files.get(req.params.id)
+      if (!row || row.status !== 'active') throw notFound('No such plate.')
+      res.json({ plate: toPlate(await sync.describe(row)) })
     })
   )
 

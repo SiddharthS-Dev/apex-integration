@@ -15,9 +15,17 @@ export const CATEGORIES = [
   { name: 'Value Frameworks', tag: 'value' },
   { name: 'Systems & Architecture', tag: 'systems' },
   { name: 'Intelligence Stack', tag: 'stack' },
+  { name: 'Claude Skill Up Tools', tag: 'claude' },
 ]
 
 export const CATEGORY_NAMES = CATEGORIES.map((c) => c.name)
+
+/**
+ * A collection rather than a judgement about the artwork: the sync files every
+ * plate first synced on or after `CLAUDE_SKILLS_SINCE` here (see the API's
+ * config), so the classifier is never offered it.
+ */
+export const CLAUDE_SKILLS_CATEGORY = 'Claude Skill Up Tools'
 
 /** Filed here until something better is known. The gallery shows it as its own pill. */
 export const UNCLASSIFIED = 'Unclassified'

@@ -1,10 +1,29 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { describePlate, needsDescription } from '../model/showcaseData.js'
 
 export default function FlipCard({ item, index = 0, onOpen }) {
   const [flipped, setFlipped] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [broken, setBroken] = useState(false)
+  // content written on demand for a freshly synced plate with an empty back
+  const [writing, setWriting] = useState(false)
+  const [writeError, setWriteError] = useState('')
+
+  const describe = () => {
+    if (writing || !needsDescription(item)) return
+    setWriting(true)
+    setWriteError('')
+    describePlate(item)
+      .catch((error) => setWriteError(error.message || 'Could not generate content.'))
+      .finally(() => setWriting(false))
+  }
+
+  // a failed attempt waits for the retry button rather than re-asking on every hover
+  const flip = () => {
+    setFlipped(true)
+    if (!writeError) describe()
+  }
 
   return (
     <motion.div
@@ -13,9 +32,9 @@ export default function FlipCard({ item, index = 0, onOpen }) {
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.55, delay: Math.min(index, 8) * 0.035, ease: [0.16, 1, 0.3, 1] }}
       className="flip-scene aspect-[4/5]"
-      onMouseEnter={() => setFlipped(true)}
+      onMouseEnter={flip}
       onMouseLeave={() => setFlipped(false)}
-      onFocus={() => setFlipped(true)}
+      onFocus={flip}
       onBlur={() => setFlipped(false)}
     >
       <div className={`flip-inner ${flipped ? 'is-flipped' : ''}`}>
@@ -93,7 +112,31 @@ export default function FlipCard({ item, index = 0, onOpen }) {
             <p className="label-mono !text-cyan-glow/80">{item.cat}</p>
             <h3 className="mt-2 line-clamp-2 text-base font-bold leading-snug text-chalk">{item.title}</h3>
 
-            <p className="mt-3 line-clamp-4 text-[12.5px] leading-relaxed text-muted">{item.objective}</p>
+            {writing && !item.objective ? (
+              <div className="mt-3" role="status" aria-live="polite">
+                <p className="label-mono animate-pulse !text-cyan-glow/80">Generating content…</p>
+                <div className="mt-3 space-y-2" aria-hidden="true">
+                  {['w-full', 'w-11/12', 'w-4/5', 'w-2/3'].map((w) => (
+                    <div key={w} className={`h-2.5 ${w} animate-pulse rounded bg-white/[0.07]`} />
+                  ))}
+                </div>
+              </div>
+            ) : writeError && !item.objective ? (
+              <div className="mt-3">
+                <p className="text-[12px] leading-relaxed text-muted">{writeError}</p>
+                {needsDescription(item) && (
+                  <button
+                    type="button"
+                    onClick={describe}
+                    className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-glow hover:underline"
+                  >
+                    Try again
+                  </button>
+                )}
+              </div>
+            ) : (
+              <p className="mt-3 line-clamp-4 text-[12.5px] leading-relaxed text-muted">{item.objective}</p>
+            )}
 
             {item.components?.length > 0 && (
               <div className="mt-4">
