@@ -11,7 +11,10 @@
  * pipeline keeps metadata/filename titles and leaves files unclassified.
  */
 import Anthropic from '@anthropic-ai/sdk'
-import { CATEGORY_NAMES, PRODUCTS, TECHS } from '@inspironics/shared'
+import { CATEGORY_NAMES as ALL_CATEGORY_NAMES, CLAUDE_SKILLS_CATEGORY, PRODUCTS, TECHS } from '@inspironics/shared'
+
+// membership of Claude Skill Up Tools is decided by when a file arrived, not by the model
+const CATEGORY_NAMES = ALL_CATEGORY_NAMES.filter((c) => c !== CLAUDE_SKILLS_CATEGORY)
 
 /** Text beyond this is summarised by position, not sent whole: titles and themes live up front. */
 const MAX_TEXT_CHARS = 24_000
