@@ -36,8 +36,9 @@ Manual upload ─────────┴─► Playbook
   processPlaybookStructure  course design → Course + Modules + Lessons (pending); old courses archived, never deleted
 Content Studio (/admin/studio/:playbookId)
   generateLessonContent     teaching script, summary, key points, examples, 6 MCQs, 5 flashcards
-  generateLessonMedia       video + narration (pluggable provider, off by default)
+  generateLessonMedia       narrated video: slides designed from the playbook chapter (pluggable provider, off by default)
   generateAssessment        module test (15) · course assessment (50) · certification (60)
+  processMeeting            meeting transcript → notes, decisions, requirements, action items (see Meetings)
   Approve All → Publish     learners see it at /courses
 Learners → lessons → chapter tests → final test → certificate (/verify/:id is public)
 ```
@@ -46,7 +47,27 @@ All AI-generated content starts as `pending_review` and is invisible to learners
 
 **AI** — Claude through `@anthropic-ai/sdk` (`ANTHROPIC_MODEL`, default `claude-opus-5`) with structured JSON outputs, adaptive thinking, streaming, and server-side refusal fallbacks enabled. With `AI_ENABLED=false`, extraction and course structure still work (heuristic chapter/section detection). Lesson content and test generation need the model.
 
+**Lesson videos** follow a teaching order per lesson type (concept, deep dive, example, architecture, demonstration, revision). Each scene's slide is designed from the playbook chapter in the layout that suits it — points, steps, checklist, a quoted rule, definition, do/don't, decision, table, timeline or code — and names its playbook section. Rules and code shown as the playbook's own words are checked against the chapter text; anything not found there is shown as plain points instead (`apps/api/src/pipeline/videoPlan.js`). **Rebuild slides** in the review screen redesigns the slides of an existing video without recording new narration.
+
 **Media** — `MEDIA_PROVIDER=none` by default: lessons show a gradient placeholder and learners can listen to the script via browser text-to-speech. Providers plug in under `apps/api/src/media/`.
+
+## Retention: review, notifications, recertification
+
+**Daily review (spaced repetition).** Flashcards of the lessons a learner has completed enter their review queue at `/review`: up to 20 new cards a day, plus every card whose SM-2 due date has arrived. Each rating reschedules the card (`ReviewSchedule`) and is logged (`ReviewLog`); retention, streak, maturity and the 7-day forecast are computed from those logs. Functions: `getReviewQueue`, `submitFlashcardReview`. Due dates follow the learner's own calendar day (sent as `today`, accepted within a day of UTC).
+
+**Notifications.** Every notice is an in-app `Notification` (the bell in the header) and, when the learner's `NotificationPreference` allows that kind, an email. Emails are written to the `email_outbox` table first and sent by a worker with exponential-backoff retries, so a provider outage delays mail rather than losing it. Dedupe keys make every notice idempotent. Providers: `EMAIL_PROVIDER=log` (default — the email goes to the server log, which is where password-reset links appear without an email service), `resend`, or `smtp`. Password resets and invites (a 7-day set-password link) are account emails and ignore preferences. Admins see delivery status and can send a test email in `/admin/integrations`.
+
+**Recertification.** Certificates record the playbook version they were earned on. When a re-extract changes the playbook materially (chapters added, removed, or rewritten below 85 % word similarity), every learner holding a valid certificate gets a `Recertification` and their certificate becomes `recert_required`. It waits until a course built from the new version is published, then starts a due date (`Playbook.recert_grace_days`, default 30) and lists the lessons drawn from changed chapters. Passing the new course's final test issues a new certificate, supersedes the old one and closes the recertification. `Playbook.cert_validity_months` adds time-based expiry, and `recert_on_change` can switch change-driven recertification off. The daily job (`JOBS_HOUR_UTC`) expires certificates, warns 30 days ahead, and sends due-soon and overdue reminders. Admins track all of it in `/admin/compliance` (KPIs, per-playbook policy, waivers, CSV export). The public `/verify/:id` page shows whether a certificate is still current.
+
+The logic lives in `packages/shared` (`review.js`, `recert.js`, `notifications.js`), so the API and the demo backend behave identically.
+
+## Meetings
+
+Teams meeting transcripts become meeting notes. Admins choose a **Meetings folder** in Dropbox (`/admin/integrations`); every sync turns the transcripts in it — the Word (`.docx`) download Teams offers, `.vtt` or `.txt` — into Meetings, never playbooks, even when the folder sits inside the playbook folder. Admins can also upload a transcript on the Meetings page (`POST /api/meetings/upload`).
+
+`processMeeting` parses the transcript into speakers and timestamps (`packages/shared/src/meetings.js` reads the Teams Word layout, WebVTT and plain "Name: text" notes) and analyses it. With AI on, Claude writes the purpose, summary, key ideas, decisions, requirements, action items (owner, due date resolved against the meeting date, priority, the exact quote and its time), open questions and risks; a long meeting is analysed in parts and merged. With AI off, keyword rules find likely action items and decisions (`Meeting.analysis_method` says which). Participation (turns, words, talk time) is computed from the transcript.
+
+Action items are `ActionItem` rows matched to accounts by the owner's name. Notes start in review; `publishMeeting` shows them to every signed-in user, notifies them, and tells each owner what is theirs. Owners can change only the status of their own items; admins edit everything, and reprocessing keeps items a person edited or added. The daily job reminds owners the day before an item is due and once it is overdue. Deleting a meeting deletes its transcript and action items. A transcript changed in Dropbox is reprocessed and goes back to review.
 
 ## How Dropbox connects
 
@@ -91,4 +112,4 @@ Open http://localhost:5173 and register — the first account is admin.
 - **UI without a server:** `VITE_BACKEND=demo npm run dev:web`.
 - **Tests:** `npm test -w @academy/api`.
 
-Password resets: there is no email service, so reset links are written to the API log for an operator to hand over. Admin invites return a one-time temporary password.
+Email: with the default `EMAIL_PROVIDER=log` nothing leaves the server — reset links appear in the API log for an operator to hand over, and admin invites return a one-time temporary password. Set `EMAIL_PROVIDER=resend` or `smtp` to deliver them (and notifications) by email.

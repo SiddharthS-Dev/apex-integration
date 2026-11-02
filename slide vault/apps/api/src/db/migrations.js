@@ -269,6 +269,18 @@ export const MIGRATIONS = [
       `CREATE INDEX IF NOT EXISTS idx_stored_file_created ON stored_file (created_at)`,
     ],
   },
+  {
+    /**
+     * When a file was last classified, and how: 'ai', 'keywords' (the taxonomy matcher, used when the
+     * AI is off or gives no domain) or 'manual'. A file never classified is reprocessed once by the
+     * next sync; one that was, but had nothing to go on, is not retried on every run.
+     */
+    id: '004_classification_source',
+    statements: [
+      `ALTER TABLE stored_file ADD COLUMN classified_at TEXT`,
+      `ALTER TABLE stored_file ADD COLUMN classified_by TEXT NOT NULL DEFAULT ''`,
+    ],
+  },
 ];
 
 /** Applies every migration that has not been recorded yet. */

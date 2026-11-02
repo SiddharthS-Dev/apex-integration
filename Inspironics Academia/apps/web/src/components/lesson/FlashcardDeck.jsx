@@ -5,7 +5,7 @@ import { Progress } from '@/components/ui/progress';
 import FlashcardFlip from '@/components/lesson/FlashcardFlip';
 import RatingButtons from '@/components/lesson/RatingButtons';
 
-export default function FlashcardDeck({ deck, dueIds, onRate }) {
+export default function FlashcardDeck({ deck, dueIds, onRate, intervalsFor }) {
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -43,7 +43,7 @@ export default function FlashcardDeck({ deck, dueIds, onRate }) {
       <Progress value={(index / deck.length) * 100} />
       <FlashcardFlip card={card} flipped={flipped} onFlip={() => setFlipped((f) => !f)} />
       {flipped ? (
-        <RatingButtons onRate={rate} disabled={saving} />
+        <RatingButtons onRate={rate} disabled={saving} intervals={intervalsFor?.(card)} />
       ) : (
         <p className="text-center text-sm text-muted-foreground">Recall the answer, then flip the card to rate yourself.</p>
       )}

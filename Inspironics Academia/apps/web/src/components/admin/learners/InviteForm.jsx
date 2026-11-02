@@ -17,7 +17,7 @@ export default function InviteForm({ onInvited, onCancel }) {
     mutationFn: () => api.auth.inviteUser(form.email.trim(), form.role, form.full_name.trim()),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: LEARNERS_KEY });
-      onInvited({ email: res?.user?.email || form.email.trim(), password: res?.temporary_password });
+      onInvited({ email: res?.user?.email || form.email.trim(), password: res?.temporary_password, emailSent: !!res?.email_sent });
     },
     onError: (err) => toast.error(err?.message || 'Could not invite user'),
   });

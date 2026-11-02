@@ -1,6 +1,5 @@
 import { config, dropboxConfigured } from '../config.js';
 import { db } from '../db/index.js';
-import { loadConnection } from '../dropbox/connection.js';
 import { log } from '../lib/logger.js';
 import { SYNC_LOCK, runSync } from './pipeline.js';
 
@@ -16,7 +15,7 @@ const intervalMs = () => Math.max(1, Number(config.syncIntervalMinutes) || 30) *
 
 async function tick(trigger) {
   try {
-    if (!dropboxConfigured() || !(await loadConnection())) return;
+    if (!dropboxConfigured()) return; // runSync skips quietly when nothing is connected or chosen
     const r = await runSync({ trigger });
     if (!r.started) log.debug('sync.skipped', { trigger, reason: r.reason });
   } catch (err) {

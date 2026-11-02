@@ -8,6 +8,7 @@ import ThemeToggle from '@/components/shell/ThemeToggle';
 import UserBadge from '@/components/shell/UserBadge';
 import DemoBanner from '@/components/shell/DemoBanner';
 import DropboxSyncButton from '@/components/shell/DropboxSyncButton';
+import NotificationBell from '@/components/shell/NotificationBell';
 import { APEX_MOUNT } from '@/lib/mount';
 
 export default function AppShell({ children }) {
@@ -41,6 +42,7 @@ export default function AppShell({ children }) {
           </nav>
           <div className="flex items-center gap-1 sm:gap-2 ml-auto">
             {isAdmin && <DropboxSyncButton />}
+            <NotificationBell />
             <ThemeToggle />
             <UserBadge user={user} onLogout={logout} />
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen((o) => !o)} aria-label="Menu" aria-expanded={open}>

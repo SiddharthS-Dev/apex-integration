@@ -9,6 +9,8 @@ import {
 } from '../repo/users.js';
 import { hashPassword, randomToken, sha256, validatePassword, verifyPassword } from './passwords.js';
 import { createSession, destroySession, destroyUserSessions, requireAdmin, requireUser } from './sessions.js';
+import { emailConfigured } from '../notify/mailer.js';
+import { sendAccountEmail } from '../notify/index.js';
 
 const router = express.Router();
 
@@ -87,15 +89,23 @@ router.post('/change-password', requireUser, sensitiveLimiter, asyncHandler(asyn
   res.json({ ok: true });
 }));
 
-// No email service: the reset link is written to the server log for an operator to hand over.
+// A one-time set-password link (password_resets row). Used for resets (1 h) and invites (7 days).
+async function passwordLink(userId, ttlMs) {
+  const token = randomToken();
+  await db().run('INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, ?)',
+    [sha256(token), userId, new Date(Date.now() + ttlMs).toISOString()]);
+  return `/reset-password?token=${token}`;
+}
+
+// The reset link is emailed. With EMAIL_PROVIDER=log (no email service) the email lands in the
+// server log, where an operator can pick the link up and hand it over.
 router.post('/reset-password-request', sensitiveLimiter, asyncHandler(async (req, res) => {
   const email = cleanEmail(req.body?.email);
   const user = await findUserByEmail(email);
-  if (user) {
-    const token = randomToken();
-    await db().run('INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, ?)',
-      [sha256(token), user.id, new Date(Date.now() + 3600_000).toISOString()]);
-    log.info('auth.password_reset_link', { userId: user.id, link: `${config.appBaseUrl}/reset-password?token=${token}` });
+  if (user && !(user.disabled === true || user.disabled === 1)) {
+    const link = await passwordLink(user.id, 3600_000);
+    await sendAccountEmail('password_reset', user.email, { link }, { userId: user.id });
+    log.info('auth.password_reset_requested', { userId: user.id });
   }
   res.json({ ok: true });
 }));
@@ -113,7 +123,8 @@ router.post('/reset-password', sensitiveLimiter, asyncHandler(async (req, res) =
   res.json({ ok: true });
 }));
 
-// Admin invite: creates the account with a one-time temporary password shown to the admin.
+// Admin invite: creates the account with a one-time temporary password shown to the admin and, when
+// email is configured, emails the learner a set-password link (email_sent tells the admin which).
 router.post('/invite', requireAdmin, asyncHandler(async (req, res) => {
   const email = cleanEmail(req.body?.email);
   const role = req.body?.role === 'admin' ? 'admin' : 'user';
@@ -121,8 +132,13 @@ router.post('/invite', requireAdmin, asyncHandler(async (req, res) => {
   if (await findUserByEmail(email)) throw badRequest('A user with this email already exists');
   const temporaryPassword = randomToken(9);
   const user = await createUser({ email, role, fullName: req.body?.full_name, passwordHash: await hashPassword(temporaryPassword) });
-  log.info('auth.invited', { userId: user.id, by: req.user.id, role });
-  res.status(201).json({ user: publicUser(user), temporary_password: temporaryPassword });
+  let emailSent = false;
+  if (emailConfigured()) {
+    const link = await passwordLink(user.id, 7 * 24 * 3600_000);
+    emailSent = await sendAccountEmail('invite', email, { name: user.full_name, invitedBy: req.user.full_name || req.user.email, link }, { userId: user.id });
+  }
+  log.info('auth.invited', { userId: user.id, by: req.user.id, role, email_sent: emailSent });
+  res.status(201).json({ user: publicUser(user), temporary_password: temporaryPassword, email_sent: emailSent });
 }));
 
 router.get('/login-history', requireUser, asyncHandler(async (req, res) => {

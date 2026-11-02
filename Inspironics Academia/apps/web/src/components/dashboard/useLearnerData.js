@@ -1,14 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { useAuth } from '@/lib/AuthContext';
-import { flattenLessons, nextLesson, sortByOrder } from '@/lib/progress';
+import { flattenLessons, localDay, nextLesson, sortByOrder } from '@/lib/progress';
 
 // Shared learner-side data hooks. Admins receive every record through RLS, so all
 // content queries are filtered client-side to learner-visible statuses.
 
 export const isCourseComplete = (p) => !!p && (!!p.final_passed || (p.percentage ?? 0) >= 100);
 
-export const todayIso = () => new Date().toISOString().slice(0, 10);
+// The learner's local day, the same one review due dates are scheduled against.
+export const todayIso = () => localDay();
 
 export function usePublishedCourses() {
   return useQuery({

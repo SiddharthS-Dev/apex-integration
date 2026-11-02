@@ -4,14 +4,15 @@ import { buildSeed } from '@/api/drivers/demo/seed';
 // In-memory demo database, persisted to localStorage when available. Every storage access is guarded:
 // private windows, blocked storage or a full quota simply fall back to memory-only.
 
-const STORAGE_KEY = 'iea-demo-db-v1';
+// Bump with the seed's version: an older saved academy is replaced by the new seed.
+const STORAGE_KEY = 'iea-demo-db-v3';
 let state = null;
 
 function readStorage() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    return parsed && parsed.version === 1 && parsed.tables ? parsed : null;
+    return parsed && parsed.version === 4 && parsed.tables ? parsed : null;
   } catch {
     return null;
   }

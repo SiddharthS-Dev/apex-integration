@@ -9,8 +9,11 @@ const same = (a, b) => norm(a).toLowerCase() === norm(b).toLowerCase()
  * the current sync folder. Click a row to go into it, the breadcrumb to come
  * back out, and "Use this folder" to sync the folder you are in. Listing goes
  * through the API — the browser never talks to Dropbox.
+ *
+ * rootPath is null while no folder is chosen. allowRoot: the top level may be chosen only for an App
+ * Folder app — for any other app it would be the whole Dropbox, which is never synced.
  */
-export default function FolderPicker({ rootPath, appFolder, busy, onChoose }) {
+export default function FolderPicker({ rootPath, appFolder, allowRoot = false, busy, onChoose }) {
   const [listing, setListing] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -34,6 +37,8 @@ export default function FolderPicker({ rootPath, appFolder, busy, onChoose }) {
   }, [open, rootPath])
 
   const here = norm(listing?.path)
+  const current = rootPath != null && same(here, rootPath)
+  const topLevel = !here && !allowRoot
   const crumbs = here ? here.split('/').filter(Boolean) : []
 
   return (
@@ -95,8 +100,13 @@ export default function FolderPicker({ rootPath, appFolder, busy, onChoose }) {
               {listing.files} supported file{listing.files === 1 ? '' : 's'} directly here · sub-folders are included in a sync
             </p>
           </div>
-          <button className="btn-primary shrink-0 !px-4 !py-2 text-xs" disabled={busy || same(here, rootPath)} onClick={() => onChoose(here)}>
-            {same(here, rootPath) ? 'Current sync folder' : 'Use this folder'}
+          <button
+            className="btn-primary shrink-0 !px-4 !py-2 text-xs"
+            disabled={busy || current || topLevel}
+            title={topLevel ? 'Open a folder first: the whole Dropbox is never synced' : undefined}
+            onClick={() => onChoose(here)}
+          >
+            {current ? 'Current sync folder' : topLevel ? 'Open a folder' : 'Use this folder'}
           </button>
         </div>
       )}

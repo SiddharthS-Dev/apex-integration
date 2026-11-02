@@ -8,7 +8,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createTestStack, connectDropbox } from '../helpers/testEnv.js';
-import { decideWork } from '../../src/integrations/dropbox/DropboxSyncService.js';
+import { decideWork, pathWithin } from '../../src/integrations/dropbox/DropboxSyncService.js';
+import { classifyByKeywords } from '../../src/services/document-analysis/keywordClassifier.js';
+import { DocumentAnalysisService } from '../../src/services/document-analysis/DocumentAnalysisService.js';
 import { buildPptx } from '../helpers/fakeDropbox.js';
 
 const FILES = [
@@ -35,6 +37,7 @@ test('decideWork skips an unchanged file', () => {
     title_source: 'ai_text',
     thumbnail_url: '/api/assets/x.jpg',
     processing_state: 'success',
+    primary_domain: 'Engineering',
   };
   assert.deepEqual(decideWork(metadata, current), { action: 'skip', reason: 'unchanged' });
 });
@@ -60,6 +63,13 @@ test('decideWork reprocesses a still-generic title even at the same revision', (
   });
 });
 
+test('decideWork classifies a never-classified file once, and only once', () => {
+  const current = { revision: 'rev1', status: 'active', title: 'Board Review', title_source: 'metadata', thumbnail_url: 'x', processing_state: 'success' };
+  assert.deepEqual(decideWork({ revision: 'rev1' }, current), { action: 'update', reason: 'unclassified' });
+  // Tried before but nothing to go on: not retried on every run.
+  assert.equal(decideWork({ revision: 'rev1' }, { ...current, classified_at: '2026-11-01T00:00:00Z', classified_by: 'none' }).action, 'skip');
+});
+
 test('decideWork does not chase a thumbnail Dropbox can never render', () => {
   // An .html export gets no Dropbox thumbnail. Treating that as "missing" would
   // re-download and re-extract the file on every run, for ever.
@@ -71,6 +81,7 @@ test('decideWork does not chase a thumbnail Dropbox can never render', () => {
     thumbnail_url: '',
     extension: 'html',
     processing_state: 'success',
+    classified_at: '2026-11-01T00:00:00.000Z',
   };
   assert.equal(decideWork({ revision: 'rev1', extension: 'html' }, html).action, 'skip');
 
@@ -461,4 +472,43 @@ test('an oversized file is indexed by metadata without being downloaded', async 
   const [file] = await stack.container.files.list({ status: 'active' });
   assert.equal(file.name, 'Huge Deck.pdf');
   assert.equal(file.processing_state, 'success');
+});
+
+/* ------------------------------------------------------- classification */
+
+test('pathWithin drops the sync folder, so its own name is never a filing hint', () => {
+  assert.equal(pathWithin('/SlidesVault/Business/Finance/q3.pptx', '/slidesvault'), '/Business/Finance/q3.pptx');
+  assert.equal(pathWithin('/Other/x.pptx', '/SlidesVault'), '/Other/x.pptx');
+  assert.equal(pathWithin('/x.pptx', ''), '/x.pptx');
+});
+
+test('keyword classification files decks by folder, title and slide text', () => {
+  const byFolder = classifyByKeywords({ title: 'Q3 deck', path: '/Human Resources/q3.pptx' });
+  assert.equal(byFolder.primary_domain, 'Human Resources');
+  const finance = classifyByKeywords({ title: 'Bridge Participation Dilution Impact', text: 'Pre-money valuation, new shares issued, cap table after the round.' });
+  assert.deepEqual([finance.primary_domain, finance.sub_domain], ['Business', 'Finance']);
+  const sales = classifyByKeywords({ title: 'Microsoft CSP Growth Strategy 2026-2028', text: 'Cloud Solution Provider partner program and go-to-market.' });
+  assert.deepEqual([sales.primary_domain, sales.sub_domain], ['Business', 'Sales']);
+  const ops = classifyByKeywords({ title: 'Platform Deployment Runbook', text: 'Kubernetes deployment, observability and incident response.' });
+  assert.deepEqual([ops.primary_domain, ops.sub_domain], ['Engineering', 'DevOps']);
+  const product = classifyByKeywords({ title: 'FleetExplorer Release Notes' });
+  assert.deepEqual([product.primary_domain, product.sub_domain], ['Products', 'FleetExplorer']);
+  assert.equal(classifyByKeywords({ title: 'Untitled', text: 'Thank you' }).primary_domain, '', 'no signal: left unclassified, not guessed');
+  assert.notEqual(classifyByKeywords({ title: 'Energy Strategic Collaboration Brief', path: '/SlidesVault/decks/brief.pptx' }).sub_domain, 'SlidesVault', 'the app folder is not a topic');
+});
+
+test('without an AI key the classifier still files a deck, by keywords', async () => {
+  const service = new DocumentAnalysisService({ ai: { available: false } });
+  const result = await service.classify({ text: 'Onboarding checklist for every new joiner: accounts, buddy, first 30 days.' }, { title: 'Welcome to the team', path: '/Decks/welcome.pptx' });
+  assert.deepEqual([result.primary_domain, result.sub_domain, result.source], ['Human Resources', 'Onboarding', 'keywords']);
+});
+
+test('an AI answer without a domain is completed by keywords; an AI domain wins', async () => {
+  const ai = (answer) => ({ available: true, complete: async () => JSON.stringify(answer) });
+  const filled = await new DocumentAnalysisService({ ai: ai({ primary_domain: 'Nonsense', summary: 'A pricing review.' }) })
+    .classify({ text: 'Revenue, pricing and budget for next year.' }, { title: 'Pricing Review' });
+  assert.deepEqual([filled.primary_domain, filled.summary, filled.source], ['Business', 'A pricing review.', 'keywords']);
+  const aiWins = await new DocumentAnalysisService({ ai: ai({ primary_domain: 'Products', sub_domain: 'ESG' }) })
+    .classify({ text: 'Revenue, pricing and budget.' }, { title: 'Pricing Review' });
+  assert.deepEqual([aiWins.primary_domain, aiWins.source], ['Products', 'ai']);
 });

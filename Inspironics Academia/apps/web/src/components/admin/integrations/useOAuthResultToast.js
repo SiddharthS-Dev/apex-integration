@@ -17,12 +17,13 @@ export default function useOAuthResultToast(onConnected) {
   const result = params.get('dropbox');
   useEffect(() => {
     if (!result) return;
+    const which = params.get('app') === 'meetings' ? 'Meetings Dropbox' : 'Dropbox';
     if (result === 'connected') {
-      toast.success('Dropbox connected');
+      toast.success(`${which} connected`);
       onConnected?.();
     } else {
       const reason = params.get('reason');
-      toast.error(`Dropbox connection failed. ${REASONS[reason] || reason || ''}`.trim());
+      toast.error(`${which} connection failed. ${REASONS[reason] || reason || ''}`.trim());
     }
     setParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps

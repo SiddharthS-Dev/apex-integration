@@ -1,9 +1,13 @@
 import express from 'express';
-import { ENTITIES, matchesQuery, ruleFor, ruleToQuery } from '@academy/shared';
+import { ENTITIES, matchesQuery, onCoursePublished, ruleFor, ruleToQuery } from '@academy/shared';
 import { asyncHandler, badRequest, forbidden, notFound } from '../lib/errors.js';
 import * as repo from '../repo/entities.js';
 import { deleteUser, findUserById, listUsers, publicUser, updateUser } from '../repo/users.js';
 import { destroyUserSessions, requireUser } from '../auth/sessions.js';
+import { log } from '../lib/logger.js';
+import { notify } from '../notify/index.js';
+import { store } from '../repo/store.js';
+import { ignoreDropboxIds, removePlaybooks } from '../pipeline/deletePlaybooks.js';
 
 // Generic entity REST API with row-level security enforced server-side from the shared RLS rules.
 //   GET    /api/entities/:name?q=<json>&sort=&limit=&skip=
@@ -135,8 +139,11 @@ router.post('/:name/delete-many', asyncHandler(async (req, res) => {
 
 router.post('/:name', asyncHandler(async (req, res) => {
   const { name } = req.params;
-  await createOne(name, req.body, req.user);
-  res.status(201).json(await repo.create(name, req.body, { userId: req.user?.id }));
+  const body = beforeCreate(name, req.body);
+  await createOne(name, body, req.user);
+  const created = await repo.create(name, body, { userId: req.user?.id });
+  res.status(201).json(created);
+  afterCreate(name, created);
 }));
 
 router.patch('/:name/:id', asyncHandler(async (req, res) => {
@@ -145,17 +152,82 @@ router.patch('/:name/:id', asyncHandler(async (req, res) => {
   const existing = await repo.get(name, id);
   if (!existing || !allowed(existing, access(name, 'read', req.user))) throw notFound(`${name} not found`);
   if (!allowed(existing, rule)) throw forbidden(`Not allowed to update this ${name}`);
-  const merged = { ...existing, ...repo.sanitize(name, req.body, { partial: true }) };
+  const body = beforeUpdate(name, existing, req.body, req.user);
+  const merged = { ...existing, ...repo.sanitize(name, body, { partial: true }) };
   if (!allowed(merged, rule)) throw forbidden('Update would move the record outside your access');
-  res.json(await repo.update(name, id, req.body));
+  const updated = await repo.update(name, id, body);
+  res.json(updated);
+  afterUpdate(name, existing, updated);
 }));
+
+// ---- per-entity rules the declarative RLS can't express -------------------------------------------
+
+const ACTION_ITEM_FIELDS = ['task', 'detail', 'owner_name', 'owner_user_id', 'due_date', 'priority'];
+const today = () => new Date().toISOString().slice(0, 10);
+
+// An action item added by hand is a person's work: reprocessing the meeting keeps it.
+function beforeCreate(name, body) {
+  if (name === 'ActionItem' && body && typeof body === 'object') return { ...body, edited: true };
+  return body;
+}
+
+// An action item's owner may only move its status; completion is dated here. An admin's edit of the
+// item itself marks it edited, so reprocessing the meeting keeps it.
+function beforeUpdate(name, existing, body, user) {
+  if (name !== 'ActionItem' || !body || typeof body !== 'object') return body;
+  const out = { ...body };
+  if (user?.role !== 'admin') {
+    const extra = Object.keys(out).filter((k) => k !== 'status');
+    if (extra.length) throw forbidden('You can only change the status of your action items');
+  } else if (ACTION_ITEM_FIELDS.some((k) => k in out && out[k] !== existing[k])) {
+    out.edited = true;
+  }
+  if (out.status && out.status !== existing.status) out.completed_date = out.status === 'done' ? today() : '';
+  return out;
+}
+
+const runHook = (label, promise) => promise.catch((err) => log.error(label, { error: err.message }));
+
+function afterCreate(name, created) {
+  if (name === 'ActionItem' && created.published && created.owner_user_id) runHook('action_item.assign_failed', notifyAssigned(created));
+}
+
+// Side effects of an update, run after the response: publishing a course opens recertifications
+// waiting on it and tells learners about it; reassigning a published action item tells the new
+// owner. Failures are logged, never surfaced to the editor.
+function afterUpdate(name, before, after) {
+  if (name === 'Course' && before.status !== 'published' && after.status === 'published') {
+    onCoursePublished(store, after, { notify })
+      .then((r) => log.info('course.published', { course_id: after.id, ...r }))
+      .catch((err) => log.error('course.published_hook_failed', { course_id: after.id, error: err.message }));
+  }
+  if (name === 'ActionItem' && after.published && after.owner_user_id && after.owner_user_id !== before.owner_user_id) {
+    runHook('action_item.assign_failed', notifyAssigned(after));
+  }
+}
+
+const notifyAssigned = (a) => notify(a.owner_user_id, 'action_item_assigned', {
+  meeting_id: a.meeting_id, meeting_title: a.meeting_title, task: a.task, due_date: a.due_date,
+}, `action_item_assigned:${a.id}:${a.owner_user_id}`);
 
 router.delete('/:name/:id', asyncHandler(async (req, res) => {
   const { name, id } = req.params;
   const existing = await repo.get(name, id);
   if (!existing || !allowed(existing, access(name, 'read', req.user))) throw notFound(`${name} not found`);
   if (!allowed(existing, access(name, 'delete', req.user))) throw forbidden(`Not allowed to delete this ${name}`);
-  res.json(await repo.remove(name, id));
+  // A playbook takes its chapters and courses with it (see deletePlaybooks).
+  if (name === 'Playbook') {
+    await removePlaybooks([id]);
+    return res.json({ success: true, deleted: 1 });
+  }
+  const result = await repo.remove(name, id);
+  // A meeting's transcript and action items go with it, and a Dropbox transcript is not synced back.
+  if (name === 'Meeting') {
+    await repo.removeMany('MeetingTranscript', { meeting_id: id });
+    await repo.removeMany('ActionItem', { meeting_id: id });
+    if (existing.source === 'dropbox' && existing.external_id) await ignoreDropboxIds([existing.external_id]);
+  }
+  res.json(result);
 }));
 
 export default router;

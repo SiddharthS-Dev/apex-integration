@@ -10,6 +10,7 @@ import EmptyState from '@/components/EmptyState';
 import CertificateDocument from '@/components/certificates/CertificateDocument';
 import CertificateActions from '@/components/certificates/CertificateActions';
 import { verifyUrlFor } from '@/components/certificates/verifyLink';
+import { StandingNotice, standingOf } from '@/components/certificates/CertificateStanding';
 
 const PRINT_CSS = '@page { size: A4 landscape; margin: 0; } @media print { body { background: #fff !important; } .certificate-sheet { box-shadow: none !important; } }';
 
@@ -20,7 +21,11 @@ export default function CertificateView() {
   const { data: certificate, isLoading } = useQuery({
     queryKey: ['certificate', user?.id, courseId],
     enabled: !!user?.id,
-    queryFn: async () => (await api.entities.Certificate.filter({ user_id: user.id, course_id: courseId }, '-created_date', 1))[0] || null,
+    // A renewed certificate leaves the old one behind as superseded: show the current one first.
+    queryFn: async () => {
+      const certs = await api.entities.Certificate.filter({ user_id: user.id, course_id: courseId }, '-created_date', 20);
+      return certs.find((c) => standingOf(c) === 'valid') || certs[0] || null;
+    },
   });
 
   if (isLoading) return <LoadingState label="Loading certificate…" />;
@@ -47,6 +52,7 @@ export default function CertificateView() {
         <CertificateActions targetRef={sheetRef} certificate={certificate} />
       </div>
       <div className="max-w-5xl mx-auto">
+        <StandingNotice status={standingOf(certificate)} supersededBy={certificate.superseded_by} className="no-print mb-4" />
         <CertificateDocument
           ref={sheetRef}
           certificate={certificate}

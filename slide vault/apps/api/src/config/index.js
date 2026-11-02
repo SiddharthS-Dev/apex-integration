@@ -167,7 +167,7 @@ export function buildConfig(env = process.env) {
       runOnStartup: bool(env.DROPBOX_SYNC_ON_STARTUP, false),
       maxConcurrentFiles: int(env.DROPBOX_MAX_CONCURRENT_FILES, 8),
       maxFileSizeBytes: int(env.DROPBOX_MAX_FILE_SIZE_MB, 150) * 1024 * 1024,
-      supportedExtensions: extList(env.DROPBOX_SUPPORTED_EXTENSIONS, ['pdf', 'pptx', 'ppt', 'html']),
+      supportedExtensions: extList(env.DROPBOX_SUPPORTED_EXTENSIONS, ['pptx', 'ppt']),
       /** A run that outlives this is assumed dead and its lock is reclaimed. */
       lockTtlMinutes: int(env.DROPBOX_SYNC_LOCK_TTL_MINUTES, 60),
     },

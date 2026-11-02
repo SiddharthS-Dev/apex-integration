@@ -62,6 +62,8 @@ const WRITABLE = [
   'primary_domain',
   'sub_domain',
   'category',
+  'classified_at',
+  'classified_by',
   'tags_json',
   'keywords_json',
   'learning_objectives_json',

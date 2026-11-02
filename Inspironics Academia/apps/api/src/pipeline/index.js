@@ -6,6 +6,12 @@ import processPlaybookExtract from './processPlaybookExtract.js';
 import processPlaybookStructure from './processPlaybookStructure.js';
 import submitFinalTest from './submitFinalTest.js';
 import verifyCertificate from './verifyCertificate.js';
+import processMeeting from './processMeeting.js';
+import publishMeeting from './publishMeeting.js';
+import deletePlaybooks from './deletePlaybooks.js';
+import {
+  getComplianceReport, getMyRecertifications, getReviewQueue, runComplianceChecks, submitFlashcardReview, waiveRecertification,
+} from './retention.js';
 
 // Backend functions exposed at POST /api/functions/:name (auth checks happen in functions/routes.js).
 export const handlers = {
@@ -16,6 +22,15 @@ export const handlers = {
   generateAssessment,
   submitFinalTest,
   verifyCertificate,
+  getReviewQueue,
+  submitFlashcardReview,
+  getMyRecertifications,
+  getComplianceReport,
+  waiveRecertification,
+  runComplianceChecks,
+  processMeeting,
+  publishMeeting,
+  deletePlaybooks,
 };
 
 // Server-side entry points (no HTTP request), e.g. the Dropbox sync auto-extract.
@@ -24,6 +39,11 @@ const systemCtx = () => ({ user: null, log });
 /** Extract chapters for a playbook. Returns the processPlaybookExtract result; throws on failure. */
 export async function runExtract(playbookId) {
   return handlers.processPlaybookExtract({ playbook_id: playbookId }, systemCtx());
+}
+
+/** Analyse a meeting transcript (Dropbox sync auto-processing). */
+export async function runMeeting(meetingId) {
+  return handlers.processMeeting({ meeting_id: meetingId }, systemCtx());
 }
 
 /** Extract, then optionally structure. Returns { extract, structure? }. */

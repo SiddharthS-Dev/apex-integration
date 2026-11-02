@@ -126,6 +126,8 @@ export default function DropboxPanel({ callback, onSynced }) {
         : 'Personal Dropbox'
   const lastError = acct?.lastError || (last?.status === 'failed' ? last.errors?.[0]?.message : null)
   const connectedOk = status.connected && status.status === 'ok'
+  // Nothing syncs until a folder is chosen; the whole Dropbox is never synced.
+  const needsFolder = connectedOk && status.folderChosen === false
 
   return (
     <div className="space-y-5">
@@ -139,7 +141,7 @@ export default function DropboxPanel({ callback, onSynced }) {
         title="Dropbox connection"
         right={
           <div className="flex flex-wrap items-center gap-2">
-            {connectedOk && (
+            {connectedOk && !needsFolder && (
               <button className="btn-primary !px-4 !py-2 text-xs" disabled={!!busy || !!progress} onClick={() => act('sync', adminApi.runSync)}>
                 {progress ? 'Syncing…' : busy === 'sync' ? 'Starting…' : 'Run sync now'}
               </button>
@@ -163,6 +165,12 @@ export default function DropboxPanel({ callback, onSynced }) {
           </div>
         }
       >
+        {needsFolder && (
+          <p className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100">
+            Connected. Now choose the <b>Innovation Showcase</b> folder under <b>Sync folder</b> below. Nothing is synced until you do, and the whole Dropbox is
+            never synced.
+          </p>
+        )}
         {status.appFolder && connectedOk && (
           <p className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100">
             This Dropbox app has <b>App Folder</b> access, so it only sees <code>Apps/&lt;app name&gt;/</code>. To browse and sync any folder in your
@@ -204,7 +212,7 @@ export default function DropboxPanel({ callback, onSynced }) {
             <Row label="Scheduled sync">{status.nextRunAt ? `every ${status.intervalMinutes} min` : 'off'}</Row>
           </div>
           <div>
-            <Row label="Root folder">{status.rootPath}</Row>
+            <Row label="Root folder">{status.folderChosen === false ? 'Not chosen' : status.rootPath}</Row>
             <Row label="Sync status">{progress ? 'running' : `idle · next ${status.nextRunAt ? formatDate(status.nextRunAt) : 'manual'}`}</Row>
             <Row label="Last token refresh">{ago(status.lastTokenRefreshAt)}</Row>
             <Row label="Indexed plates">{status.library?.active || 0}</Row>
@@ -254,14 +262,21 @@ export default function DropboxPanel({ callback, onSynced }) {
           <p className="text-xs text-muted">Connect Dropbox to browse its folders.</p>
         ) : (
           <>
-            <p className="mb-3 text-xs text-muted">
-              Syncing <span className="font-medium text-chalk">{status.rootPath}</span>. Changing it archives every plate outside the new folder on the next
-              sync — nothing is deleted.
-            </p>
-            {browsing && (
+            {needsFolder ? (
+              <p className="mb-3 text-xs text-amber-200">
+                No folder chosen yet, so nothing is synced. Open the folder that holds the showcase files and press <b>Use this folder</b>.
+              </p>
+            ) : (
+              <p className="mb-3 text-xs text-muted">
+                Syncing <span className="font-medium text-chalk">{status.rootPath}</span>. Only this folder and its sub-folders are synced. Changing it archives
+                every plate outside the new folder on the next sync — nothing is deleted.
+              </p>
+            )}
+            {(browsing || needsFolder) && (
               <FolderPicker
-                rootPath={status.rootPath}
+                rootPath={status.folderChosen === false ? null : status.rootPath}
                 appFolder={status.appFolder}
+                allowRoot={status.appFolder}
                 busy={!!busy}
                 onChoose={(path) =>
                   act('folder', () => adminApi.setRootPath(path || '/'), () => setNotice({ tone: 'ok', text: `Sync folder set to ${path || '/'}. Run a sync to index it.` }))

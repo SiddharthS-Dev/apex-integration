@@ -1,14 +1,45 @@
-import { FUNCTIONS, gradeFinalTest, loadFinalTestPool, newCertificateId } from '@academy/shared';
+import {
+  FUNCTIONS, certificateStatus, complianceReport, gradeFinalTest, issueCertificate, loadFinalTestPool, loadReviewQueue,
+  myRecertifications, recordReview, resolveToday, runComplianceChecks, waiveRecertification,
+} from '@academy/shared';
 import { ApiError } from '@/api/drivers/http';
 import { currentUser } from '@/api/drivers/demo/store';
 import { badRequest, forbidden, notFound, unauthorized } from '@/api/drivers/demo/records';
-import { findAll, findOne, insert, patch, persist, sleep } from '@/api/drivers/demo/service';
+import { findAll, findOne, insert, patch, persist, removeWhere, sleep } from '@/api/drivers/demo/service';
+import { notify, store } from '@/api/drivers/demo/backend';
 import { processPlaybookExtract, processPlaybookStructure } from '@/api/drivers/demo/pipeline';
 import { generateAssessment, generateLessonContent } from '@/api/drivers/demo/generate';
+import { processMeeting, publishMeeting } from '@/api/drivers/demo/meetings';
 
 // Backend functions for the demo driver — same names, auth rules and result shapes as POST /api/functions/:name.
 
+// Same contract as the API's deletePlaybooks: generated content goes, learner records stay. The demo
+// has no Dropbox sync, so keep_out_of_sync has nothing to remember.
+function deletePlaybooks({ playbook_ids: requested, all } = {}) {
+  const ids = all ? findAll('Playbook').map((p) => p.id) : (Array.isArray(requested) ? requested.map(String) : []);
+  if (!ids.length) throw badRequest('playbook_ids (or all: true) is required');
+  const pbIds = findAll('Playbook', { id: { $in: ids } }).map((p) => p.id);
+  const courseIds = findAll('Course', { playbook_id: { $in: pbIds } }).map((c) => c.id);
+  const moduleIds = findAll('Module', { course_id: { $in: courseIds } }).map((m) => m.id);
+  const lessonIds = findAll('Lesson', { module_id: { $in: moduleIds } }).map((l) => l.id);
+  const assessmentIds = findAll('Assessment', { course_id: { $in: courseIds } }).map((a) => a.id);
+  removeWhere('Question', { $or: [{ lesson_id: { $in: lessonIds } }, { assessment_id: { $in: assessmentIds } }] });
+  removeWhere('Flashcard', { lesson_id: { $in: lessonIds } });
+  removeWhere('Lesson', { id: { $in: lessonIds } });
+  removeWhere('Assessment', { id: { $in: assessmentIds } });
+  removeWhere('Module', { id: { $in: moduleIds } });
+  removeWhere('Course', { id: { $in: courseIds } });
+  removeWhere('Chapter', { playbook_id: { $in: pbIds } });
+  removeWhere('PlaybookVersion', { playbook_id: { $in: pbIds } });
+  removeWhere('Playbook', { id: { $in: pbIds } });
+  persist();
+  return { ok: true, deleted: pbIds.length, kept_out_of_sync: 0 };
+}
+
 const handlers = {
+  deletePlaybooks,
+  processMeeting,
+  publishMeeting,
   processPlaybookExtract,
   processPlaybookStructure,
   generateLessonContent,
@@ -19,7 +50,7 @@ const handlers = {
     throw new ApiError(503, 'Media generation is disabled (MEDIA_PROVIDER=none)');
   },
   // Same contract as the API's submitFinalTest: grade here, never trust the browser's score.
-  async submitFinalTest({ course_id: courseId, answers } = {}, { user }) {
+  async submitFinalTest({ course_id: courseId, answers, today } = {}, { user }) {
     const course = courseId ? findOne('Course', { id: String(courseId) }) : null;
     if (!course || course.status !== 'published') throw notFound('Course not found');
     const pool = await loadFinalTestPool((name, q, sort, limit) => findAll(name, q, sort).slice(0, limit), course.id);
@@ -45,10 +76,7 @@ const handlers = {
 
     let certificateId = null;
     if (result.passed) {
-      const cert = findOne('Certificate', { user_id: user.id, course_id: course.id }) || insert('Certificate', {
-        user_id: user.id, course_id: course.id, course_title: course.title, user_name: user.full_name || user.email,
-        score: result.percentage, completion_date: new Date().toISOString().slice(0, 10), certificate_id: newCertificateId(),
-      }, user.id);
+      const cert = await issueCertificate(store, user, course, result, { today: resolveToday(today), notify });
       certificateId = cert.certificate_id;
     }
     persist();
@@ -60,7 +88,39 @@ const handlers = {
     return {
       valid: true, user_name: cert.user_name, course_title: cert.course_title, score: cert.score,
       completion_date: cert.completion_date, certificate_id: cert.certificate_id,
+      status: certificateStatus(cert, resolveToday()), expires_date: cert.expires_date || '', superseded_by: cert.superseded_by || '',
     };
+  },
+  async getReviewQueue({ today } = {}, { user }) {
+    return loadReviewQueue(store, user, { today: resolveToday(today) });
+  },
+  async submitFlashcardReview({ flashcard_id: flashcardId, quality, today } = {}, { user }) {
+    let saved;
+    try {
+      saved = await recordReview(store, user, { flashcard_id: flashcardId, quality, today: resolveToday(today) });
+    } catch (e) {
+      throw badRequest(e.message);
+    }
+    if (!saved) throw notFound('Flashcard not found');
+    persist();
+    return saved;
+  },
+  async getMyRecertifications({ today } = {}, { user }) {
+    return myRecertifications(store, user, { today: resolveToday(today) });
+  },
+  async getComplianceReport({ today } = {}) {
+    return complianceReport(store, { today: resolveToday(today) });
+  },
+  async waiveRecertification({ id, reason } = {}) {
+    const updated = id ? await waiveRecertification(store, String(id), { reason }) : null;
+    if (!updated) throw notFound('No open recertification with that id');
+    persist();
+    return updated;
+  },
+  async runComplianceChecks({ today } = {}) {
+    const summary = await runComplianceChecks(store, { today: resolveToday(today), notify });
+    persist();
+    return summary;
   },
 };
 

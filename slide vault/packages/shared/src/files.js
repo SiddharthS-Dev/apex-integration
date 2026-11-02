@@ -7,8 +7,8 @@
  * fetch, so the two lists are related but deliberately not the same.
  */
 
-/** Extensions the Dropbox sync will index. Mirrors the API's default. */
-export const SYNCABLE_EXTENSIONS = Object.freeze(['pdf', 'pptx', 'ppt', 'html']);
+/** Extensions the Dropbox sync will index: presentations only (PowerPoint). Mirrors the API's default. */
+export const SYNCABLE_EXTENSIONS = Object.freeze(['pptx', 'ppt']);
 
 /** Every type the catalog knows how to badge. */
 export const DISPLAY_TYPES = Object.freeze(['pdf', 'pptx', 'ppt', 'html', 'docx', 'xlsx', 'mp4']);

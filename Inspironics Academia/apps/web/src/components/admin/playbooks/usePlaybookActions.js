@@ -4,12 +4,14 @@ import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { runPlaybookPipeline } from '@/lib/pipeline';
 
-// Process / re-process / download / delete handlers for the playbook repository.
+// Process / re-process / download / delete handlers for the playbook repository. Deleting goes through
+// deletePlaybooks, which removes chapters and courses too and can keep Dropbox files out of future syncs.
 export default function usePlaybookActions() {
   const queryClient = useQueryClient();
   const [busyIds, setBusyIds] = useState([]);
   const [reprocessTarget, setReprocessTarget] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null); // one playbook, or { bulk: [...playbooks], label }
+  const [keepOutOfSync, setKeepOutOfSync] = useState(true);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['playbooks'] });
   const setBusy = (id, on) => setBusyIds((ids) => (on ? [...ids, id] : ids.filter((x) => x !== id)));
@@ -50,18 +52,26 @@ export default function usePlaybookActions() {
     const target = deleteTarget;
     setDeleteTarget(null);
     if (!target) return;
+    const list = target.bulk || [target];
+    const toastId = toast.loading(`Deleting ${list.length === 1 ? `“${list[0].title}”` : `${list.length} playbooks`}…`);
     try {
-      await api.entities.Playbook.delete(target.id);
-      toast.success(`Deleted “${target.title}”`);
-      refresh();
+      const { data } = await api.functions.invoke('deletePlaybooks', { playbook_ids: list.map((p) => p.id), keep_out_of_sync: keepOutOfSync });
+      const kept = data.kept_out_of_sync ? ` · ${data.kept_out_of_sync} kept out of future syncs` : '';
+      toast.success(`Deleted ${data.deleted === 1 ? `“${list[0].title}”` : `${data.deleted} playbooks`}${kept}`, { id: toastId });
     } catch (err) {
-      toast.error(`Delete failed: ${err?.message || 'Unknown error'}`);
+      toast.error(`Delete failed: ${err?.message || 'Unknown error'}`, { id: toastId });
+    } finally {
+      refresh();
+      queryClient.invalidateQueries({ queryKey: ['hub-courses'] });
     }
   };
 
+  const onDelete = (playbook) => { setKeepOutOfSync(true); setDeleteTarget(playbook); };
+  const onDeleteMany = (playbooks, label) => { if (playbooks.length) { setKeepOutOfSync(true); setDeleteTarget({ bulk: playbooks, label }); } };
+
   return {
-    busyIds, onProcess, onDownload, onDelete: setDeleteTarget,
+    busyIds, onProcess, onDownload, onDelete, onDeleteMany,
     reprocessTarget, setReprocessTarget, confirmReprocess,
-    deleteTarget, setDeleteTarget, confirmDelete,
+    deleteTarget, setDeleteTarget, confirmDelete, keepOutOfSync, setKeepOutOfSync,
   };
 }

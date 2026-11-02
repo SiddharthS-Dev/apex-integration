@@ -472,11 +472,22 @@ export default function DropboxSettings() {
         icon={Folder}
         title="Sync folder"
         action={
-          <Button variant="outline" size="sm" onClick={openPicker} disabled={!connected}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openPicker}
+            disabled={!connected}
+            title={connected ? undefined : 'Connect Dropbox first: the folders come from your Dropbox account'}
+          >
             <FolderOpen className="h-3.5 w-3.5" /> Browse folders
           </Button>
         }
       >
+        {!connected && (
+          <p className="text-sm text-muted-foreground">
+            Connect Dropbox first (button at the top of this page). Then you can browse your Dropbox and choose the SlidesVault folder.
+          </p>
+        )}
         {pickerOpen && (
           <div className="space-y-2 rounded-xl border border-border p-3">
             <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
@@ -532,7 +543,7 @@ export default function DropboxSettings() {
 
         <p className="text-xs text-muted-foreground">
           Files with a{' '}
-          {(status?.supported_extensions ?? ['pdf', 'pptx', 'html']).map((extension, index, all) => (
+          {(status?.supported_extensions ?? ['pptx', 'ppt']).map((extension, index, all) => (
             <span key={extension}>
               <code className="rounded bg-secondary px-1">.{extension}</code>
               {index < all.length - 2 ? ', ' : index === all.length - 2 ? ' or ' : ''}

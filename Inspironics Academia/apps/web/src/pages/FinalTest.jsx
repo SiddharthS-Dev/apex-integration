@@ -12,6 +12,7 @@ import QuizRunner from '@/components/QuizRunner';
 import TestIntroCard from '@/components/quiz/TestIntroCard';
 import TestPageHeader from '@/components/quiz/TestPageHeader';
 import loadTestQuestions from '@/components/quiz/loadTestQuestions';
+import { localDay } from '@/lib/progress';
 
 async function loadFinalTest(courseId) {
   const course = await api.entities.Course.get(courseId);
@@ -69,12 +70,13 @@ export default function FinalTest() {
       const { data: graded } = await api.functions.invoke('submitFinalTest', {
         course_id: course.id,
         answers: r.answers.map(({ question_id, selected }) => ({ question_id, selected })),
+        today: localDay(),
       });
       if (graded.passed) {
         setCertified(true);
         toast.success('Congratulations — your certificate is ready!');
       }
-      ['progress', 'attempts', 'certificates', 'certificate'].forEach((k) => queryClient.invalidateQueries({ queryKey: [k] }));
+      ['progress', 'attempts', 'certificates', 'certificate', 'my-recertifications', 'notifications'].forEach((k) => queryClient.invalidateQueries({ queryKey: [k] }));
     } catch (e) {
       toast.error(e?.message || 'Could not save your result');
     }

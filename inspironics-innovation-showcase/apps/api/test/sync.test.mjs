@@ -300,3 +300,35 @@ test('a flipped plate with an empty back is described on demand, once; curated p
     await h.close()
   }
 })
+
+test('nothing syncs until a folder is chosen, and the whole Dropbox can never be chosen', async () => {
+  const { h, admin } = await setup({ env: { DROPBOX_ROOT_PATH: '' } })
+  try {
+    await assert.rejects(h.services.sync.start({ trigger: 'schedule' }), (e) => e.code === 'DROPBOX_FOLDER_REQUIRED')
+    assert.equal((await admin.json('GET', '/api/dropbox/status')).body.folderChosen, false)
+    assert.equal((await admin.json('POST', '/api/dropbox/sync')).status, 409)
+    assert.equal((await admin.json('PUT', '/api/dropbox/settings', { rootPath: '/' })).status, 400)
+    assert.equal((await h.services.repos.files.counts()).active, undefined, 'nothing was indexed')
+
+    assert.equal((await admin.json('PUT', '/api/dropbox/settings', { rootPath: '/Showcase' })).status, 200)
+    assert.equal((await admin.json('GET', '/api/dropbox/status')).body.folderChosen, true)
+    const run = await h.syncAndWait()
+    assert.equal(run.status, 'success')
+    const names = (await h.services.repos.files.listActive()).map((f) => f.name)
+    assert.equal(run.discovered, 3)
+    assert.ok(!names.includes('outside.jpg'), 'files outside the folder are never touched')
+  } finally {
+    await h.close()
+  }
+})
+
+test('an App Folder app may sync its whole (app) folder', async () => {
+  const { h } = await setup({ env: { DROPBOX_ROOT_PATH: '' } })
+  try {
+    await h.services.dropboxAuth.markAppFolder()
+    const { done } = await h.services.sync.start({ trigger: 'manual' })
+    await done
+  } finally {
+    await h.close()
+  }
+})

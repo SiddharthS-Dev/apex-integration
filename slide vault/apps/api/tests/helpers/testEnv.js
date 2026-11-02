@@ -22,7 +22,10 @@ export const TEST_KEY = Buffer.alloc(32, 7).toString('base64');
 
 export const ADMIN = { email: 'admin@example.com', password: 'test-admin-password' };
 
-/** A config for tests: in-memory database, temp object store, AI off. */
+/**
+ * A config for tests: in-memory database, temp object store, AI off. The library syncs PowerPoint only
+ * by default; the tests exercise every type the pipeline can handle, so they enable all of them.
+ */
 export function testConfig(overrides = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slidesvault-test-'));
   return buildConfig({
@@ -42,6 +45,7 @@ export function testConfig(overrides = {}) {
     DROPBOX_BACKOFF_BASE_MS: '1',
     DROPBOX_BACKOFF_CAP_MS: '4',
     DROPBOX_MAX_CONCURRENT_FILES: '4',
+    DROPBOX_SUPPORTED_EXTENSIONS: 'pdf,pptx,ppt,html',
     AI_ENABLED: 'false',
     OBJECT_STORE_DIR: path.join(dir, 'objects'),
     BOOTSTRAP_ADMIN_EMAIL: ADMIN.email,

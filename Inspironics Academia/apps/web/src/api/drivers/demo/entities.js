@@ -1,5 +1,6 @@
-import { matchesQuery, ruleFor, ruleToQuery, sortRecords } from '@academy/shared';
+import { matchesQuery, onCoursePublished, resolveToday, ruleFor, ruleToQuery, sortRecords } from '@academy/shared';
 import { currentUser, currentUserRow, db, persist, publicUser, replaceTable, table } from '@/api/drivers/demo/store';
+import { notify, store } from '@/api/drivers/demo/backend';
 import { badRequest, clone, forbidden, notFound, nowIso, sanitize, schemaFor, stamp } from '@/api/drivers/demo/records';
 
 // Generic entity handlers with the same row-level security as the API (shared rules in @academy/shared).
@@ -38,6 +39,20 @@ function checkCreate(name, data) {
   if (!allowed(sanitize(name, data), rule)) throw forbidden(`Not allowed to create this ${name}`);
 }
 
+// Action items: an owner who isn't an admin may change only the status of their own item. Any change
+// stamps completed_date when it is done; an admin's change marks the item edited (kept on reprocess).
+// Returns the newly assigned owner's id, if the owner changed.
+const OWNER_FIELDS = new Set(['status']);
+function actionItemPatch(existing, patch, user) {
+  const admin = user?.role === 'admin';
+  if (!admin && Object.keys(patch).some((k) => !OWNER_FIELDS.has(k))) throw forbidden('You can only change the status of your own action items');
+  if (patch.status && patch.status !== existing.status) {
+    patch.completed_date = patch.status === 'done' ? resolveToday() : '';
+  }
+  if (admin) patch.edited = true;
+  return admin && patch.owner_user_id && patch.owner_user_id !== existing.owner_user_id ? patch.owner_user_id : null;
+}
+
 function entityHandler(name) {
   return {
     async list(sort, limit, skip) { await tick(); return query(name, {}, sort, limit, skip); },
@@ -67,8 +82,21 @@ function entityHandler(name) {
       if (!allowed(existing, rule)) throw forbidden(`Not allowed to update this ${name}`);
       const patch = sanitize(name, data, { partial: true });
       if (!allowed({ ...existing, ...patch }, rule)) throw forbidden('Update would move the record outside your access');
+      const assignedTo = name === 'ActionItem' ? actionItemPatch(existing, patch, currentUser()) : null;
+      const wasPublished = existing.status === 'published';
       Object.assign(existing, patch, { updated_date: nowIso() });
       persist();
+      // Same hook as the API: publishing a course starts pending recertifications and announces it.
+      if (name === 'Course' && !wasPublished && existing.status === 'published') {
+        await onCoursePublished(store, clone(existing), { today: resolveToday(), notify });
+        persist();
+      }
+      // Same as the API: a newly assigned owner of a published item hears about it.
+      if (assignedTo && existing.published) {
+        notify(assignedTo, 'action_item_assigned', {
+          task: existing.task, meeting_title: existing.meeting_title, meeting_id: existing.meeting_id, due_date: existing.due_date,
+        }, `action_item_assigned:${existing.id}:${assignedTo}`);
+      }
       return clone(existing);
     },
     async delete(id) {

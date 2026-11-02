@@ -125,8 +125,13 @@ export function loadConfig(env = process.env) {
       appSecret: str(env.DROPBOX_APP_SECRET),
       /** Must be registered character-for-character in the Dropbox App Console. */
       redirectUri: url(env.DROPBOX_REDIRECT_URI, `${publicUrl}/api/dropbox/oauth/callback`),
-      /** Default sync folder; an admin can override it in Settings. '' is the root. */
+      /** Default sync folder; an admin can override it in Settings. '' means none chosen yet. */
       rootPath: normaliseDropboxPath(str(env.DROPBOX_ROOT_PATH)),
+      /**
+       * Syncing the whole Dropbox would index every photo in it, so it is off: nothing syncs until a
+       * folder is chosen. An App Folder app is exempt (it only sees its own folder).
+       */
+      allowFullSync: bool(env.DROPBOX_ALLOW_FULL_SYNC, false),
     },
 
     sync: {

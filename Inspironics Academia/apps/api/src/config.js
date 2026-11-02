@@ -75,6 +75,14 @@ export const config = Object.freeze({
     appSecret: env.DROPBOX_APP_SECRET || '',
     redirectUri: env.DROPBOX_REDIRECT_URI || `http://localhost:${num(env.PORT, 4000)}/api/dropbox/oauth/callback`,
     defaultRoot: env.DROPBOX_SYNC_ROOT || '',
+    // Meeting transcripts can come through a Dropbox app of their own (its own key, secret and
+    // connection). Unset → meetings use the playbooks connection above.
+    meetings: {
+      appKey: env.DROPBOX_MEETINGS_APP_KEY || '',
+      appSecret: env.DROPBOX_MEETINGS_APP_SECRET || '',
+      redirectUri: env.DROPBOX_MEETINGS_REDIRECT_URI
+        || (env.DROPBOX_REDIRECT_URI || `http://localhost:${num(env.PORT, 4000)}/api/dropbox/oauth/callback`).replace(/\/dropbox\/oauth\/callback$/, '/dropbox/meetings/oauth/callback'),
+    },
   },
 
   // Sync scheduler
@@ -86,6 +94,21 @@ export const config = Object.freeze({
   // Content limits
   maxExtractMb: num(env.MAX_EXTRACT_MB, 150),
   maxUploadMb: num(env.MAX_UPLOAD_MB, 50),
+
+  // Email. EMAIL_PROVIDER=log (default: written to the server log, nothing leaves the box),
+  // resend (RESEND_API_KEY) or smtp (SMTP_URL; needs the optional nodemailer package).
+  email: {
+    provider: (env.EMAIL_PROVIDER || 'log').toLowerCase(),
+    from: env.EMAIL_FROM || 'Inspironics Academia <academia@localhost>',
+    resendApiKey: env.RESEND_API_KEY || '',
+    smtpUrl: env.SMTP_URL || '',
+    maxAttempts: Math.max(1, num(env.EMAIL_MAX_ATTEMPTS, 5)),
+  },
+
+  // Daily jobs (review reminders, certificate expiry, recertification reminders) run once a day at
+  // this UTC hour; the check itself is hourly, and dedupe keys keep it to one notice per thing.
+  jobsHourUtc: Math.min(23, Math.max(0, num(env.JOBS_HOUR_UTC, 3))),
+  jobsEnabled: bool(env.JOBS_ENABLED, true),
 });
 
 export function dropboxConfigured() {

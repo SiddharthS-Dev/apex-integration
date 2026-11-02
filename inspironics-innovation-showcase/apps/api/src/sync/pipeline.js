@@ -42,6 +42,13 @@ export function claudeSkillsMeta(meta = {}) {
   return { ...meta, cat: CLAUDE_SKILLS_CATEGORY, tag: undefined, tech, ai: true }
 }
 
+export const FOLDER_REQUIRED = 'DROPBOX_FOLDER_REQUIRED'
+
+/** True when `path` may be synced: a chosen folder, or the root of an App Folder app (or with full sync allowed). */
+export async function folderAllowed(path, { config, dropboxAuth }) {
+  return !!path || config.dropbox.allowFullSync || (await dropboxAuth.isAppFolder())
+}
+
 export class SyncBusyError extends HttpError {
   constructor() {
     super(409, 'A synchronization is already running.', 'SYNC_RUNNING')
@@ -404,9 +411,12 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
       if (!conn) throw new HttpError(409, 'Connect Dropbox before running a sync.', 'DROPBOX_NOT_CONNECTED')
       if (conn.status === 'reauth_required') throw new HttpError(409, 'Reconnect Dropbox before running a sync.', 'DROPBOX_REAUTH')
 
+      const path = await rootPath()
+      if (!(await folderAllowed(path, { config, dropboxAuth }))) {
+        throw new HttpError(409, 'Choose the Dropbox folder to sync first. The whole Dropbox is never synced.', FOLDER_REQUIRED)
+      }
       const lock = await repos.db.tryLock('sync', config.sync.lockTtlSeconds * 1000)
       if (!lock) throw new SyncBusyError()
-      const path = await rootPath()
       const started = Date.now()
       let syncId
       try {

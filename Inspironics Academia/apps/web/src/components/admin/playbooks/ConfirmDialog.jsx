@@ -4,8 +4,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { buttonVariants } from '@/components/ui/button';
 
-// Controlled confirmation dialog. `destructive` switches the confirm button style.
-export default function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel = 'Confirm', destructive, onConfirm }) {
+// Controlled confirmation dialog. `destructive` switches the confirm button style; `children` (e.g. an
+// option checkbox) sit between the description and the buttons.
+export default function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel = 'Confirm', destructive, onConfirm, children }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -13,6 +14,7 @@ export default function ConfirmDialog({ open, onOpenChange, title, description, 
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {description && <AlertDialogDescription>{description}</AlertDialogDescription>}
         </AlertDialogHeader>
+        {children}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction

@@ -7,6 +7,7 @@ import ProfileCard from '@/components/profile/ProfileCard';
 import ProfileStats from '@/components/profile/ProfileStats';
 import ChangePasswordForm from '@/components/profile/ChangePasswordForm';
 import ThemePreference from '@/components/profile/ThemePreference';
+import NotificationPreferences from '@/components/profile/NotificationPreferences';
 
 export default function Profile() {
   const { user, refreshUser, logout } = useAuth();
@@ -24,7 +25,10 @@ export default function Profile() {
       <ProfileStats />
       <div className="grid gap-4 lg:grid-cols-2">
         <ChangePasswordForm user={user} />
-        <ThemePreference />
+        <div className="space-y-4">
+          <ThemePreference />
+          <NotificationPreferences />
+        </div>
       </div>
     </div>
   );

@@ -6,14 +6,17 @@ import { Button } from '@/components/ui/button';
 
 const parentOf = (p) => p.split('/').slice(0, -1).join('/');
 
-export default function FolderBrowser({ initialPath = '', onSelect, saving }) {
+// source: 'playbooks' (default) or 'meetings' — which Dropbox app's folders to list. rootLabel names
+// the top level (the whole Dropbox, or a meetings app's own folder).
+export default function FolderBrowser({ initialPath = '', onSelect, saving, source = 'playbooks', rootLabel = '/ (entire Dropbox)' }) {
   const [path, setPath] = useState(initialPath);
-  const { data: folders = [], isLoading, error } = useQuery({ queryKey: ['dropbox-folders', path], queryFn: () => api.dropbox.listFolders(path) });
+  const list = source === 'meetings' ? api.dropbox.meetings.listFolders : api.dropbox.listFolders;
+  const { data: folders = [], isLoading, error } = useQuery({ queryKey: ['dropbox-folders', source, path], queryFn: () => list(path) });
   return (
     <div className="rounded-xl border border-border">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Button size="sm" variant="ghost" disabled={!path} onClick={() => setPath(parentOf(path))} aria-label="Parent folder"><ArrowUp /></Button>
-        <code className="flex-1 truncate font-mono text-xs">{path || '/ (entire Dropbox)'}</code>
+        <code className="flex-1 truncate font-mono text-xs">{path || rootLabel}</code>
         <Button size="sm" disabled={saving} onClick={() => onSelect(path)}>Use this folder</Button>
       </div>
       <div className="max-h-64 overflow-y-auto p-1">
