@@ -5,9 +5,11 @@ import { sha256Hex } from '../lib/crypto.js';
 import { log } from '../lib/logger.js';
 import { deleteSetting, getSetting, setSetting } from '../repo/settings.js';
 import { rpc } from './client.js';
-import { DropboxError, saveConnection, tokenRequest } from './connection.js';
+import { DropboxError, accountConfig, saveConnection, tokenRequest } from './connection.js';
 
 // OAuth 2 authorization-code flow (offline access → refresh token).
+//
+// Works on the current account (see connection.js): the playbooks app, or the meetings app.
 //
 // IMPORTANT: DROPBOX_REDIRECT_URI (config.dropbox.redirectUri) must be registered in the Dropbox App
 // Console ("OAuth 2 → Redirect URIs") character-for-character — scheme, host, port, path, no trailing
@@ -47,21 +49,22 @@ async function purgeExpiredStates() {
 
 export function authorizeUrl(state) {
   const u = new URL(AUTHORIZE_URL);
-  u.searchParams.set('client_id', config.dropbox.appKey);
+  const { appKey, redirectUri } = accountConfig();
+  u.searchParams.set('client_id', appKey);
   u.searchParams.set('response_type', 'code');
   u.searchParams.set('token_access_type', 'offline'); // offline → Dropbox issues a refresh token
-  u.searchParams.set('redirect_uri', config.dropbox.redirectUri);
+  u.searchParams.set('redirect_uri', redirectUri);
   u.searchParams.set('state', state);
   return u.toString();
 }
 
 // Exchanges the code, reads the account, stores the encrypted connection. Returns public account info.
 export async function completeAuthorization(code, userId) {
-  const tokens = await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: config.dropbox.redirectUri });
+  const tokens = await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: accountConfig().redirectUri });
   if (!tokens.refresh_token) throw new DropboxError('Dropbox did not return a refresh token', { code: 'no_refresh_token' });
   const account = await rpc('users/get_current_account', null, { token: tokens.access_token, pathRoot: false });
   const conn = await saveConnection({ refreshToken: tokens.refresh_token, account, rootInfo: account.root_info, userId });
-  log.info('dropbox.connected', { account_id: conn.account_id, team: conn.team, by: userId });
+  log.info('dropbox.connected', { app: accountConfig().account, account_id: conn.account_id, team: conn.team, by: userId });
   return conn;
 }
 
