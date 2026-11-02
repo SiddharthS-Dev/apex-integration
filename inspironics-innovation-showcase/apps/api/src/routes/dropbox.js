@@ -13,7 +13,7 @@ import { normaliseDropboxPath } from '../config.js'
 import { HttpError, badRequest, notFound, route } from '../lib/http.js'
 import { requireAdmin, requireAuth } from '../middleware/auth.js'
 import { DropboxApiError } from '../dropbox/client.js'
-import { SETTINGS_ROOT_KEY, THUMB_SIZE } from '../sync/pipeline.js'
+import { SETTINGS_ROOT_KEY, THUMB_SIZE, folderAllowed } from '../sync/pipeline.js'
 
 const PREVIEW_SIZE = 'w2048h1536'
 
@@ -34,6 +34,8 @@ export function dropboxRoutes({ config, repos, dropbox, dropboxAuth, sync, sched
         connected: !!conn,
         status: conn?.status || 'disconnected',
         rootPath: (await sync.rootPath()) || '/',
+        // false until an admin picks the folder: nothing syncs before then.
+        folderChosen: await folderAllowed(await sync.rootPath(), { config, dropboxAuth }),
         appFolder: await dropboxAuth.isAppFolder(),
         lastSync: await repos.syncLog.latest(),
         running: sync.progress(),
@@ -146,6 +148,9 @@ export function dropboxRoutes({ config, repos, dropbox, dropboxAuth, sync, sched
       const raw = req.body?.rootPath
       if (typeof raw !== 'string' || raw.length > 1000) throw badRequest('rootPath must be a string.')
       const path = normaliseDropboxPath(raw)
+      if (!(await folderAllowed(path, { config, dropboxAuth }))) {
+        throw badRequest('Choose the Innovation Showcase folder, not the whole Dropbox. Syncing the whole Dropbox would index every photo in it.')
+      }
       if (path) {
         try {
           const meta = await dropbox.rpc('files/get_metadata', { path })

@@ -3,7 +3,7 @@
  * SYNC_ON_STARTUP is set. Every instance runs a scheduler; the sync's DB lock
  * makes all but one of them a no-op, so there is no leader to elect.
  */
-import { SyncBusyError } from './pipeline.js'
+import { FOLDER_REQUIRED, SyncBusyError } from './pipeline.js'
 
 export function startScheduler({ config, sync, log }) {
   if (!config.sync.enabled) {
@@ -17,6 +17,7 @@ export function startScheduler({ config, sync, log }) {
     } catch (error) {
       if (error instanceof SyncBusyError) log.debug('Scheduled sync skipped: another run holds the lock')
       else if (error.code === 'DROPBOX_NOT_CONNECTED') log.debug('Scheduled sync skipped: Dropbox not connected')
+      else if (error.code === FOLDER_REQUIRED) log.debug('Scheduled sync skipped: no sync folder chosen')
       else log.warn('Scheduled sync could not start', { error: error.message })
     }
   }
