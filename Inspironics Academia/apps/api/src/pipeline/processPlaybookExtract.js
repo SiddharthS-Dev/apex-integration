@@ -1,8 +1,10 @@
+import { chapterChanges, openRecertifications } from '@academy/shared';
 import { aiEnabled, invokeLLM } from '../ai/claude.js';
 import { loadPlaybookBytes } from '../files/playbookSource.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { log as defaultLog } from '../lib/logger.js';
 import { entities } from '../repo/entities.js';
+import { store } from '../repo/store.js';
 import {
   MAX_CHAPTER_CHARS, buildChapters, countSections, detectChapters, detectNumberedHeadings, extractTocFromText,
   findStart, heuristicTitle, needsTitleCorrection, parseTocSummary, splitContent, summarizeChapter, tocSkip,
@@ -12,10 +14,11 @@ import { asHttpError, errMsg, pick, pipelineError, withPlaybookLock } from './ut
 
 // processPlaybookExtract — load a playbook file (PDF / DOCX), extract its text, detect chapters,
 // enrich with metadata + summaries (LLM when enabled, heuristics otherwise) and persist Chapters
-// plus a PlaybookVersion snapshot.
+// plus a PlaybookVersion snapshot. When the new snapshot materially differs from the previous one,
+// learners certified on the playbook are flagged for recertification (see openRecertifications).
 //
 // Payload: { playbook_id }
-// Returns: { ok: true, stage: 'extract', playbook_id, chapter_count }
+// Returns: { ok: true, stage: 'extract', playbook_id, chapter_count, changes?, recertification? }
 
 const TOC_LLM_SAMPLE = 15000;
 const FALLBACK_SAMPLE = 200000;
@@ -365,11 +368,30 @@ async function run(playbook, log) {
     }));
     await sr.Chapter.bulkCreate(records);
 
-    // 6. Version snapshot -------------------------------------------------------------------
+    const [previous] = await sr.PlaybookVersion.filter({ playbook_id: playbookId }, '-created_date', 1);
     const n = (await sr.PlaybookVersion.count({ playbook_id: playbookId })) + 1;
+    const versionLabel = `v${n}${version ? ` (${version})` : ''}`;
+
+    // 6. Recertification ---------------------------------------------------------------------
+    // Before the snapshot is written, so a failure here leaves the previous version to compare
+    // against when the run is retried.
+    let changes;
+    let recertification;
+    if (previous) {
+      changes = chapterChanges(parseSnapshot(previous.chapters_snapshot), records);
+      recertification = await openRecertifications(store, {
+        playbook: { ...playbook, title }, fromVersion: previous.version_label, toVersion: versionLabel, changes,
+      });
+      log.info('pipeline.extract.changes', {
+        playbook_id: playbookId, added: changes.added.length, removed: changes.removed.length,
+        modified: changes.modified.length, ...recertification,
+      });
+    }
+
+    // 7. Version snapshot -------------------------------------------------------------------
     await sr.PlaybookVersion.create({
       playbook_id: playbookId,
-      version_label: `v${n}${version ? ` (${version})` : ''}`,
+      version_label: versionLabel,
       title,
       author,
       organization,
@@ -381,7 +403,7 @@ async function run(playbook, log) {
     });
 
     await sr.Playbook.update(playbookId, { status: 'processed', error: '' });
-    return { ok: true, stage: 'extract', playbook_id: playbookId, chapter_count: records.length };
+    return { ok: true, stage: 'extract', playbook_id: playbookId, chapter_count: records.length, changes, recertification };
   } catch (e) {
     const message = errMsg(e);
     log.error('pipeline.extract.failed', { playbook_id: playbookId, error: message });
@@ -389,5 +411,14 @@ async function run(playbook, log) {
       await sr.Playbook.update(playbookId, { status: 'failed', error: message });
     } catch { /* ignore */ }
     throw asHttpError(e);
+  }
+}
+
+function parseSnapshot(json) {
+  try {
+    const list = JSON.parse(json || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
   }
 }

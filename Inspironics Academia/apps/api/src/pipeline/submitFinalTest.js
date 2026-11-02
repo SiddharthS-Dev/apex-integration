@@ -1,12 +1,15 @@
-import { gradeFinalTest, loadFinalTestPool, newCertificateId } from '@academy/shared';
+import { gradeFinalTest, issueCertificate, loadFinalTestPool } from '@academy/shared';
 import { withLock } from '../db/locks.js';
 import { badRequest, conflict, notFound, unauthorized } from '../lib/errors.js';
 import { entities } from '../repo/entities.js';
+import { store } from '../repo/store.js';
+import { notify } from '../notify/index.js';
 
 // submitFinalTest — grades a learner's final course test and, on a pass, issues the certificate.
 //
 // Learners cannot create Certificate records themselves (RLS), so this is the only way one is made:
-// the score comes from the server's own copy of the questions, never from the browser.
+// the score comes from the server's own copy of the questions, never from the browser. Issuing also
+// completes an open recertification for the course's playbook (see issueCertificate).
 //
 // Payload: { course_id, answers: [{ question_id, selected }] }   (signed-in user)
 // Returns: { score, total, percentage, passed, passing_score, certificate_id }
@@ -57,12 +60,7 @@ async function record(user, course, assessment, result) {
 
   let certificateId = null;
   if (result.passed) {
-    const cert = await entities.Certificate.findOne({ user_id: user.id, course_id: course.id })
-      || await entities.Certificate.create({
-        user_id: user.id, course_id: course.id, course_title: course.title,
-        user_name: user.full_name || user.email, score: result.percentage,
-        completion_date: new Date().toISOString().slice(0, 10), certificate_id: newCertificateId(),
-      }, opts);
+    const cert = await issueCertificate(store, user, course, result, { notify });
     certificateId = cert.certificate_id;
   }
   return { ...result, certificate_id: certificateId };
