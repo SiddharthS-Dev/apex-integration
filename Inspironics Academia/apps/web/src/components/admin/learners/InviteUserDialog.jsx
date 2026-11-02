@@ -5,7 +5,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import InviteForm from '@/components/admin/learners/InviteForm';
 import InviteResult from '@/components/admin/learners/InviteResult';
 
-// No email service: the API returns a one-time temporary password the admin hands over.
+// The API emails the new user a set-password link when email is configured; either way it returns a
+// one-time temporary password the admin can hand over.
 export default function InviteUserDialog() {
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState(null);
@@ -23,8 +24,10 @@ export default function InviteUserDialog() {
           <DialogTitle>{result ? 'User invited' : 'Invite user'}</DialogTitle>
           <DialogDescription>
             {result
-              ? 'Share these sign-in details with the new user through a trusted channel.'
-              : 'Creates the account and a temporary password for you to share.'}
+              ? result.emailSent
+                ? 'An invitation email with a link to set a password is on its way.'
+                : 'Share these sign-in details with the new user through a trusted channel.'
+              : 'Creates the account and emails an invitation when email is configured.'}
           </DialogDescription>
         </DialogHeader>
         {result

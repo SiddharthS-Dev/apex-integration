@@ -11,6 +11,8 @@ export const DEFAULT_CONFIG = Object.freeze({
   registration_open: false,
   google_enabled: false,
   max_upload_mb: 50,
+  email_enabled: false,
+  email_provider: 'log',
   demo: false,
 });
 

@@ -157,7 +157,7 @@ export function upcomingItems({ rows = [], schedules = [], courses = [] }) {
       when: due <= today ? `${count} card${count === 1 ? '' : 's'} due today` : `Next review ${formatDay(due)}`,
       due: due <= today,
       sort: `1${due}`,
-      to: `/courses/${courseId}`,
+      to: '/review',
     });
   }
   return items.sort((a, b) => a.sort.localeCompare(b.sort));

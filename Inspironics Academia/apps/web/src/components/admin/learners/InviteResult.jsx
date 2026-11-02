@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { AlertTriangle, Check, Copy } from 'lucide-react';
+import { AlertTriangle, Check, Copy, MailCheck } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
@@ -19,6 +19,12 @@ export default function InviteResult({ result, onDone }) {
   return (
     <div className="space-y-4">
       <div className="text-sm">Email: <span className="font-medium">{result.email}</span></div>
+      {result.emailSent && (
+        <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+          <MailCheck className="w-4 h-4" />
+          <AlertDescription>Invitation email sent. The temporary password below also works if the email doesn't arrive.</AlertDescription>
+        </Alert>
+      )}
       <div className="space-y-1.5">
         <div className="text-sm font-medium">Temporary password</div>
         <div className="flex items-center gap-2">

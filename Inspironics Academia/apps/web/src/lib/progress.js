@@ -33,21 +33,8 @@ export async function markLessonComplete(api, { user, courseId, lessonId, totalL
   return api.entities.CourseProgress.create({ user_id: user.id, course_id: courseId, ...data });
 }
 
-// SM-2 spaced repetition. quality: 0–5.
-export function sm2(schedule = {}, quality) {
-  let ease = schedule.ease_factor ?? 2.5;
-  let reps = schedule.reps ?? 0;
-  let interval = schedule.interval_days ?? 0;
-  if (quality < 3) {
-    reps = 0;
-    interval = 1;
-  } else {
-    reps += 1;
-    interval = reps === 1 ? 1 : reps === 2 ? 6 : Math.round(interval * ease);
-  }
-  ease = Math.max(1.3, ease + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)));
-  const today = new Date();
-  const due = new Date(today.getTime() + interval * 86_400_000);
-  const iso = (d) => d.toISOString().slice(0, 10);
-  return { ease_factor: Number(ease.toFixed(2)), reps, interval_days: interval, due_date: iso(due), last_reviewed: iso(today) };
+// The learner's own calendar day (YYYY-MM-DD). Review queues and due dates follow their midnight,
+// so functions that schedule are sent this rather than the UTC date.
+export function localDay(date = new Date()) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
