@@ -4,9 +4,14 @@
  * Kept separate from title resolution because they fail differently: a wrong
  * title is visible and damaging, a wrong tag is cosmetic. So this service is
  * allowed to return nothing at all and the sync carries on.
+ *
+ * The AI reads the deck when it is configured. When it is not, or when it names
+ * no domain, the library's own vocabulary decides (keywordClassifier.js), so a
+ * library without an API key is still filed by domain. `source` says which.
  */
 
 import { DOMAIN_NAMES } from '@slidesvault/shared';
+import { classifyByKeywords } from './keywordClassifier.js';
 
 const SYSTEM =
   'You classify internal presentations for a company knowledge library. ' +
@@ -21,19 +26,39 @@ export class DocumentAnalysisService {
     this.domains = domains;
   }
 
+  /** Whether the AI classifier is configured (keyword classification is always available). */
   get available() {
     return Boolean(this.ai?.available);
   }
 
   /**
    * @param {import('../content-extraction/ContentExtractionService.js').NormalizedDocument} document
-   * @param {{title: string}} context
-   * @returns {Promise<object|null>} null when classification was not possible
+   * @param {{title: string, path?: string}} context  path: the Dropbox path, whose folders are a strong hint
+   * @returns {Promise<object|null>} null when nothing could be classified
    */
-  async classify(document, { title }) {
+  async classify(document, { title, path = '' }) {
     const text = (document?.text ?? '').trim();
-    if (!this.available || !text) return null;
+    const ai = this.available && text ? await this.#classifyWithAi(text, title) : null;
+    if (ai?.primary_domain) return { ...ai, source: 'ai' };
 
+    const kw = classifyByKeywords({ text, title, path });
+    if (!kw.primary_domain) return ai ? { ...ai, source: 'ai' } : null;
+    // The AI's reading (summary, objectives) is kept even when only the keywords found a domain.
+    return {
+      summary: '',
+      category: '',
+      keywords: [],
+      learning_objectives: [],
+      ...(ai || {}),
+      primary_domain: kw.primary_domain,
+      sub_domain: ai?.sub_domain || kw.sub_domain,
+      tags: ai?.tags?.length ? ai.tags : kw.tags,
+      confidence: ai ? Math.min(ai.confidence, kw.confidence) : kw.confidence,
+      source: 'keywords',
+    };
+  }
+
+  async #classifyWithAi(text, title) {
     const prompt =
       `Title: ${title}\n\n` +
       `Content:\n---\n${text.slice(0, 8000)}\n---\n\n` +

@@ -160,7 +160,7 @@ export class DropboxSyncService {
           });
           continue;
         }
-        work.push({ metadata, current, decision });
+        work.push({ metadata, current, decision, rootFolder });
       }
 
       /* ----------------------------- 3. process, with bounded concurrency */
@@ -270,7 +270,7 @@ export class DropboxSyncService {
    * Each stage is allowed to come up empty; only a failure to write the record
    * counts as a failed file.
    */
-  async #processFile({ metadata, current, decision }, log) {
+  async #processFile({ metadata, current, decision, rootFolder = '' }, log) {
     const started = process.hrtime.bigint();
     const created = !current;
 
@@ -320,7 +320,9 @@ export class DropboxSyncService {
         currentTitle: current?.title,
         titleSource: current?.title_source,
       });
-      const needsContent = needsTitle || !current?.primary_domain || decision.action === 'update';
+      const manual = current?.classified_by === 'manual';
+      const needsClassifying = !manual && (created || !current?.primary_domain || decision.action === 'update');
+      const needsContent = needsTitle || needsClassifying;
 
       let document = null;
       if (needsContent && this.#isDownloadable(metadata)) {
@@ -355,17 +357,26 @@ export class DropboxSyncService {
       }
 
       /* ------------------------------------------------- classification */
-      if (document && this.analysis?.available && (created || !current?.primary_domain || decision.action === 'update')) {
-        const classification = await this.analysis.classify(document, { title: patch.title });
-        if (classification) {
+      // AI when configured, the library's vocabulary otherwise (see DocumentAnalysisService). A domain
+      // an admin set by hand is never overwritten. Every attempt is dated, so a deck with nothing to
+      // classify by is not reprocessed on every run.
+      if (needsClassifying && this.analysis) {
+        // Folders inside the sync folder are a filing hint; the sync folder's own name is not.
+        const path = pathWithin(metadata.pathDisplay || metadata.path || '', rootFolder);
+        const classification = await this.analysis.classify(document ?? {}, { title: patch.title, path });
+        patch.classified_at = new Date().toISOString();
+        patch.classified_by = classification?.source || 'none';
+        if (classification?.primary_domain) {
           patch.primary_domain = classification.primary_domain;
           patch.sub_domain = classification.sub_domain;
-          patch.category = classification.category;
-          patch.tags_json = JSON.stringify(classification.tags);
-          patch.keywords_json = JSON.stringify(classification.keywords);
-          patch.learning_objectives_json = JSON.stringify(classification.learning_objectives);
-          patch.ai_summary = classification.summary;
-          patch.description = classification.summary;
+          if (classification.category) patch.category = classification.category;
+          patch.tags_json = JSON.stringify(classification.tags || []);
+          if (classification.keywords?.length) patch.keywords_json = JSON.stringify(classification.keywords);
+          if (classification.learning_objectives?.length) patch.learning_objectives_json = JSON.stringify(classification.learning_objectives);
+          if (classification.summary) {
+            patch.ai_summary = classification.summary;
+            patch.description = classification.summary;
+          }
           patch.ai_confidence = classification.confidence;
         }
       }
@@ -426,6 +437,13 @@ export class DropboxSyncService {
   }
 }
 
+/** `path` relative to `root` (case-insensitive, as Dropbox paths are), or `path` when outside it. */
+export function pathWithin(path, root) {
+  const r = String(root || '').replace(/\/+$/, '');
+  if (!r) return path;
+  return path.toLowerCase().startsWith(`${r.toLowerCase()}/`) ? path.slice(r.length) : path;
+}
+
 /**
  * The incremental-sync decision (spec §24/§25).
  *
@@ -449,6 +467,8 @@ export function decideWork(metadata, current, { force = false } = {}) {
   if (!current.thumbnail_url && supportsThumbnail(metadata.extension || current.extension)) {
     return { action: 'update', reason: 'missing_thumbnail' };
   }
+  // Never classified (indexed before classification could run, e.g. with the AI off): once.
+  if (!current.primary_domain && !current.classified_at) return { action: 'update', reason: 'unclassified' };
   return { action: 'skip', reason: 'unchanged' };
 }
 
