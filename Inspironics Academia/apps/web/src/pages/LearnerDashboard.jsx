@@ -6,6 +6,8 @@ import ContinueLearning from '@/components/dashboard/ContinueLearning';
 import LearningProgress from '@/components/dashboard/LearningProgress';
 import RecommendedCourses, { pickRecommended } from '@/components/dashboard/RecommendedCourses';
 import QuickActions from '@/components/dashboard/QuickActions';
+import DailyReviewCard from '@/components/dashboard/DailyReviewCard';
+import ActionItemsCard from '@/components/dashboard/ActionItemsCard';
 import Achievements from '@/components/dashboard/Achievements';
 import Upcoming from '@/components/dashboard/Upcoming';
 import RecentActivity from '@/components/dashboard/RecentActivity';
@@ -74,6 +76,8 @@ export default function LearnerDashboard() {
           </Reveal>
         </div>
         <Reveal delay={0.1} className="grid gap-4 sm:gap-5 md:grid-cols-2 xl:grid-cols-1 min-w-0">
+          <DailyReviewCard />
+          <ActionItemsCard />
           <QuickActions isAdmin={isAdmin} />
           <Achievements streak={streak} items={milestones(stats, streak)} />
           <Upcoming items={upcomingItems({ rows, schedules, courses })} />

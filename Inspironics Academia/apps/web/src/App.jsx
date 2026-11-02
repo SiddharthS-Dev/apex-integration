@@ -29,6 +29,7 @@ import CertificateVerify from '@/pages/CertificateVerify';
 import Playbooks from '@/pages/Playbooks';
 import BookmarkList from '@/pages/BookmarkList';
 import Profile from '@/pages/Profile';
+import DailyReview from '@/pages/DailyReview';
 
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import PlaybookImport from '@/pages/admin/PlaybookImport';
@@ -39,6 +40,10 @@ import AdminCourseEditor from '@/pages/admin/AdminCourseEditor';
 import AdminQuestions from '@/pages/admin/AdminQuestions';
 import AdminLearners from '@/pages/admin/AdminLearners';
 import Integrations from '@/pages/admin/Integrations';
+import AdminCompliance from '@/pages/admin/AdminCompliance';
+import Meetings from '@/pages/Meetings';
+import MeetingDetail from '@/pages/MeetingDetail';
+import MyActionItems from '@/pages/MyActionItems';
 
 // Under Apex the sign-in is Apex's (one account opens every platform), so this app's own login and
 // register hand the browser over to it, and so does a protected page reached signed out.
@@ -69,6 +74,10 @@ export default function App() {
               <Route path="/playbooks" element={<Playbooks />} />
               <Route path="/bookmarks" element={<BookmarkList />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/review" element={<DailyReview />} />
+              <Route path="/meetings" element={<Meetings />} />
+              <Route path="/meetings/:meetingId" element={<MeetingDetail />} />
+              <Route path="/action-items" element={<MyActionItems />} />
 
               {/* Admin */}
               <Route path="/admin/playbooks" element={<AdminGuard><PlaybookImport /></AdminGuard>} />
@@ -80,6 +89,7 @@ export default function App() {
               <Route path="/admin/questions" element={<AdminGuard><AdminQuestions /></AdminGuard>} />
               <Route path="/admin/learners" element={<AdminGuard><AdminLearners /></AdminGuard>} />
               <Route path="/admin/integrations" element={<AdminGuard><Integrations /></AdminGuard>} />
+              <Route path="/admin/compliance" element={<AdminGuard><AdminCompliance /></AdminGuard>} />
 
               {/* Learner */}
               <Route path="/courses" element={<CourseCatalog />} />

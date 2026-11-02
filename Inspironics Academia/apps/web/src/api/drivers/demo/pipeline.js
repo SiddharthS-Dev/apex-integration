@@ -1,3 +1,5 @@
+import { chapterChanges, openRecertifications, resolveToday } from '@academy/shared';
+import { store } from '@/api/drivers/demo/backend';
 import { badRequest } from '@/api/drivers/demo/records';
 import { findAll, insert, mustGet, patch, persist, removeWhere, sleep } from '@/api/drivers/demo/service';
 
@@ -39,14 +41,27 @@ export async function processPlaybookExtract({ playbook_id: id } = {}, { user })
     status: 'processed', progress: 50, chapter_count: chapters.length, toc_summary: toc, version,
     author: playbook.author || 'Unknown author (demo)', organization: playbook.organization || 'Inspironics',
   });
-  const snapshots = findAll('PlaybookVersion', { playbook_id: id }).length;
+  const versions = findAll('PlaybookVersion', { playbook_id: id }, '-created_date');
+  const snapshots = versions.length;
+  const label = `${version} · extraction ${snapshots + 1}`;
   insert('PlaybookVersion', {
-    playbook_id: id, version_label: `${version} · extraction ${snapshots + 1}`, title: playbook.title, author: playbook.author,
+    playbook_id: id, version_label: label, title: playbook.title, author: playbook.author,
     organization: playbook.organization, chapter_count: chapters.length, toc_summary: toc, file_name: playbook.file_name,
     file_size: playbook.file_size, chapters_snapshot: JSON.stringify(chapters),
   }, user.id);
+
+  // Like the API: a material change against the previous snapshot sends certified learners to recertify.
+  let recertification = null;
+  if (versions[0]) {
+    let previous = [];
+    try { previous = JSON.parse(versions[0].chapters_snapshot || '[]'); } catch { /* unreadable snapshot */ }
+    const changes = chapterChanges(previous, chapters);
+    recertification = await openRecertifications(store, {
+      playbook: mustGet('Playbook', id), fromVersion: versions[0].version_label, toVersion: label, changes, today: resolveToday(),
+    });
+  }
   persist();
-  return { ok: true, stage: 'extract', playbook_id: id, chapter_count: chapters.length };
+  return { ok: true, stage: 'extract', playbook_id: id, chapter_count: chapters.length, recertification };
 }
 
 // Sections look like "1.2 Title. Text…" in the chapter content.

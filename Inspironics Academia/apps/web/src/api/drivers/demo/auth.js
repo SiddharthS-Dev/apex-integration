@@ -144,7 +144,7 @@ export function createAuth() {
       };
       db().users.push(user);
       persist();
-      return { user: publicUser(user), temporary_password: temporaryPassword };
+      return { user: publicUser(user), temporary_password: temporaryPassword, email_sent: false };
     },
 
     async loginHistory({ limit = 100, user_id: userId } = {}) {

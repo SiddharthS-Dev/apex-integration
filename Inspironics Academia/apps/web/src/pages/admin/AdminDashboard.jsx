@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, BookOpen, Cloud, FileQuestion, FileText, LayoutDashboard, Loader2, Users } from 'lucide-react';
+import { AlertTriangle, BookOpen, Cloud, FileQuestion, FileText, LayoutDashboard, Loader2, Presentation, ShieldCheck, Users } from 'lucide-react';
 import { api } from '@/api/client';
 import EmptyState from '@/components/EmptyState';
 import PlaybookGenerationStatus from '@/components/admin/PlaybookGenerationStatus';
@@ -41,6 +41,8 @@ const LINKS = [
   { to: '/admin/courses', label: 'Courses', icon: BookOpen },
   { to: '/admin/questions', label: 'Questions', icon: FileQuestion },
   { to: '/admin/learners', label: 'Learners', icon: Users },
+  { to: '/admin/compliance', label: 'Compliance', icon: ShieldCheck },
+  { to: '/meetings', label: 'Meetings', icon: Presentation },
   { to: '/admin/integrations', label: 'Integrations', icon: Cloud },
 ];
 
