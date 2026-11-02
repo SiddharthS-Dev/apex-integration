@@ -1,14 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  Brain, Check, Cpu, Database, Gauge, GraduationCap, Layers, Lightbulb, Network, Rocket, Scale, ShieldCheck, Target,
+  BookOpen, Brain, Check, Cpu, Database, Gauge, GraduationCap, Layers, Lightbulb, Network, Rocket, Scale, ShieldCheck, Target,
   TrendingUp, Users, Workflow,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { pointsShown, sceneAt } from '@/components/lesson/scenes';
-
-// Type is sized in container units (the player frame is the container), so a slide keeps its
-// proportions at any player width — the way a rendered video would — with a floor for small screens.
-const size = (cqw, min) => ({ fontSize: `max(${min}px, ${cqw}cqw)` });
+import { itemCount, pointsShown, sceneAt } from '@/components/lesson/scenes';
+import { BOUNCE, once, size } from '@/components/lesson/slideKit';
+import { LAYOUT_COMPONENTS } from '@/components/lesson/SlideLayouts';
 
 // All motion is CSS. Entrances (.sa-once) always run to the end, even while the narration is paused,
 // so nothing can be left invisible half-way in; ambient loops pause with the narration (.sa-paused).
@@ -108,10 +106,6 @@ function FitBox({ children, deps }) {
 // Denser slides get tighter type, so four or five points still clear the subtitle band.
 const density = (n) => (n <= 3 ? { text: 1.8, gap: 1, pad: 0.9 } : n === 4 ? { text: 1.6, gap: 0.7, pad: 0.65 } : { text: 1.45, gap: 0.5, pad: 0.5 });
 
-const EASE = 'cubic-bezier(.22,1,.36,1)';
-const BOUNCE = 'cubic-bezier(.34,1.56,.64,1)';
-/** A one-off entrance: runs once and holds its end state (pair it with className "sa-once"). */
-const once = (name, seconds, delay = 0, ease = EASE) => ({ animation: `${name} ${seconds}s ${ease} ${delay}s both` });
 
 /* ------------------------------------------------------------------ background -- */
 
@@ -397,10 +391,11 @@ function StepFlow({ points, shown, accent }) {
 /* ------------------------------------------------------------------------ stage -- */
 
 // The explainer slide for the scene being narrated, as motion graphics: a living backdrop in the
-// scene's accent, the heading revealed word by word, key points building up as the narration reaches
-// them, and an animated illustration of what the scene is about. Everything is real text drawn by the
-// page — the lesson's own words, never an image model's guess. A scene clip, when there is one, is a
-// muted backdrop. Ambient motion pauses with the narration.
+// scene's accent, the heading revealed word by word, and the scene's content in the layout that suits
+// it — key points, steps, a quoted playbook rule, a table, a decision, a timeline, code (see
+// SlideLayouts) — building up as the narration reaches each item. The playbook section it comes from
+// sits under the part number. Everything is real text drawn by the page, never an image model's
+// guess. A scene clip, when there is one, is a muted backdrop. Ambient motion pauses with the narration.
 export default function SlideStage({ scenes, current, playing, onToggle, context = {} }) {
   const active = sceneAt(scenes, current);
   const scene = scenes[active];
@@ -420,6 +415,10 @@ export default function SlideStage({ scenes, current, playing, onToggle, context
   const steps = scene.layout === 'steps' && scene.points.length > 1;
   // Up to three stages read well side by side; more become a vertical timeline.
   const flow = steps && scene.points.length <= 3;
+  const Layout = LAYOUT_COMPONENTS[scene.layout];
+  // Lists and definitions leave room for an illustration; the structured layouts need the full width.
+  const illustrated = (!Layout && !flow) || scene.layout === 'definition';
+  const sourceLabel = [scene.playbook, scene.source].filter(Boolean).join('  ·  ');
   const Visual = VISUALS[active % VISUALS.length];
   const Icon = topicIcon(scene);
   const sceneProgress = Math.min(1, Math.max(0, (current - scene.start) / Math.max(0.1, scene.end - scene.start)));
@@ -480,15 +479,15 @@ export default function SlideStage({ scenes, current, playing, onToggle, context
 
         {/* a slow push-in over the length of the scene, like a camera move */}
         <div className="absolute inset-0" style={{ animation: `sa-zoom ${Math.max(4, scene.end - scene.start)}s linear forwards` }}>
-          {!flow && (
+          {illustrated && (
             <div className="absolute right-[5cqw] top-[12cqw] w-[24cqw] aspect-square">
               <Visual Icon={Icon} accent={accent} />
             </div>
           )}
 
           {/* the slide; the lower quarter is left clear for the subtitles and the controls */}
-          <div className={cn('absolute left-0 top-[9.5cqw] bottom-[25%] px-[6cqw]', flow ? 'right-0' : 'right-[29cqw]')}>
-            <FitBox deps={[active, scene.title, scene.points.length]}>
+          <div className={cn('absolute left-0 top-[9.5cqw] bottom-[25%] px-[6cqw]', illustrated ? 'right-[29cqw]' : 'right-0')}>
+            <FitBox deps={[active, scene.title, itemCount(scene)]}>
               <div
                 className="sa-once flex items-center gap-[1cqw] font-semibold uppercase tracking-[0.2em]"
                 style={{ ...size(1.2, 8), color: accent[1], ...once('sa-slide', 0.5, 0.1) }}
@@ -498,13 +497,21 @@ export default function SlideStage({ scenes, current, playing, onToggle, context
                   style={{ background: `linear-gradient(90deg, ${accent[0]}, ${accent[1]})`, ...once('sa-grow-x', 0.6, 0.15) }}
                 />
                 Part {String(active + 1).padStart(2, '0')}
+                {sourceLabel && (
+                  <span className="ml-[0.6cqw] inline-flex min-w-0 items-center gap-[0.6cqw] normal-case tracking-normal text-white/60">
+                    <BookOpen className="w-[1.4cqw] h-[1.4cqw] min-w-2.5 min-h-2.5 shrink-0" />
+                    <span className="truncate">{sourceLabel}</span>
+                  </span>
+                )}
               </div>
               {/* a long heading wraps; FitBox keeps the points clear of the subtitles */}
               <Title text={scene.title} />
               <div className="mt-[2cqw]">
-                {flow
-                  ? <StepFlow points={scene.points} shown={shown} accent={accent} />
-                  : <PointList points={scene.points} shown={shown} accent={accent} timeline={steps} />}
+                {Layout
+                  ? <Layout scene={scene} shown={shown} accent={accent} />
+                  : flow
+                    ? <StepFlow points={scene.points} shown={shown} accent={accent} />
+                    : <PointList points={scene.points} shown={shown} accent={accent} timeline={steps} />}
               </div>
             </FitBox>
           </div>

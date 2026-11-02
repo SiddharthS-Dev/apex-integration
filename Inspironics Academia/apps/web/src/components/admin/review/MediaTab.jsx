@@ -42,7 +42,8 @@ export default function MediaTab({ lesson, busy, onGenerateMedia, onRebuildSlide
             {scenes.map((s) => (
               <li key={s.index} className="flex items-center gap-2 min-w-0">
                 <span className="tabular-nums text-muted-foreground shrink-0 w-20">{fmt(s.start)}–{fmt(s.end)}</span>
-                <span className="truncate" title={s.title}>{s.index + 1}. {s.title}</span>
+                <span className="truncate" title={s.source ? `${s.title} — ${s.source}` : s.title}>{s.index + 1}. {s.title}</span>
+                {slides && <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{s.layout}</span>}
                 {!slides && <span className="text-amber-600 dark:text-amber-400 shrink-0">(old clip — rebuild for slides)</span>}
               </li>
             ))}
@@ -52,7 +53,7 @@ export default function MediaTab({ lesson, busy, onGenerateMedia, onRebuildSlide
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           {lesson.teaching_script
-            ? 'The video is built scene by scene from the teaching script: each part is narrated over an explainer slide of its key points, with subtitles.'
+            ? 'The video is built scene by scene from the teaching script and the playbook chapter: each part is narrated over a slide in the layout that suits it (steps, a quoted rule, a table, a decision…) with its playbook section, and subtitles.'
             : 'Generate lesson content first to create a narration script.'}
         </p>
         <div className="flex shrink-0 flex-wrap justify-end gap-2">
