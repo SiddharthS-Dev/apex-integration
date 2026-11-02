@@ -4,7 +4,11 @@ import { log as defaultLog } from '../lib/logger.js';
 import { mediaEnabled } from '../media/index.js';
 import { entities } from '../repo/entities.js';
 import generateLessonMedia from './generateLessonMedia.js';
-import { asHttpError, cleanMcq, errMsg, norm, pipelineError, withLessonLock } from './util.js';
+import { loadLessonSource, matchChapter } from './source.js';
+import { structureFor } from './videoPlan.js';
+import { asHttpError, cleanMcq, errMsg, pipelineError, withLessonLock } from './util.js';
+
+export { matchChapter };
 
 // generateLessonContent — generate instructor-led teaching content, 6 MCQs and
 // 5 flashcards for one lesson, grounded in its source playbook chapter. Requires AI.
@@ -18,40 +22,6 @@ import { asHttpError, cleanMcq, errMsg, norm, pipelineError, withLessonLock } fr
 
 const DIFFICULTIES = ['basic', 'intermediate', 'advanced'];
 const COGNITIVE = ['recall', 'understanding', 'application', 'analysis'];
-
-function wordOverlap(a, b) {
-  const wa = new Set(norm(a).split(' ').filter((w) => w.length > 2));
-  const wb = new Set(norm(b).split(' ').filter((w) => w.length > 2));
-  if (!wa.size || !wb.size) return 0;
-  let common = 0;
-  for (const w of wa) if (wb.has(w)) common++;
-  return common / Math.min(wa.size, wb.size);
-}
-
-/** Find the chapter that best matches a lesson's source_chapter (falls back to module source chapters). */
-export function matchChapter(chapters, sourceChapter, moduleSources) {
-  if (!chapters.length) return null;
-  const target = norm(sourceChapter);
-  if (target) {
-    const exact = chapters.find((c) => norm(c.title) === target);
-    if (exact) return exact;
-    const contains = chapters.find((c) => {
-      const t = norm(c.title);
-      return t && (t.includes(target) || target.includes(t));
-    });
-    if (contains) return contains;
-  }
-  const candidates = [sourceChapter, ...String(moduleSources || '').split(',')].map((s) => String(s || '').trim()).filter(Boolean);
-  let best = null;
-  let bestScore = 0;
-  for (const c of chapters) {
-    for (const cand of candidates) {
-      const score = wordOverlap(c.title, cand);
-      if (score > bestScore) { best = c; bestScore = score; }
-    }
-  }
-  return bestScore >= 0.5 ? best : null;
-}
 
 function toText(v, bullet = false) {
   if (Array.isArray(v)) {
@@ -125,12 +95,8 @@ async function generate(payload = {}, ctx = {}) {
   try {
     await sr.Lesson.update(lessonId, { status: 'generating' });
 
-    // Resolve module -> course -> playbook -> chapter.
-    const mod = lesson.module_id ? await sr.Module.get(lesson.module_id) : null;
-    const course = mod?.course_id ? await sr.Course.get(mod.course_id) : null;
-    const playbook = course?.playbook_id ? await sr.Playbook.get(course.playbook_id) : null;
-    const chapters = playbook ? await sr.Chapter.filter({ playbook_id: playbook.id }) : [];
-    const chapter = matchChapter(chapters, lesson.source_chapter || '', mod?.source_chapters || '');
+    const { mod, course, playbook, chapter } = await loadLessonSource(lesson);
+    const structure = structureFor(lesson.video_type);
 
     const sourcePlaybook = lesson.source_playbook || playbook?.title || '';
     const sourceChapter = lesson.source_chapter || chapter?.title || '';
@@ -167,7 +133,7 @@ ${sourceText}
 
 Produce:
 1. "video_title": a clear, engaging title for the lesson video (max 12 words).
-2. "teaching_script": the full narration an instructor would speak, ~8-12 minutes (roughly 1,200-1,700 words). PLAIN TEXT only — no markdown, no headings, no bullet symbols, no stage directions or "[pause]" markers. Structure: hook and objective, core explanation grounded in the playbook, at least one realistic worked scenario, common pitfalls, and a short recap. Use the playbook's terminology and rules precisely.
+2. "teaching_script": the full narration an instructor would speak, ~8-12 minutes (roughly 1,200-1,700 words). PLAIN TEXT only — no markdown, no headings, no bullet symbols, no stage directions or "[pause]" markers. Follow the teaching order of a ${lesson.video_type || 'concept'} lesson: ${structure.flow}. Ground every part in the playbook, include at least one realistic worked scenario, and use the playbook's terminology, rules, step order and numbers precisely. When the playbook states a rule, quote it exactly. The video shows the playbook's procedures, rules, tables and definitions on screen, so walk through them in the order the chapter gives them.
 3. "summary": 3-5 sentence summary of the lesson.
 4. "examples": 2-4 concrete, practical examples or mini case studies (each 2-5 sentences) illustrating the section in real engineering work.
 5. "key_points": 5-8 crisp takeaways, each a single sentence.

@@ -8,11 +8,14 @@ import { mapPool } from '../lib/pool.js';
 import { concatMp3 } from '../media/mp3.js';
 import { generateNarration, generateVideo, mediaEnabled, mediaUnavailableError } from '../media/index.js';
 import { entities } from '../repo/entities.js';
+import { loadLessonSource } from './source.js';
+import { STORYBOARD_SCHEMA, clip, normalizeSlide, storyboardPrompt } from './videoPlan.js';
 import { asHttpError, errMsg, withLessonLock } from './util.js';
 
 // generateLessonMedia — turns a lesson's teaching script into a scene-by-scene explainer video.
-// The script is split into scenes; each scene gets its own narration audio and an explainer slide —
-// a heading and key points written for exactly what that part says — plus subtitle cues timed to it.
+// The script is split into scenes; each scene gets its own narration audio and an explainer slide,
+// designed from the lesson's playbook chapter (see videoPlan.js): the playbook's steps, rules, tables
+// and terms in a layout that suits them, with the section it comes from — plus subtitles timed to it.
 // The narration parts are joined into one track, and lesson.video_scenes records when each scene
 // starts and ends, its slide and its captions, so the player draws the slides in step with the voice.
 // With MEDIA_SCENE_CLIPS=true each scene also gets a generated clip, shown as a muted backdrop.
@@ -114,18 +117,11 @@ export function fallbackTitle(segment, index) {
 }
 
 // ---- slides ---------------------------------------------------------------------------------------
-// Every scene is an explainer slide the player draws as crisp text: a heading, two to four key points
-// in the lesson's own terms, and subtitles of exactly what is being said. Slide layouts:
-//   points — key ideas as a list        steps — an ordered process, drawn as numbered stages
-export const SLIDE_LAYOUTS = ['points', 'steps'];
+// Every scene is an explainer slide the player draws as crisp text — the lesson's and the playbook's
+// own words, never an image model's guess — over subtitles of exactly what is being said. The layouts
+// (points, steps, checklist, rule, definition, compare, decision, table, timeline, code) and their
+// checks live in videoPlan.js.
 const MAX_POINT_CHARS = 110;
-
-const clip = (text, max) => {
-  const t = String(text || '').replace(/\s+/g, ' ').trim();
-  if (t.length <= max) return t;
-  const cut = t.slice(0, max);
-  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), max * 0.6)).replace(/[\s,;:–-]+$/, '')}…`;
-};
 
 const sentencesOf = (text) => String(text || '').match(/[^.!?]+(?:[.!?]+["')\]]*|$)/g)?.map((s) => s.trim()).filter(Boolean) || [];
 
@@ -172,62 +168,22 @@ export function buildCaptions(segment, start, end) {
   });
 }
 
-const STORYBOARD_SCHEMA = {
-  type: 'object',
-  properties: {
-    scenes: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          title: { type: 'string', description: 'Slide heading, 2–7 words' },
-          layout: { type: 'string', enum: SLIDE_LAYOUTS, description: 'steps for an ordered process or sequence, otherwise points' },
-          points: { type: 'array', items: { type: 'string' }, description: '2–4 key points (up to 5 for steps), each at most 14 words' },
-          visual: { type: 'string', description: 'Only when asked: the brief for a silent background clip, 40–100 words' },
-        },
-        required: ['title', 'layout', 'points'],
-      },
-    },
-  },
-  required: ['scenes'],
-};
-
 /**
- * One LLM call turns the narration parts into a slide deck: for each part, the heading and key points
- * a professional explainer would put on screen while that part is spoken.
+ * One LLM call designs the slide deck from the playbook chapter and the narration parts: for each
+ * part, the layout and content a professional explainer would put on screen while it is spoken.
+ * Each slide is normalised and checked against the chapter (normalizeSlide), slide by slide.
  */
-export async function buildStoryboard(lesson, segments, { clips = false } = {}) {
-  const points = keyPoints(lesson);
-  const prompt = [
-    `Design the on-screen slides for a professional explainer video of the engineering lesson "${lesson.video_title || lesson.title}". The narration is split into ${segments.length} consecutive parts; each part is shown as one slide while it is spoken, with subtitles underneath.`,
-    lesson.source_section || lesson.source_chapter ? `Playbook section: ${lesson.source_section || lesson.source_chapter}` : '',
-    lesson.teaching_objective ? `Learning goal: ${lesson.teaching_objective}` : '',
-    points.length ? `Lesson key points:\n- ${points.join('\n- ')}` : '',
-    '',
-    ...segments.map((s, i) => `Part ${i + 1}: ${s}`),
-    '',
-    `Return exactly ${segments.length} slides, in order, one per part.`,
-    'For each slide:',
-    '- title: a 2–7 word heading naming what this part teaches, using the lesson\'s real terms. Never promise a count the slide does not show (no "Five Uses" over three points).',
-    '- layout: "steps" when the part walks through an ordered process, stages or sequence; otherwise "points".',
-    '- points: 2–4 short key points (up to 5 for steps, so a process is shown whole; at most 14 words each) that summarise what THIS part says — its specific terms, components, rules and reasons — in the order they are spoken. Faithful to the narration: no facts, numbers or claims it does not make, no filler, no marketing tone, no trailing full stops.',
-    clips
-      ? '- visual: a silent 8-second background clip for the slide: one abstract technical motion-graphic matching the idea (shapes, flows, structure), with no text, letters, numbers, people or logos in it.'
-      : '- visual: leave empty.',
-  ].filter(Boolean).join('\n');
-  const { scenes } = await invokeLLM({ prompt, schema: STORYBOARD_SCHEMA, maxTokens: 6000, effort: 'medium' });
+export async function buildStoryboard(lesson, segments, { clips = false, source = {} } = {}) {
+  const prompt = storyboardPrompt({ lesson, segments, source, keyPoints: keyPoints(lesson), clips });
+  const { scenes } = await invokeLLM({ prompt, schema: STORYBOARD_SCHEMA, maxTokens: 12000, effort: 'medium' });
   if (!Array.isArray(scenes) || scenes.length !== segments.length) throw new Error(`storyboard returned ${scenes?.length ?? 0} of ${segments.length} scenes`);
+  const sectionFallback = lesson.source_section || lesson.source_chapter || source.chapter || '';
   return scenes.map((s, i) => {
-    const slidePoints = (Array.isArray(s.points) ? s.points : [])
-      .map((p) => clip(String(p).replace(/^[-*•\d.)\s]+/, '').replace(/[.]+$/, ''), MAX_POINT_CHARS))
-      .filter((p) => p.length >= 3)
-      .slice(0, s.layout === 'steps' ? 5 : 4);
-    if (!slidePoints.length) throw new Error(`storyboard slide ${i + 1} has no points`);
+    const slide = normalizeSlide(s, { source: source.text || '', sectionFallback, fallbackPoints: fallbackPoints(segments[i]) });
     const visual = String(s.visual || '').replace(/\s+/g, ' ').trim();
     return {
-      title: clip(s.title, 60) || fallbackTitle(segments[i], i),
-      layout: SLIDE_LAYOUTS.includes(s.layout) ? s.layout : 'points',
-      points: slidePoints,
+      ...slide,
+      title: slide.title || fallbackTitle(segments[i], i),
       prompt: visual.length >= 40 ? `${visual.slice(0, 1200)} ${STYLE}` : buildVideoPrompt(lesson, segments[i]),
     };
   });
@@ -292,6 +248,9 @@ async function generate(payload = {}, ctx = {}) {
   }
 
   const narration = narrationText(lesson.teaching_script || lesson.summary);
+  const { playbook, chapter, version } = await loadLessonSource(lesson);
+  const source = { playbook: playbook?.title || lesson.source_playbook || '', version, chapter: chapter?.title || lesson.source_chapter || '', text: chapter?.content || '' };
+  const sectionLabel = lesson.source_section || source.chapter;
   // A slides-only rebuild needs the script split exactly as it was when the narration was recorded.
   const recorded = slidesOnly ? existingScenes(lesson) : [];
   let segments;
@@ -308,10 +267,10 @@ async function generate(payload = {}, ctx = {}) {
   try {
     await sr.Lesson.update(lessonId, { status: 'generating' });
 
-    let storyboard = segments.map((s, i) => ({ title: fallbackTitle(s, i), layout: 'points', points: fallbackPoints(s), prompt: buildVideoPrompt(lesson, s) }));
+    let storyboard = segments.map((s, i) => ({ title: fallbackTitle(s, i), layout: 'points', points: fallbackPoints(s), source: clip(sectionLabel, 70), prompt: buildVideoPrompt(lesson, s) }));
     if (aiEnabled()) {
       try {
-        storyboard = await buildStoryboard(lesson, segments, { clips: withClips });
+        storyboard = await buildStoryboard(lesson, segments, { clips: withClips, source });
       } catch (e) {
         log.warn('pipeline.media.storyboard_failed', { lesson_id: lessonId, error: errMsg(e) });
       }
@@ -349,12 +308,13 @@ async function generate(payload = {}, ctx = {}) {
       ? storyboard.map((s, i) => {
         const start = +audio.spans[i].start.toFixed(2);
         const end = +audio.spans[i].end.toFixed(2);
+        const slide = { ...s };
+        delete slide.prompt; // the clip brief is spent once the clip exists
         return {
           start,
           end,
-          title: s.title,
-          layout: s.layout,
-          points: s.points,
+          ...slide,
+          playbook: [source.playbook, version].filter(Boolean).join(' · '),
           text: segments[i],
           captions: buildCaptions(segments[i], start, end),
           video_url: filled[i],
