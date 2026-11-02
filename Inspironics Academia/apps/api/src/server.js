@@ -5,6 +5,7 @@ import { purgeExpiredSessions } from './auth/sessions.js';
 import { log } from './lib/logger.js';
 import { createApp } from './app.js';
 import { startScheduler, stopScheduler } from './sync/scheduler.js';
+import { startJobs, stopJobs } from './notify/jobs.js';
 import { SYNC_LOCK } from './sync/pipeline.js';
 import { closeStaleRuns } from './sync/log.js';
 import { isLocked } from './db/locks.js';
@@ -69,6 +70,7 @@ const server = app.listen(config.port, config.host, () => {
 });
 
 startScheduler();
+startJobs();
 
 const sessionSweep = setInterval(() => purgeExpiredSessions().catch(() => {}), 3600_000);
 sessionSweep.unref();
@@ -79,6 +81,7 @@ lessonSweep.unref();
 async function shutdown(signal) {
   log.info('api.shutdown', { signal });
   stopScheduler();
+  stopJobs();
   server.close();
   await closeDb();
   process.exit(0);

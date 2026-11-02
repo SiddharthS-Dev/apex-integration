@@ -82,6 +82,31 @@ const CORE_MIGRATIONS = [
     id: '003_user_avatar',
     sql: () => 'ALTER TABLE users ADD COLUMN avatar_url TEXT',
   },
+  {
+    // Outgoing email, sent by the outbox worker with retries. dedupe_key makes a notification's email
+    // go out at most once however often the job that raised it runs.
+    id: '004_email_outbox',
+    sql: () => `
+      CREATE TABLE IF NOT EXISTS email_outbox (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        to_email TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        text_body TEXT NOT NULL,
+        html_body TEXT,
+        status TEXT NOT NULL DEFAULT 'queued',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        last_error TEXT,
+        dedupe_key TEXT UNIQUE,
+        created_at TEXT NOT NULL,
+        sent_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_email_outbox_due ON email_outbox(status, next_attempt_at);
+      CREATE INDEX IF NOT EXISTS idx_email_outbox_created ON email_outbox(created_at)
+    `,
+  },
 ];
 
 async function existingColumns(db, table) {

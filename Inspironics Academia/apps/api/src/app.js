@@ -10,6 +10,9 @@ import fileRoutes from './files/routes.js';
 import functionRoutes from './functions/routes.js';
 import dropboxRoutes from './dropbox/routes.js';
 import syncRoutes from './sync/routes.js';
+import notifyRoutes from './notify/routes.js';
+import meetingRoutes from './meetings/routes.js';
+import { emailConfigured, emailProvider } from './notify/mailer.js';
 import { metrics } from './http/metrics.js';
 import { cors, errorHandler, notFoundHandler, originCheck, requestLog, securityHeaders } from './http/middleware.js';
 
@@ -38,10 +41,13 @@ export function createApp() {
     registration_open: config.allowRegistration,
     google_enabled: false,
     max_upload_mb: config.maxUploadMb,
+    email_enabled: emailConfigured(),
+    email_provider: emailProvider(),
   }));
 
   // Raw-body upload route must be mounted before the JSON parser.
   app.use('/api', fileRoutes);
+  app.use('/api', meetingRoutes);
   app.use(express.json({ limit: '5mb' }));
 
   app.use('/api/auth', authRoutes);
@@ -49,6 +55,7 @@ export function createApp() {
   app.use('/api/functions', functionRoutes);
   app.use('/api/dropbox', dropboxRoutes);
   app.use('/api/sync', syncRoutes);
+  app.use('/api/notifications', notifyRoutes);
 
   app.use('/api', notFoundHandler);
   app.use(errorHandler);
