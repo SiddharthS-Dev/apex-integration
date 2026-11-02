@@ -26,6 +26,15 @@ export const FUNCTIONS = Object.freeze({
   generateAssessment: { admin: true },
   submitFinalTest: {},
   verifyCertificate: { public: true },
+  getReviewQueue: {},
+  submitFlashcardReview: {},
+  getMyRecertifications: {},
+  getComplianceReport: { admin: true },
+  waiveRecertification: { admin: true },
+  runComplianceChecks: { admin: true },
+  processMeeting: { admin: true },
+  publishMeeting: { admin: true },
+  deletePlaybooks: { admin: true },
 });
 
 export const SESSION_COOKIE = 'iea_session';
