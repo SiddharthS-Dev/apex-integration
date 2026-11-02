@@ -65,7 +65,7 @@ export function createHttpDriver() {
       changePassword: ({ currentPassword, newPassword }) => request('POST', '/auth/change-password', { body: { currentPassword, newPassword } }),
       resetPasswordRequest: (email) => request('POST', '/auth/reset-password-request', { body: { email } }),
       resetPassword: ({ resetToken, newPassword }) => request('POST', '/auth/reset-password', { body: { resetToken, newPassword } }),
-      // Returns { user, temporary_password } — there is no email service, the admin hands it over.
+      // Returns { user, temporary_password, email_sent } — without email the admin hands the password over.
       inviteUser: (email, role, fullName) => request('POST', '/auth/invite', { body: { email, role, full_name: fullName } }),
       loginHistory: (opts = {}) => request('GET', '/auth/login-history', { query: opts }),
     },
@@ -86,6 +86,17 @@ export function createHttpDriver() {
       playbookContentUrl: (playbookId, { download = false } = {}) => `${BASE}/api/playbooks/${playbookId}/content${download ? '?download=1' : ''}`,
     },
 
+    meetings: {
+      // Creates the Meeting (status 'uploaded') from a Teams transcript; run processMeeting next.
+      upload: (file) => request('POST', '/meetings/upload', {
+        raw: true,
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
+      }),
+      // Server path for the original transcript file (admins only).
+      contentUrl: (meetingId) => `${BASE}/api/meetings/${meetingId}/content`,
+    },
+
     dropbox: {
       status: () => request('GET', '/dropbox/status'),
       // Full-page navigation: the API redirects to Dropbox consent, then back to /admin/integrations.
@@ -93,12 +104,27 @@ export function createHttpDriver() {
       disconnect: () => request('POST', '/dropbox/disconnect'),
       updateSettings: (settings) => request('PATCH', '/dropbox/settings', { body: settings }),
       listFolders: (path = '') => request('GET', '/dropbox/folders', { query: { path } }),
+      // Lets files deleted with "keep out of future syncs" sync again → { cleared }
+      clearIgnored: () => request('POST', '/dropbox/ignored/clear'),
+      // The Dropbox app meeting transcripts come through, when one is set up (its own connection).
+      meetings: {
+        status: () => request('GET', '/dropbox/meetings/status'),
+        connect: () => { window.location.href = `${BASE}/api/dropbox/meetings/oauth/start`; },
+        disconnect: () => request('POST', '/dropbox/meetings/disconnect'),
+        listFolders: (path = '') => request('GET', '/dropbox/meetings/folders', { query: { path } }),
+      },
     },
 
     sync: {
       status: () => request('GET', '/sync/status'),
       runNow: () => request('POST', '/sync/run'),
       logs: (limit = 50) => request('GET', '/sync/logs', { query: { limit } }),
+    },
+
+    // Email delivery (admin). In-app notifications are the Notification entity.
+    notifications: {
+      emailStatus: () => request('GET', '/notifications/email/status'),
+      sendTestEmail: (to) => request('POST', '/notifications/email/test', { body: { to } }),
     },
 
     system: {

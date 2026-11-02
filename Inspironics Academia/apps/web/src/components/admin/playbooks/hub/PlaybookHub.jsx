@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, Library, Loader2, Megaphone, X } from 'lucide-react';
+import { AlertTriangle, Library, Loader2, Megaphone, Trash2, X } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
 import {
@@ -143,6 +145,21 @@ export default function PlaybookHub() {
                     </button>
                   );
                 })}
+                {shown.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      // The hub shows the newest 200; deleting a whole view takes every playbook in it.
+                      const every = await api.entities.Playbook.list('-created_date', 10000);
+                      const inView = every.filter((p) => active.match(variantOf(p, actions.busyIds.includes(p.id))));
+                      actions.onDeleteMany(inView, active.label);
+                    }}
+                    className="rounded-full px-3 h-8 text-xs font-medium border border-rose-500/40 text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 inline-flex items-center gap-1.5 transition-colors"
+                    title={`Delete every playbook in “${active.label}”`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete {active.key === 'all' ? 'all' : 'these'}…
+                  </button>
+                )}
               </div>
             </div>
 
@@ -201,12 +218,24 @@ export default function PlaybookHub() {
       <ConfirmDialog
         open={!!actions.deleteTarget}
         onOpenChange={(o) => !o && actions.setDeleteTarget(null)}
-        title="Delete playbook?"
-        description={`“${actions.deleteTarget?.title || ''}” will be permanently removed. This cannot be undone.`}
-        confirmLabel="Delete"
+        title={actions.deleteTarget?.bulk ? `Delete ${actions.deleteTarget.bulk.length} playbooks?` : 'Delete playbook?'}
+        description={actions.deleteTarget?.bulk
+          ? `Every playbook in “${actions.deleteTarget.label}” will be permanently removed, with its chapters and courses. Learner progress and certificates are kept. Files in Dropbox are not touched.`
+          : `“${actions.deleteTarget?.title || ''}” will be permanently removed, with its chapters and courses. Learner progress and certificates are kept. The file in Dropbox is not touched.`}
+        confirmLabel={actions.deleteTarget?.bulk ? `Delete ${actions.deleteTarget.bulk.length}` : 'Delete'}
         destructive
         onConfirm={actions.confirmDelete}
-      />
+      >
+        {(actions.deleteTarget?.bulk || [actions.deleteTarget]).some((p) => p?.source === 'dropbox') && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-border p-3">
+            <Checkbox id="keep-out-of-sync" checked={actions.keepOutOfSync} onCheckedChange={(v) => actions.setKeepOutOfSync(v === true)} className="mt-0.5" />
+            <Label htmlFor="keep-out-of-sync" className="text-sm font-normal leading-snug">
+              Keep out of future Dropbox syncs
+              <span className="block text-xs text-muted-foreground">Untick to let the next sync bring it back if the file is still in the playbooks folder.</span>
+            </Label>
+          </div>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

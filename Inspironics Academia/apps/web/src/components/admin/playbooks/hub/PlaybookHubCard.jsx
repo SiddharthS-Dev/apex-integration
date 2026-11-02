@@ -24,6 +24,16 @@ export const BTN = {
 function CardMenu({ playbook, onDownload, onDelete, onProcess, busy }) {
   const canRun = playbook.status !== 'archived' && (playbook.status !== 'processing' || isStalled(playbook, busy));
   return (
+    <div className="flex items-center gap-0.5">
+    <button
+      type="button"
+      onClick={() => onDelete(playbook)}
+      aria-label={`Delete ${playbook.title}`}
+      title="Delete playbook"
+      className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-500"
+    >
+      <Trash2 className="w-4 h-4" />
+    </button>
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`More actions for ${playbook.title}`}
@@ -42,6 +52,7 @@ function CardMenu({ playbook, onDownload, onDelete, onProcess, busy }) {
         <DropdownMenuItem onSelect={() => onDelete(playbook)} className="text-rose-600 focus:text-rose-600 dark:text-rose-400"><Trash2 /> Delete</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    </div>
   );
 }
 

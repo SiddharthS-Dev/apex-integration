@@ -2,7 +2,9 @@ import { useRef, useState } from 'react';
 import { FileUp, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export default function FileDropZone({ onFile, uploading, label, maxMb = 50, compact = false }) {
+const PLAYBOOK_ACCEPT = '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+export default function FileDropZone({ onFile, uploading, label, maxMb = 50, compact = false, accept = PLAYBOOK_ACCEPT, hint = 'PDF or DOCX' }) {
   const inputRef = useRef(null);
   const [dragging, setDragging] = useState(false);
 
@@ -33,11 +35,11 @@ export default function FileDropZone({ onFile, uploading, label, maxMb = 50, com
         {uploading ? <Loader2 className={cn('animate-spin', compact ? 'w-5 h-5' : 'w-6 h-6')} /> : <FileUp className={compact ? 'w-5 h-5' : 'w-6 h-6'} />}
       </div>
       <div className={cn('font-medium', compact && 'text-sm')}>{label || 'Drop a playbook here or click to browse'}</div>
-      <div className="text-xs text-muted-foreground">PDF or DOCX, up to {maxMb} MB</div>
+      <div className="text-xs text-muted-foreground">{hint}, up to {maxMb} MB</div>
       <input
         ref={inputRef}
         type="file"
-        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        accept={accept}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
