@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { AUDIENCE_LABEL } from '@/lib/categories';
 import { format } from 'date-fns';
 import { Camera, Check, Loader2, Pencil, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -140,6 +141,7 @@ export default function ProfileCard({ user, refreshUser }) {
         <p className="text-sm text-muted-foreground truncate">{user.email}</p>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Badge variant="secondary" className="capitalize">{user.role || 'user'}</Badge>
+          <Badge variant="outline" title="Decides which playbook categories you can see">{AUDIENCE_LABEL[user.audience] || AUDIENCE_LABEL.employee}</Badge>
           {user.created_date && <span>Member since {format(new Date(user.created_date), 'MMMM yyyy')}</span>}
         </div>
       </div>

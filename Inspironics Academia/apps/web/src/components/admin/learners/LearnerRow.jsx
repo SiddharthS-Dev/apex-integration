@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { PILL, formatDate } from '@/components/admin/adminFormat';
+import AudienceSelect from '@/components/admin/learners/AudienceSelect';
 
 const ROLE_COLORS = {
   admin: 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300',
@@ -29,6 +30,7 @@ export default function LearnerRow({ row, onOpen }) {
         </div>
       </TableCell>
       <TableCell><span className={cn(PILL, ROLE_COLORS[role] || ROLE_COLORS.user)}>{role}</span></TableCell>
+      <TableCell><AudienceSelect user={user} /></TableCell>
       <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(user.created_date)}</TableCell>
       <TableCell className="text-right">{row.started}</TableCell>
       <TableCell className="text-right">{row.completed}</TableCell>

@@ -66,7 +66,7 @@ export function createHttpDriver() {
       resetPasswordRequest: (email) => request('POST', '/auth/reset-password-request', { body: { email } }),
       resetPassword: ({ resetToken, newPassword }) => request('POST', '/auth/reset-password', { body: { resetToken, newPassword } }),
       // Returns { user, temporary_password, email_sent } — without email the admin hands the password over.
-      inviteUser: (email, role, fullName) => request('POST', '/auth/invite', { body: { email, role, full_name: fullName } }),
+      inviteUser: (email, role, fullName, audience) => request('POST', '/auth/invite', { body: { email, role, full_name: fullName, audience } }),
       loginHistory: (opts = {}) => request('GET', '/auth/login-history', { query: opts }),
     },
 
