@@ -2,7 +2,7 @@
 // Ported from the legacy processPlaybookExtract: three strategies (TOC-guided, hybrid number,
 // regex headings), pick the one with the most chapters, plus the title-correction heuristic.
 
-export const MAX_CHAPTER_CHARS = 12000;
+export const MAX_CHAPTER_CHARS = 40000;
 export const TOC_SKIP_CHARS = 5000;
 // Top-level heading words. "Clause" and "Article" cover standards and legal-style documents
 // (e.g. an IEEE-style playbook built from "CLAUSE 5 — …" headings).
@@ -303,7 +303,16 @@ export function detectRegexHeadings(text, toc = []) {
       if (cont && cont.length <= 60 && !looksLikeTocLine(cont)) title = `${title} ${cont}`;
     }
     const kwName = kw[0].toUpperCase() + kw.slice(1).toLowerCase();
-    raw.push({ kw: kwName, num, label: `${kwName} ${m[2]}`, title: title || `${kwName} ${m[2]}`, start: m.index, score: headingScore(m[0], sep, title) });
+    let score = headingScore(m[0], sep, title);
+    // "Chapter 3" alone on its line with the title below is a chapter opener.
+    if (!(m[4] || '').trim()) score += 1;
+    // A run of "Chapter N  Title" lines is a list (a part's "Chapters in this part" page,
+    // an overview), not a heading: the real heading comes later.
+    const lineRe = new RegExp(`^[ \\t]*${escapeRe(kw)}[ \\t]+\\S`, 'i');
+    const prevLine = text.slice(lineStartOf(text, Math.max(0, m.index - 1)), Math.max(0, m.index - 1)).trim();
+    const nextLine = (nextLines()[0] || '');
+    if ((m.index > 0 && lineRe.test(prevLine)) || lineRe.test(nextLine)) score -= 3;
+    raw.push({ kw: kwName, num, label: `${kwName} ${m[2]}`, title: title || `${kwName} ${m[2]}`, start: m.index, score });
   }
   if (!raw.length) return [];
 
@@ -370,8 +379,27 @@ export function buildChapters(text, hits) {
   return chapters;
 }
 
-/** Run all strategies; the one with the most chapters wins (ties keep the listed order). */
-export function detectChapters(text, toc = []) {
+/**
+ * Letter-spaced display headings ("C H A P T E R   1", "P A R T   I") → "Chapter 1" / "Part I",
+ * so the heading strategies can see them. Only heading keywords are collapsed; other text is untouched.
+ */
+export function normalizeSpacedHeadings(text) {
+  // The number may be letter-spaced too: "C H A P T E R   1 0", "P A R T   I I I".
+  const re = /^([ \t]*)((?:\p{Lu}[ \t]){2,}\p{Lu})(?:[ \t]{2,}((?:[0-9IVXLCDM][ \t])*[0-9IVXLCDM]))?[ \t]*$/gmu;
+  return String(text || '').replace(re, (all, indent, spaced, num) => {
+    const word = spaced.replace(/[ \t]/g, '');
+    const kw = KEYWORDS.find((k) => k.toLowerCase() === word.toLowerCase());
+    if (!kw) return all;
+    return num ? `${indent}${kw} ${num.replace(/[ \t]/g, '')}` : `${indent}${kw}`;
+  });
+}
+
+/**
+ * Run all strategies; the one with the most chapters wins (ties keep the listed order).
+ * Chapter content comes from the text with letter-spaced headings normalized.
+ */
+export function detectChapters(rawText, toc = []) {
+  const text = normalizeSpacedHeadings(rawText);
   const candidates = [
     { name: 'toc_guided', chapters: toc.length ? buildChapters(text, detectTocGuided(text, toc)) : [] },
     { name: 'hybrid_number', chapters: toc.length ? buildChapters(text, detectHybridNumber(text, toc)) : [] },

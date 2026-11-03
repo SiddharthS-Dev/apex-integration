@@ -12,7 +12,7 @@ function readStorage() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    return parsed && parsed.version === 4 && parsed.tables ? parsed : null;
+    return parsed && parsed.version === 5 && parsed.tables ? parsed : null;
   } catch {
     return null;
   }

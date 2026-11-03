@@ -9,6 +9,7 @@ export default function LearnerTable({ rows, onOpen }) {
           <TableRow>
             <TableHead>User</TableHead>
             <TableHead>Role</TableHead>
+            <TableHead title="Decides which playbook categories and courses they can see">Audience</TableHead>
             <TableHead>Joined</TableHead>
             <TableHead className="text-right">Started</TableHead>
             <TableHead className="text-right">Completed</TableHead>

@@ -35,6 +35,7 @@ export const FUNCTIONS = Object.freeze({
   processMeeting: { admin: true },
   publishMeeting: { admin: true },
   deletePlaybooks: { admin: true },
+  classifyPlaybooks: { admin: true },
 });
 
 export const SESSION_COOKIE = 'iea_session';

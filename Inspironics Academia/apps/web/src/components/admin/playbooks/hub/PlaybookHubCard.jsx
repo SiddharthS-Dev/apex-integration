@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import {
   AlertTriangle, ArrowRight, BookOpen, Download, FileText, GitCompare, Loader2, MonitorPlay, MoreVertical, Play,
-  RotateCcw, ScrollText, Trash2,
+  RotateCcw, ScrollText, Tags, Trash2,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import PlaybookSourceBadge from '@/components/admin/playbooks/PlaybookSourceBadge';
 import { BookStack, ShatteredGlass, StageRing } from './HubVisuals';
 import { READY_LABEL, STAGES, isStalled, stageIndex } from './hubData';
+import { CategoryChip, ClassificationBadges } from '@/components/categories/CategoryChip';
 
 const TONE = { error: 'tone-error', processing: 'tone-processing', queued: 'tone-idle', ready: 'tone-success', archived: 'tone-muted' };
 
@@ -21,7 +22,7 @@ export const BTN = {
   ghost: cn(btn, 'border border-[hsl(var(--glass-line))] bg-background/30 text-foreground/90 hover:bg-[rgb(var(--glow)/0.08)] hover:border-[rgb(var(--glow)/0.4)]'),
 };
 
-function CardMenu({ playbook, onDownload, onDelete, onProcess, busy }) {
+function CardMenu({ playbook, onDownload, onDelete, onProcess, onClassify, busy }) {
   const canRun = playbook.status !== 'archived' && (playbook.status !== 'processing' || isStalled(playbook, busy));
   return (
     <div className="flex items-center gap-0.5">
@@ -45,6 +46,7 @@ function CardMenu({ playbook, onDownload, onDelete, onProcess, busy }) {
         <DropdownMenuItem asChild><Link to={`/admin/studio/${playbook.id}`}><MonitorPlay /> Open Content Studio</Link></DropdownMenuItem>
         <DropdownMenuItem asChild><Link to={`/admin/playbooks/${playbook.id}/versions`}><GitCompare /> Versions</Link></DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onDownload(playbook)}><Download /> Download source</DropdownMenuItem>
+        {onClassify && <DropdownMenuItem onSelect={() => onClassify(playbook)}><Tags /> Classify…</DropdownMenuItem>}
         {canRun && (
           <DropdownMenuItem disabled={busy} onSelect={() => onProcess(playbook)}><RotateCcw /> Process again</DropdownMenuItem>
         )}
@@ -56,7 +58,7 @@ function CardMenu({ playbook, onDownload, onDelete, onProcess, busy }) {
   );
 }
 
-function CardHead({ playbook, menu }) {
+function CardHead({ playbook, menu, category, onClassify }) {
   const path = playbook.source === 'dropbox' && playbook.dropbox_path ? playbook.dropbox_path : playbook.file_name;
   return (
     <div className="relative flex items-start gap-3">
@@ -69,6 +71,14 @@ function CardHead({ playbook, menu }) {
           <PlaybookSourceBadge source={playbook.source} />
           <span className="text-[11px] text-muted-foreground truncate" title={path}>{path}</span>
         </div>
+        {category && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {onClassify
+              ? <button type="button" onClick={() => onClassify(playbook)} title="Change category, department, technologies or skill level" className="rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><CategoryChip category={category} /></button>
+              : <CategoryChip category={category} />}
+            <ClassificationBadges playbook={playbook} max={2} />
+          </div>
+        )}
       </div>
       {menu}
     </div>
@@ -182,8 +192,8 @@ function ReadyBody({ playbook, course, onDownload }) {
   );
 }
 
-export default function PlaybookHubCard({ playbook, variant, course, busy, onProcess, onDownload, onDelete, onShowError }) {
-  const menu = <CardMenu playbook={playbook} busy={busy} onProcess={onProcess} onDownload={onDownload} onDelete={onDelete} />;
+export default function PlaybookHubCard({ playbook, variant, course, busy, onProcess, onDownload, onDelete, onShowError, category, onClassify }) {
+  const menu = <CardMenu playbook={playbook} busy={busy} onProcess={onProcess} onDownload={onDownload} onDelete={onDelete} onClassify={onClassify} />;
   const stacked = variant === 'processing';
   return (
     <article className={cn('relative', TONE[variant], variant === 'archived' && 'opacity-70')}>
@@ -200,7 +210,7 @@ export default function PlaybookHubCard({ playbook, variant, course, busy, onPro
           style={{ background: 'radial-gradient(90% 60% at 50% 0%, rgb(var(--glow) / 0.16), transparent 70%)' }}
         />
         {variant === 'error' && <ShatteredGlass className="absolute inset-x-0 top-40 h-56 w-full opacity-80" />}
-        <CardHead playbook={playbook} menu={menu} />
+        <CardHead playbook={playbook} menu={menu} category={category} onClassify={onClassify} />
         {variant === 'error' && <ErrorBody playbook={playbook} busy={busy} onProcess={onProcess} onShowError={onShowError} />}
         {(variant === 'processing' || variant === 'queued') && (
           <ProcessingBody playbook={playbook} queued={variant === 'queued'} busy={busy} onProcess={onProcess} />

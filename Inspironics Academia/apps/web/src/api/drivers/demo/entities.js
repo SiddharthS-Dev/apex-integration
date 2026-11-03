@@ -1,4 +1,6 @@
-import { matchesQuery, onCoursePublished, resolveToday, ruleFor, ruleToQuery, sortRecords } from '@academy/shared';
+import {
+  AUDIENCE_KEYS, UNCLASSIFIED, allowedCategories, matchesQuery, onCoursePublished, resolveToday, ruleFor, ruleToQuery, sortRecords,
+} from '@academy/shared';
 import { currentUser, currentUserRow, db, persist, publicUser, replaceTable, table } from '@/api/drivers/demo/store';
 import { notify, store } from '@/api/drivers/demo/backend';
 import { badRequest, clone, forbidden, notFound, nowIso, sanitize, schemaFor, stamp } from '@/api/drivers/demo/records';
@@ -13,6 +15,39 @@ function access(name, action, user) {
 
 const allowed = (record, rule) => rule === true || (rule !== false && matchesQuery(record, rule));
 
+// Audience scope, as the API enforces it: a learner sees playbooks and courses only in categories their
+// audience is allowed, and a course's modules, lessons, questions, flashcards and assessments with it.
+const SCOPED = new Set(['Playbook', 'Course', 'Module', 'Lesson', 'Question', 'Flashcard', 'Assessment']);
+const catOf = (r) => (r?.category && String(r.category).trim()) || UNCLASSIFIED;
+
+function scopeFor(user) {
+  const cats = allowedCategories(user, table('PlaybookCategory'));
+  if (cats === null) return () => true;
+  const ok = new Set(cats);
+  const courses = new Set(table('Course').filter((c) => ok.has(catOf(c))).map((c) => c.id));
+  const modules = new Set(table('Module').filter((m) => courses.has(m.course_id)).map((m) => m.id));
+  const lessons = new Set(table('Lesson').filter((l) => modules.has(l.module_id)).map((l) => l.id));
+  const assessments = new Set(table('Assessment').filter((a) => courses.has(a.course_id)).map((a) => a.id));
+  return (name, r) => {
+    switch (name) {
+      case 'Playbook': return ok.has(catOf(r));
+      case 'Course': return courses.has(r.id);
+      case 'Module': return courses.has(r.course_id);
+      case 'Lesson': return modules.has(r.module_id);
+      case 'Assessment': return courses.has(r.course_id);
+      case 'Flashcard': return lessons.has(r.lesson_id);
+      case 'Question': return lessons.has(r.lesson_id) || assessments.has(r.assessment_id);
+      default: return true;
+    }
+  };
+}
+const inScope = (name, record, user) => !SCOPED.has(name) || scopeFor(user)(name, record);
+
+// A playbook's category travels to its courses (they are filtered by it).
+function propagateCategory(playbookId, category) {
+  for (const c of table('Course')) if (c.playbook_id === playbookId) c.category = category;
+}
+
 function page(records, sort, limit, skip) {
   const off = Math.max(Number(skip) || 0, 0);
   const lim = Math.min(Number(limit) || 5000, 10000);
@@ -21,15 +56,18 @@ function page(records, sort, limit, skip) {
 
 function query(name, q, sort, limit, skip) {
   if (q !== undefined && (q === null || typeof q !== 'object' || Array.isArray(q))) throw badRequest('q must be a JSON object');
-  const rule = access(name, 'read', currentUser());
+  const user = currentUser();
+  const rule = access(name, 'read', user);
   if (rule === false) return [];
-  const rows = table(name).filter((r) => matchesQuery(r, q || {}) && allowed(r, rule));
+  const scope = SCOPED.has(name) ? scopeFor(user) : null;
+  const rows = table(name).filter((r) => matchesQuery(r, q || {}) && allowed(r, rule) && (!scope || scope(name, r)));
   return page(rows, sort, limit, skip);
 }
 
 function readable(name, id) {
   const record = table(name).find((r) => r.id === id);
-  if (!record || !allowed(record, access(name, 'read', currentUser()))) throw notFound(`${name} not found`);
+  const user = currentUser();
+  if (!record || !allowed(record, access(name, 'read', user)) || !inScope(name, record, user)) throw notFound(`${name} not found`);
   return record;
 }
 
@@ -61,6 +99,9 @@ function entityHandler(name) {
     async create(data) {
       await tick();
       checkCreate(name, data);
+      // A playbook added by hand: the category chosen at upload, or Unclassified for review.
+      // Same as the API: a chosen category is an admin's (manual); none means Unclassified, from upload.
+      if (name === 'Playbook') data = { ...data, category: data?.category || UNCLASSIFIED, category_source: data?.category ? 'manual' : 'upload' };
       const rec = stamp(name, data, currentUser()?.id);
       table(name).push(rec);
       persist();
@@ -83,8 +124,12 @@ function entityHandler(name) {
       const patch = sanitize(name, data, { partial: true });
       if (!allowed({ ...existing, ...patch }, rule)) throw forbidden('Update would move the record outside your access');
       const assignedTo = name === 'ActionItem' ? actionItemPatch(existing, patch, currentUser()) : null;
+      // An admin's category change is a manual assignment (sync never overrides it) and moves the courses too.
+      const recategorised = name === 'Playbook' && patch.category !== undefined && patch.category !== existing.category;
+      if (recategorised) patch.category_source = 'manual';
       const wasPublished = existing.status === 'published';
       Object.assign(existing, patch, { updated_date: nowIso() });
+      if (recategorised) propagateCategory(existing.id, existing.category);
       persist();
       // Same hook as the API: publishing a course starts pending recertifications and announces it.
       if (name === 'Course' && !wasPublished && existing.status === 'published') {
@@ -103,6 +148,13 @@ function entityHandler(name) {
       await tick();
       const existing = readable(name, id);
       if (!allowed(existing, access(name, 'delete', currentUser()))) throw forbidden(`Not allowed to delete this ${name}`);
+      // Same as the API: the standard categories stay; a custom one's playbooks go back to review.
+      if (name === 'PlaybookCategory') {
+        if (existing.built_in) throw forbidden('The standard categories can be edited but not deleted');
+        for (const p of table('Playbook')) {
+          if (p.category === existing.key) { p.category = UNCLASSIFIED; p.category_source = 'manual'; propagateCategory(p.id, UNCLASSIFIED); }
+        }
+      }
       replaceTable(name, table(name).filter((r) => r.id !== id));
       persist();
       return { success: true, deleted: 1 };
@@ -151,6 +203,10 @@ function userHandler() {
         u.role = data.role;
       }
       if (typeof data.full_name === 'string') u.full_name = data.full_name.trim();
+      if (data.audience !== undefined) {
+        if (!AUDIENCE_KEYS.includes(data.audience)) throw badRequest('audience must be intern, employee or leadership');
+        u.audience = data.audience;
+      }
       if (data.disabled !== undefined) u.disabled = !!data.disabled;
       u.updated_date = nowIso();
       persist();

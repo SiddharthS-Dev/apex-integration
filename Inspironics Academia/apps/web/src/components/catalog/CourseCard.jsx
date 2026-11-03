@@ -2,9 +2,12 @@ import { Link } from 'react-router-dom';
 import { BookOpen, Layers, GraduationCap } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import CourseBadges from '@/components/catalog/CourseBadges';
+import { CategoryChip } from '@/components/categories/CategoryChip';
+import { categoryKey, findCategory, useCategories } from '@/lib/categories';
 
 export default function CourseCard({ course, progress }) {
   const pct = progress?.percentage || 0;
+  const { categories } = useCategories();
   return (
     <Link
       to={`/courses/${course.id}`}
@@ -17,6 +20,7 @@ export default function CourseCard({ course, progress }) {
         <CourseBadges course={course} className="justify-end" />
       </div>
       <div className="min-w-0">
+        {course.category && <CategoryChip category={findCategory(categories, categoryKey(course))} className="mb-1.5" />}
         <h3 className="font-semibold leading-snug group-hover:text-primary transition-colors">{course.title}</h3>
         {course.description && <p className="text-sm text-muted-foreground mt-1 line-clamp-3">{course.description}</p>}
       </div>

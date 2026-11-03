@@ -24,3 +24,7 @@ export {
   resolveDue, heuristicAnalysis, matchOwner, actionItemReminders, teamFromPath, TEAM_ROLES, samePerson, rosterMatch,
   teamPeople, suggestRoster,
 } from './meetings.js';
+export {
+  AUDIENCES, AUDIENCE_KEYS, DEFAULT_AUDIENCE, UNCLASSIFIED, SKILL_LEVELS, SYNC_DEFAULT_CATEGORY, DEFAULT_CATEGORIES,
+  audienceOf, allowedCategories, canSeeCategory,
+} from './audience.js';

@@ -1,5 +1,6 @@
 import { currentUser, currentUserRow, db, persist, publicUser } from '@/api/drivers/demo/store';
 import { badRequest, forbidden, newId, nowIso, unauthorized } from '@/api/drivers/demo/records';
+import { AUDIENCE_KEYS, DEFAULT_AUDIENCE } from '@academy/shared';
 
 // Demo auth: the "session" is the signed-in user id stored with the demo database.
 // Seeded accounts (admin@demo.local, learner@demo.local) accept any non-empty password.
@@ -130,7 +131,7 @@ export function createAuth() {
       return { ok: true };
     },
 
-    async inviteUser(email, role, fullName) {
+    async inviteUser(email, role, fullName, audience) {
       await tick();
       if (currentUser()?.role !== 'admin') throw forbidden('Administrator access required');
       const clean = cleanEmail(email);
@@ -140,6 +141,7 @@ export function createAuth() {
       const at = nowIso();
       const user = {
         id: newId(), email: clean, full_name: String(fullName || '').trim(), role: role === 'admin' ? 'admin' : 'user',
+        audience: AUDIENCE_KEYS.includes(audience) ? audience : DEFAULT_AUDIENCE,
         disabled: false, created_date: at, updated_date: at, last_login_at: null, password: temporaryPassword,
       };
       db().users.push(user);

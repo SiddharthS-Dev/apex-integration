@@ -1,9 +1,10 @@
+import { UNCLASSIFIED } from '@academy/shared';
 import { aiEnabled, invokeLLM } from '../ai/claude.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { log as defaultLog } from '../lib/logger.js';
 import { entities } from '../repo/entities.js';
 import { detectSections, sortChapters } from './chapters.js';
-import { VIDEO_TYPES, buildDeterministicCourse } from './courseBuilder.js';
+import { VIDEO_TYPES, buildDeterministicCourse, lessonsForChapter } from './courseBuilder.js';
 import { asHttpError, errMsg, pipelineError, withPlaybookLock } from './util.js';
 
 // processPlaybookStructure — turn a processed playbook's chapters into a course
@@ -18,7 +19,12 @@ const CHAPTER_CONTENT_CHARS = 8000;
 const MAX_DIGEST_CHARS = 400000;
 const DIFFICULTIES = ['beginner', 'intermediate', 'advanced'];
 
-async function designWithAI(playbook, chapters) {
+// Long books are designed a few chapters per LLM call: one call over 30+ chapters merges and
+// drops chapters, however strict the coverage rules are.
+export const DESIGN_BATCH_CHAPTERS = 6;
+const DESIGN_CONCURRENCY = 2;
+
+async function designWithAI(playbook, chapters, batch = null) {
   const perChapter = Math.min(CHAPTER_CONTENT_CHARS, Math.floor(MAX_DIGEST_CHARS / chapters.length));
   const digest = chapters
     .map((c, i) => {
@@ -39,7 +45,11 @@ ${content.slice(0, perChapter)}
 
   const prompt = `You are a senior instructional designer building an engineering training course from a company playbook.
 Playbook: "${playbook.title}"${playbook.version ? ` (version ${playbook.version})` : ''}${playbook.organization ? `, ${playbook.organization}` : ''}.
-It has ${chapters.length} chapters, provided below with their summaries, detected sections and content.
+${batch
+    ? `The playbook has ${batch.all.length} chapters in total:
+${batch.all.map((c, i) => `  ${i + 1}. ${c.title}`).join('\n')}
+This request covers ONLY chapters ${batch.from}–${batch.to} (${chapters.length} chapters), provided below with their summaries, detected sections and content. Design modules for these chapters only — the others are designed separately. Still give the course title, description and difficulty for the WHOLE playbook.`
+    : `It has ${chapters.length} chapters, provided below with their summaries, detected sections and content.`}
 
 Design a complete course with modules and lessons. STRICT COVERAGE RULES — these are mandatory:
 1. Every chapter must be covered. Normally create one module per chapter (in the same order); only merge very small adjacent chapters when they are clearly one topic, and never drop a chapter.
@@ -93,6 +103,69 @@ ${digest}`;
   });
 }
 
+async function designCourseWithAI(playbook, chapters) {
+  if (chapters.length <= DESIGN_BATCH_CHAPTERS + 2) return designWithAI(playbook, chapters);
+  const groups = [];
+  for (let i = 0; i < chapters.length; i += DESIGN_BATCH_CHAPTERS) groups.push({ from: i + 1, chapters: chapters.slice(i, i + DESIGN_BATCH_CHAPTERS) });
+  const results = new Array(groups.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < groups.length) {
+      const gi = next++;
+      const g = groups[gi];
+      results[gi] = await designWithAI(playbook, g.chapters, { all: chapters, from: g.from, to: g.from + g.chapters.length - 1 });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(DESIGN_CONCURRENCY, groups.length) }, worker));
+  const first = results.find((r) => r?.course_title) || {};
+  return {
+    course_title: first.course_title,
+    course_description: first.course_description,
+    difficulty: first.difficulty,
+    modules: results.flatMap((r) => (Array.isArray(r?.modules) ? r.modules : [])),
+  };
+}
+
+const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+/**
+ * Coverage guarantee: every lesson points at a real chapter title, and every chapter the design
+ * left without lessons gets a module of its own (lessons from its sections), placed in book order.
+ */
+export function ensureChapterCoverage(modules, chapters) {
+  const titles = chapters.map((c) => String(c.title).trim());
+  const indexOf = (name) => {
+    const n = norm(name);
+    if (!n) return -1;
+    const exact = titles.findIndex((t) => norm(t) === n);
+    if (exact >= 0) return exact;
+    return titles.findIndex((t) => n.includes(norm(t)) || norm(t).includes(n));
+  };
+  for (const m of modules) {
+    const srcs = (Array.isArray(m.source_chapters) ? m.source_chapters : []).map(indexOf).filter((i) => i >= 0);
+    for (const l of m.lessons) {
+      const i = indexOf(l.source_chapter);
+      if (i >= 0) l.source_chapter = titles[i];
+      else if (srcs.length === 1) l.source_chapter = titles[srcs[0]];
+    }
+    m.source_chapters = [...new Set([...srcs, ...m.lessons.map((l) => indexOf(l.source_chapter)).filter((i) => i >= 0)])]
+      .sort((a, b) => a - b).map((i) => titles[i]);
+  }
+  const covered = new Set(modules.flatMap((m) => m.lessons.map((l) => indexOf(l.source_chapter))).filter((i) => i >= 0));
+  const firstChapterOf = (m) => Math.min(...m.lessons.map((l) => indexOf(l.source_chapter)).filter((i) => i >= 0), Number.MAX_SAFE_INTEGER);
+  const added = [];
+  chapters.forEach((c, i) => {
+    if (covered.has(i)) return;
+    const title = titles[i];
+    const mod = { title, description: String(c.summary || '').trim(), source_chapters: [title], lessons: lessonsForChapter({ ...c, title }), _first: i };
+    const at = modules.findIndex((m) => (m._first ?? firstChapterOf(m)) > i);
+    modules.splice(at < 0 ? modules.length : at, 0, mod);
+    added.push(title);
+  });
+  for (const m of modules) delete m._first;
+  return added;
+}
+
 export default async function processPlaybookStructure(payload = {}, ctx = {}) {
   const log = ctx.log || defaultLog;
   const playbookId = payload?.playbook_id ? String(payload.playbook_id) : '';
@@ -129,13 +202,15 @@ async function run(playbook, courses, log) {
     await sr.Playbook.update(playbookId, { status: 'processing', progress: 60, error: '' });
 
     const useAI = aiEnabled();
-    const result = useAI ? await designWithAI(playbook, chapters) : buildDeterministicCourse(playbook, chapters);
+    const result = useAI ? await designCourseWithAI(playbook, chapters) : buildDeterministicCourse(playbook, chapters);
 
     const modules = (Array.isArray(result?.modules) ? result.modules : [])
       .filter((m) => m && String(m.title || '').trim())
       .map((m) => ({ ...m, lessons: (Array.isArray(m.lessons) ? m.lessons : []).filter((l) => l && String(l.title || '').trim()) }))
       .filter((m) => m.lessons.length > 0);
     if (!modules.length) throw pipelineError(useAI ? 'The AI did not return any modules/lessons for this playbook.' : 'No lessons could be derived from the chapters.');
+    const filledIn = ensureChapterCoverage(modules, chapters);
+    if (filledIn.length) log.warn('pipeline.structure.coverage_filled', { playbook_id: playbookId, chapters: filledIn });
 
     // Archive previous courses (keeps learner progress/certificates intact).
     await Promise.all(
@@ -152,6 +227,8 @@ async function run(playbook, courses, log) {
       difficulty: DIFFICULTIES.includes(result?.difficulty) ? result.difficulty : 'beginner',
       version: String(maxVersion + 1),
       access_level: 'free',
+      // Who may see the course follows its playbook's category.
+      category: playbook.category || UNCLASSIFIED,
       module_count: 0,
       lesson_count: 0,
     });
@@ -163,7 +240,8 @@ async function run(playbook, courses, log) {
       const sourceChapters = (Array.isArray(m.source_chapters) ? m.source_chapters : []).map((s) => String(s).trim()).filter(Boolean);
       const mod = await sr.Module.create({
         course_id: course.id,
-        title: String(m.title).trim(),
+        // Batched designs number their own modules ("Module 1: …") — the course shows its own order.
+        title: String(m.title).trim().replace(/^module\s+\d+\s*[:.\-–—]\s*/i, '') || String(m.title).trim(),
         description: String(m.description || '').trim(),
         order: i,
         lesson_count: m.lessons.length,

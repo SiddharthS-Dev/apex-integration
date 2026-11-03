@@ -17,7 +17,8 @@ export default function useOAuthResultToast(onConnected) {
   const result = params.get('dropbox');
   useEffect(() => {
     if (!result) return;
-    const which = params.get('app') === 'meetings' ? 'Meetings Dropbox' : 'Dropbox';
+    const app = params.get('app');
+    const which = app === 'meetings' ? 'Meetings Dropbox' : app ? `Dropbox for ${app}` : 'Dropbox';
     if (result === 'connected') {
       toast.success(`${which} connected`);
       onConnected?.();

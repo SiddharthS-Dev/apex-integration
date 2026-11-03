@@ -46,6 +46,13 @@ export function createDemoDriver() {
         disconnect: async () => ({ connected: false }),
         listFolders: unavailable('Dropbox'),
       },
+      sources: {
+        list: async () => [],
+        connect: unavailable('Dropbox'),
+        disconnect: unavailable('Dropbox'),
+        listFolders: unavailable('Dropbox'),
+        setFolder: unavailable('Dropbox'),
+      },
     },
     sync: {
       status: async () => ({ connected: false, running: false }),

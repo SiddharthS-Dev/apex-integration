@@ -66,7 +66,7 @@ export function createHttpDriver() {
       resetPasswordRequest: (email) => request('POST', '/auth/reset-password-request', { body: { email } }),
       resetPassword: ({ resetToken, newPassword }) => request('POST', '/auth/reset-password', { body: { resetToken, newPassword } }),
       // Returns { user, temporary_password, email_sent } — without email the admin hands the password over.
-      inviteUser: (email, role, fullName) => request('POST', '/auth/invite', { body: { email, role, full_name: fullName } }),
+      inviteUser: (email, role, fullName, audience) => request('POST', '/auth/invite', { body: { email, role, full_name: fullName, audience } }),
       loginHistory: (opts = {}) => request('GET', '/auth/login-history', { query: opts }),
     },
 
@@ -112,6 +112,14 @@ export function createHttpDriver() {
         connect: () => { window.location.href = `${BASE}/api/dropbox/meetings/oauth/start`; },
         disconnect: () => request('POST', '/dropbox/meetings/disconnect'),
         listFolders: (path = '') => request('GET', '/dropbox/meetings/folders', { query: { path } }),
+      },
+      // Category sources: a category's own Dropbox folder, and app when it has one.
+      sources: {
+        list: () => request('GET', '/dropbox/sources'),
+        connect: (key) => { window.location.href = `${BASE}/api/dropbox/sources/${encodeURIComponent(key)}/oauth/start`; },
+        disconnect: (key) => request('POST', `/dropbox/sources/${encodeURIComponent(key)}/disconnect`),
+        listFolders: (key, path = '') => request('GET', `/dropbox/sources/${encodeURIComponent(key)}/folders`, { query: { path } }),
+        setFolder: (key, path) => request('PATCH', `/dropbox/sources/${encodeURIComponent(key)}`, { body: { path } }),
       },
     },
 

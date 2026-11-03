@@ -7,7 +7,8 @@ import { log } from '../lib/logger.js';
 import { latestSyncLog } from '../sync/log.js';
 import { DropboxError, disconnect, getConnectionStatus, listSubfolders, normalizePath, rpc } from './client.js';
 import {
-  getSyncSettings, loadConnection, meetingsAccount, meetingsAppConfigured, saveSyncSettings, withDropboxAccount,
+  getSyncSettings, loadConnection, meetingsAccount, meetingsAppConfigured, saveSyncSettings, sourceAccount, sourceAppConfigured, sourceAppFolder,
+  withDropboxAccount,
 } from './connection.js';
 import { clearIgnoredDropboxIds, ignoredDropboxIds } from '../pipeline/deletePlaybooks.js';
 import { authorizeUrl, completeAuthorization, consumeState, createState, redirectBack } from './oauth.js';
@@ -225,6 +226,104 @@ meetingsRouter.get('/folders', requireAdmin, requireMeetingsApp, inMeetings(asyn
 }));
 
 router.use('/meetings', meetingsRouter);
+
+// ---- category sources ---------------------------------------------------------------------------
+// A playbook category with a Dropbox folder of its own (e.g. Learning & Development ← /Interns).
+// With DROPBOX_<CATEGORY>_APP_KEY/SECRET set it has its own app and connection (redirect URI
+// …/dropbox/sources/<category>/oauth/callback); otherwise its folder is read through the main app.
+// Files there become playbooks in that category; the main playbooks sync leaves them alone.
+
+const sourcesRouter = express.Router();
+const sourceKey = (req) => {
+  const key = String(req.params.key || '');
+  if (!Object.hasOwn(config.dropbox.sources, key)) throw new HttpError(404, `No Dropbox source for "${key}"`);
+  return key;
+};
+const inSource = (handler) => asyncHandler((req, res, next) => {
+  const key = sourceKey(req);
+  return withDropboxAccount(sourceAccount(key), () => handler(req, res, next, key));
+});
+const requireSourceApp = (req, _res, next) => {
+  try {
+    const key = sourceKey(req);
+    if (!sourceAppConfigured(key)) return next(new HttpError(503, `This source has no Dropbox app of its own — set DROPBOX_${key.toUpperCase()}_APP_KEY and DROPBOX_${key.toUpperCase()}_APP_SECRET on the API server`));
+    if (!config.tokenEncryptionKey) return next(new HttpError(503, 'TOKEN_ENCRYPTION_KEY is not set on the API server'));
+    return next();
+  } catch (err) { return next(err); }
+};
+
+async function sourceStatus(key) {
+  const own = sourceAppConfigured(key);
+  const conn = await withDropboxAccount(sourceAccount(key), () => loadConnection());
+  return {
+    key,
+    own_app: own,
+    app_folder: sourceAppFolder(key),
+    connected: !!conn,
+    account_name: conn?.account_name ?? null,
+    account_email: conn?.account_email ?? null,
+    needs_reconnect: !!conn?.needs_reconnect,
+    path: (await getSyncSettings()).sources[key] || '',
+    redirect_uri: config.dropbox.sources[key].redirectUri,
+  };
+}
+
+sourcesRouter.get('/', requireAdmin, asyncHandler(async (_req, res) => {
+  res.json(await Promise.all(Object.keys(config.dropbox.sources).map(sourceStatus)));
+}));
+
+sourcesRouter.get('/:key/oauth/start', requireAdmin, requireSourceApp, inSource(async (req, res) => {
+  res.redirect(302, authorizeUrl(await createState(req.user.id)));
+}));
+
+sourcesRouter.get('/:key/oauth/callback', inSource(async (req, res, _next, key) => {
+  const fail = (reason) => res.redirect(302, redirectBack({ dropbox: 'error', app: key, reason }));
+  if (!req.user || req.user.role !== 'admin') return fail('not_admin');
+  if (!sourceAppConfigured(key)) return fail('not_configured');
+  const { code, state, error } = req.query;
+  if (!(await consumeState(state, req.user.id))) return fail('invalid_state');
+  if (error) return fail(String(error) === 'access_denied' ? 'access_denied' : 'authorization_failed');
+  if (!code || typeof code !== 'string') return fail('missing_code');
+  try {
+    await completeAuthorization(code, req.user.id);
+  } catch (err) {
+    log.warn('dropbox.source_oauth_failed', { source: key, error: err.message });
+    return fail('exchange_failed');
+  }
+  res.redirect(302, redirectBack({ dropbox: 'connected', app: key }));
+}));
+
+sourcesRouter.post('/:key/disconnect', requireAdmin, requireSourceApp, inSource(async (req, res, _next, key) => {
+  await disconnect();
+  log.info('dropbox.source_disconnected', { source: key, by: req.user.id });
+  res.json(await sourceStatus(key));
+}));
+
+sourcesRouter.get('/:key/folders', requireAdmin, inSource(async (req, res) => {
+  if (!(await loadConnection())) throw new HttpError(409, 'Connect this Dropbox source first');
+  const path = typeof req.query.path === 'string' ? req.query.path : '';
+  if (path.split(/[\\/]/).some((seg) => seg === '..')) throw badRequest('Invalid path');
+  try {
+    res.json(await listSubfolders(path));
+  } catch (err) {
+    throw toHttp(err);
+  }
+}));
+
+// Body: { path } — the source's folder ('' turns it off). '/' is the whole app folder, offered only
+// for a source with an App folder app of its own (it only sees that folder), never a Full Dropbox app.
+sourcesRouter.patch('/:key', requireAdmin, inSource(async (req, res, _next, key) => {
+  const raw = req.body?.path;
+  if (typeof raw !== 'string') throw badRequest('path is required');
+  const path = raw === '/' && sourceAppFolder(key) ? '/' : await folderSetting(raw, 'path');
+  if (!path && raw !== '') throw badRequest('Choose a folder, not the whole Dropbox');
+  const settings = await getSyncSettings();
+  await saveSyncSettings({ sources: { ...settings.sources, [key]: path } });
+  log.info('dropbox.source_folder_changed', { source: key, by: req.user.id });
+  res.json(await sourceStatus(key));
+}));
+
+router.use('/sources', sourcesRouter);
 
 router.get('/folders', requireAdmin, requireConfigured, requireConnected, asyncHandler(async (req, res) => {
   const path = typeof req.query.path === 'string' ? req.query.path : '';

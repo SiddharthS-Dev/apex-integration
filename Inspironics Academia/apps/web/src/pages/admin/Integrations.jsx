@@ -7,6 +7,7 @@ import SyncFolderPicker from '@/components/admin/integrations/SyncFolderPicker';
 import MeetingsFolderPicker from '@/components/admin/integrations/MeetingsFolderPicker';
 import SkippedFilesNotice from '@/components/admin/integrations/SkippedFilesNotice';
 import MeetingsDropboxCard from '@/components/admin/integrations/MeetingsDropboxCard';
+import CategorySourcesCard from '@/components/admin/integrations/CategorySourcesCard';
 import SyncStatusPanel from '@/components/admin/integrations/SyncStatusPanel';
 import SyncHistoryTable from '@/components/admin/integrations/SyncHistoryTable';
 import EmailDeliveryCard from '@/components/admin/integrations/EmailDeliveryCard';
@@ -42,6 +43,7 @@ export default function Integrations() {
             {dropbox.data.configured && <MeetingsDropboxCard status={meetingsDropbox.data} />}
             {meetingsConnected && <MeetingsFolderPicker meetingsPath={dropbox.data.meetings_path || ''} ownApp={meetingsOwnApp} />}
           </div>
+          {dropbox.data.configured && <CategorySourcesCard />}
           {anyConnected && <SyncStatusPanel status={sync.data} />}
           {anyConnected && <SyncHistoryTable logs={logs.data} />}
         </div>
