@@ -340,6 +340,10 @@ export const ENTITIES = {
         ],
         "description": "Access level",
         "default": "free"
+      },
+      "category": {
+        "type": "string",
+        "description": "Copied from its playbook: which audiences can see the course"
       }
     },
     "required": [
@@ -903,6 +907,48 @@ export const ENTITIES = {
         "type": "number",
         "description": "Days learners get to recertify once the updated course is published",
         "default": 30
+      },
+      "category": {
+        "type": "string",
+        "description": "Primary category key (PlaybookCategory.key, or 'unclassified'); decides which audiences see it"
+      },
+      "category_source": {
+        "type": "string",
+        "enum": [
+          "migration",
+          "default",
+          "manual",
+          "upload"
+        ],
+        "description": "How the category was set: initial migration, sync default, an admin, or chosen at upload. Sync never changes a manual one."
+      },
+      "department": {
+        "type": "string",
+        "description": "Owning department, e.g. Engineering"
+      },
+      "tech_tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Technologies covered, e.g. Python, React"
+      },
+      "skill_level": {
+        "type": "string",
+        "enum": [
+          "",
+          "beginner",
+          "intermediate",
+          "advanced"
+        ],
+        "description": "Who it is written for"
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Secondary tags (a playbook has one primary category; tags never duplicate it)"
       }
     },
     "required": [
@@ -1782,6 +1828,71 @@ export const ENTITIES = {
           }
         ]
       },
+      "create": {
+        "user_condition": {
+          "role": "admin"
+        }
+      },
+      "update": {
+        "user_condition": {
+          "role": "admin"
+        }
+      },
+      "delete": {
+        "user_condition": {
+          "role": "admin"
+        }
+      }
+    }
+  },
+  "PlaybookCategory": {
+    "properties": {
+      "key": {
+        "type": "string",
+        "description": "Stable id stored on playbooks (e.g. learning, corporate, strategic)"
+      },
+      "label": {
+        "type": "string",
+        "description": "Category name, e.g. Corporate Knowledge Base"
+      },
+      "audience_label": {
+        "type": "string",
+        "description": "Who it is for, e.g. Employees & Teams"
+      },
+      "description": {
+        "type": "string"
+      },
+      "audiences": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "User audiences allowed to see it: intern, employee, leadership"
+      },
+      "color": {
+        "type": "string",
+        "description": "Visual identity: teal, indigo, purple, amber, rose, sky"
+      },
+      "icon": {
+        "type": "string",
+        "description": "Icon name: graduation, building, compass, book, briefcase, shield"
+      },
+      "order": {
+        "type": "number",
+        "default": 0
+      },
+      "built_in": {
+        "type": "boolean",
+        "description": "One of the three standard categories (can be edited, not deleted)",
+        "default": false
+      }
+    },
+    "required": [
+      "key",
+      "label"
+    ],
+    "rls": {
+      "read": {},
       "create": {
         "user_condition": {
           "role": "admin"
