@@ -3,6 +3,7 @@ import { newId, stamp } from '@/api/drivers/demo/records';
 import { API_CHAPTERS, SRE_CHAPTERS } from '@/api/drivers/demo/seedChapters';
 import { API_DRAFT_MODULE, RELIABILITY_MODULES } from '@/api/drivers/demo/seedLessons';
 import { addMeetings } from '@/api/drivers/demo/seedMeetings';
+import { addCategories } from '@/api/drivers/demo/seedCategories';
 
 // Builds the initial demo academy: two users, a published course and a draft awaiting review.
 
@@ -12,10 +13,10 @@ const localDay = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60
 const SRE_PLAYBOOK = 'Site Reliability Engineering Playbook';
 const API_PLAYBOOK = 'API Design Standards';
 
-function demoUser(email, fullName, role, age) {
+function demoUser(email, fullName, role, age, audience = 'employee') {
   const at = daysAgo(age);
   return {
-    id: newId(), email, full_name: fullName, role, disabled: false, created_date: at, updated_date: at,
+    id: newId(), email, full_name: fullName, role, audience, disabled: false, created_date: at, updated_date: at,
     last_login_at: null, password: null, any_password: true,
   };
 }
@@ -69,7 +70,7 @@ function addModules(add, course, modules, sourcePlaybook, defaultStatus, age) {
 }
 
 export function buildSeed() {
-  const admin = demoUser('admin@demo.local', 'Ada Admin', 'admin', 40);
+  const admin = demoUser('admin@demo.local', 'Ada Admin', 'admin', 40, 'leadership');
   const learner = demoUser('learner@demo.local', 'Lee Learner', 'user', 30);
   const tables = Object.fromEntries(ENTITY_NAMES.map((n) => [n, []]));
   const add = (name, data, age, by = admin.id) => {
@@ -131,7 +132,10 @@ export function buildSeed() {
     }, 0);
   }
 
-  return { version: 4, users: [admin, learner], tables, sessionUserId: null, logins: [], resets: {} };
+  // Audience categories: everything above is Corporate Knowledge Base; plus a learning and a strategic example.
+  addCategories(add, tables);
+
+  return { version: 5, users: [admin, learner], tables, sessionUserId: null, logins: [], resets: {} };
 }
 
 // Flashcard review history for the learner's two completed lessons (a few cards due today, a two-week

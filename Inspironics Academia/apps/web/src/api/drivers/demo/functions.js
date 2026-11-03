@@ -36,8 +36,33 @@ function deletePlaybooks({ playbook_ids: requested, all } = {}) {
   return { ok: true, deleted: pbIds.length, kept_out_of_sync: 0 };
 }
 
+// Same contract as the API's classifyPlaybooks: moves playbooks to a category (a manual assignment,
+// copied to their courses) and optionally sets department, technologies, skill level and tags.
+function classifyPlaybooks({ playbook_ids: requested, category, department, tech_tags: techTags, skill_level: skill, tags } = {}) {
+  const ids = Array.isArray(requested) ? requested.map(String) : [];
+  if (!ids.length) throw badRequest('playbook_ids is required');
+  const known = new Set(['unclassified', ...findAll('PlaybookCategory').map((c) => c.key)]);
+  if (category !== undefined && !known.has(category)) throw badRequest(`Unknown category ${category}`);
+  if (skill !== undefined && !['', 'beginner', 'intermediate', 'advanced'].includes(skill)) throw badRequest('skill_level must be beginner, intermediate or advanced');
+  let updated = 0;
+  for (const p of findAll('Playbook', { id: { $in: ids } })) {
+    const change = {};
+    if (category !== undefined) Object.assign(change, { category, category_source: 'manual' });
+    if (department !== undefined) change.department = String(department).trim();
+    if (Array.isArray(techTags)) change.tech_tags = techTags;
+    if (skill !== undefined) change.skill_level = skill;
+    if (Array.isArray(tags)) change.tags = tags;
+    patch('Playbook', p.id, change);
+    if (category !== undefined) for (const c of findAll('Course', { playbook_id: p.id })) patch('Course', c.id, { category });
+    updated += 1;
+  }
+  persist();
+  return { ok: true, updated };
+}
+
 const handlers = {
   deletePlaybooks,
+  classifyPlaybooks,
   processMeeting,
   publishMeeting,
   processPlaybookExtract,
