@@ -117,7 +117,8 @@ export default function PlaybookHub() {
   const sync = useSyncStatus(connected);
   const logs = useSyncLogs(connected, !!sync.data?.running);
 
-  // Category tiles: each category's playbooks and counts; Unclassified for documents awaiting review.
+  // Category tiles: each category's playbooks and counts. Unclassified gets a tile only while there are
+  // documents waiting for review (e.g. an upload marked "Not sure"), so none is ever out of sight.
   const byCategory = useMemo(() => {
     const m = new Map();
     for (const p of playbooks) m.set(categoryKey(p), [...(m.get(categoryKey(p)) || []), p]);
@@ -127,9 +128,10 @@ export default function PlaybookHub() {
   // A playbook whose category was deleted or never existed is shown as unclassified.
   const orphans = [...byCategory].filter(([k]) => k !== UNCLASSIFIED && !known.has(k)).flatMap(([, list]) => list);
   const inCategoryOf = (key) => (key === UNCLASSIFIED ? [...(byCategory.get(UNCLASSIFIED) || []), ...orphans] : byCategory.get(key) || []);
+  const unclassifiedStats = categoryStats(inCategoryOf(UNCLASSIFIED), courses);
   const tiles = [
     ...categories.map((c) => ({ category: c, stats: categoryStats(inCategoryOf(c.key), courses) })),
-    { category: UNCLASSIFIED_CATEGORY, stats: categoryStats(inCategoryOf(UNCLASSIFIED), courses) },
+    ...(unclassifiedStats.playbooks > 0 ? [{ category: UNCLASSIFIED_CATEGORY, stats: unclassifiedStats }] : []),
   ];
   const selectedCategory = category === 'all' ? null : findCategory(categories, category);
   const inScope = category === 'all' ? playbooks : inCategoryOf(category);
