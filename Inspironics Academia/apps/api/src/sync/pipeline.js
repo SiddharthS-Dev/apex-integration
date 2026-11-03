@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
-import { fileExtension, isMeetingFile, isPlaybookFile, meetingFromFileName, teamFromPath } from '@academy/shared';
+import {
+  SYNC_DEFAULT_CATEGORY, fileExtension, isMeetingFile, isPlaybookFile, meetingFromFileName, teamFromPath,
+} from '@academy/shared';
 import { config } from '../config.js';
 import { withLock } from '../db/locks.js';
 import { listFolderRecursive } from '../dropbox/client.js';
@@ -146,7 +148,9 @@ async function runLocked(trigger, plan) {
         const fields = { ...fileFields(file), last_seen_at: seenAt, status: tooLarge ? 'failed' : 'uploaded', error: tooLarge ? tooLargeMsg : '', progress: 0 };
         const rec = playbook
           ? await entities.Playbook.update(playbook.id, fields)
-          : await entities.Playbook.create({ title: stripExt(file.name), ...fields });
+          // A new Dropbox document goes to the Corporate Knowledge Base until an admin assigns it; an
+        // existing one keeps its category (fields never include it), so a manual choice survives.
+        : await entities.Playbook.create({ title: stripExt(file.name), category: SYNC_DEFAULT_CATEGORY, category_source: 'default', ...fields });
         if (playbook) counts.updated++; else counts.added++;
         if (tooLarge) fail(file.name, tooLargeMsg);
         else toProcess.push(rec);

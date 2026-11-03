@@ -1,3 +1,4 @@
+import { UNCLASSIFIED } from '@academy/shared';
 import { aiEnabled, invokeLLM } from '../ai/claude.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { log as defaultLog } from '../lib/logger.js';
@@ -152,6 +153,8 @@ async function run(playbook, courses, log) {
       difficulty: DIFFICULTIES.includes(result?.difficulty) ? result.difficulty : 'beginner',
       version: String(maxVersion + 1),
       access_level: 'free',
+      // Who may see the course follows its playbook's category.
+      category: playbook.category || UNCLASSIFIED,
       module_count: 0,
       lesson_count: 0,
     });
