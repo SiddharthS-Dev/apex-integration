@@ -96,7 +96,7 @@ export const config = Object.freeze({
   autoExtractOnSync: bool(env.AUTO_EXTRACT_ON_SYNC, true),
 
   // Content limits
-  maxExtractMb: num(env.MAX_EXTRACT_MB, 150),
+  maxExtractMb: num(env.MAX_EXTRACT_MB, 500),
   maxUploadMb: num(env.MAX_UPLOAD_MB, 50),
 
   // Email. EMAIL_PROVIDER=log (default: written to the server log, nothing leaves the box),
