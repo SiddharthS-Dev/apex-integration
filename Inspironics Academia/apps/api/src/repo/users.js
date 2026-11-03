@@ -1,3 +1,4 @@
+import { AUDIENCE_KEYS, DEFAULT_AUDIENCE } from '@academy/shared';
 import { db } from '../db/index.js';
 import { newId } from './entities.js';
 
@@ -12,6 +13,8 @@ export function publicUser(row) {
     full_name: row.full_name || '',
     avatar_url: row.avatar_url || '',
     role: row.role,
+    // Who the user is in the organisation: decides which playbook categories they see.
+    audience: AUDIENCE_KEYS.includes(row.audience) ? row.audience : DEFAULT_AUDIENCE,
     disabled: row.disabled === true || row.disabled === 1,
     created_date: row.created_date,
     updated_date: row.updated_date,
@@ -38,17 +41,20 @@ export async function countUsers() {
   return Number(row.n);
 }
 
-export async function createUser({ email, fullName, role = 'user', passwordHash }) {
+export async function createUser({ email, fullName, role = 'user', passwordHash, audience = DEFAULT_AUDIENCE }) {
   const ts = nowIso();
-  const user = { id: newId(), email: email.trim().toLowerCase(), full_name: fullName || '', role, password_hash: passwordHash, created_date: ts, updated_date: ts };
+  const user = {
+    id: newId(), email: email.trim().toLowerCase(), full_name: fullName || '', role, password_hash: passwordHash,
+    audience: AUDIENCE_KEYS.includes(audience) ? audience : DEFAULT_AUDIENCE, created_date: ts, updated_date: ts,
+  };
   await db().run(
-    'INSERT INTO users (id, email, full_name, role, password_hash, created_date, updated_date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [user.id, user.email, user.full_name, user.role, user.password_hash, ts, ts],
+    'INSERT INTO users (id, email, full_name, role, password_hash, audience, created_date, updated_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [user.id, user.email, user.full_name, user.role, user.password_hash, user.audience, ts, ts],
   );
   return user;
 }
 
-const UPDATABLE = ['full_name', 'avatar_url', 'role', 'password_hash', 'disabled', 'last_login_at'];
+const UPDATABLE = ['full_name', 'avatar_url', 'role', 'audience', 'password_hash', 'disabled', 'last_login_at'];
 
 export async function updateUser(id, patch) {
   const fields = Object.keys(patch).filter((k) => UPDATABLE.includes(k));

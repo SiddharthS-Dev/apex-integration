@@ -1,3 +1,4 @@
+import { AUDIENCE_KEYS } from '@academy/shared';
 import express from 'express';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
@@ -128,10 +129,11 @@ router.post('/reset-password', sensitiveLimiter, asyncHandler(async (req, res) =
 router.post('/invite', requireAdmin, asyncHandler(async (req, res) => {
   const email = cleanEmail(req.body?.email);
   const role = req.body?.role === 'admin' ? 'admin' : 'user';
+  const audience = AUDIENCE_KEYS.includes(req.body?.audience) ? req.body.audience : undefined;
   if (!EMAIL_RE.test(email)) throw badRequest('Enter a valid email address');
   if (await findUserByEmail(email)) throw badRequest('A user with this email already exists');
   const temporaryPassword = randomToken(9);
-  const user = await createUser({ email, role, fullName: req.body?.full_name, passwordHash: await hashPassword(temporaryPassword) });
+  const user = await createUser({ email, role, audience, fullName: req.body?.full_name, passwordHash: await hashPassword(temporaryPassword) });
   let emailSent = false;
   if (emailConfigured()) {
     const link = await passwordLink(user.id, 7 * 24 * 3600_000);

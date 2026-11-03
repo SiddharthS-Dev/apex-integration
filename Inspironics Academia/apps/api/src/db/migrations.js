@@ -1,6 +1,7 @@
 import { ENTITY_NAMES } from '@academy/shared';
 import { log } from '../lib/logger.js';
 import { columnsFor, quote, sqlType, tableName } from './schema.js';
+import { runDataMigrations } from './dataMigrations.js';
 
 // Ordered, append-only core migrations. Entity tables are reconciled separately from the shared schema.
 const CORE_MIGRATIONS = [
@@ -107,6 +108,11 @@ const CORE_MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_email_outbox_created ON email_outbox(created_at)
     `,
   },
+  {
+    // Who a user is in the organisation (intern | employee | leadership): which playbooks they see.
+    id: '005_user_audience',
+    sql: () => "ALTER TABLE users ADD COLUMN audience TEXT NOT NULL DEFAULT 'employee'",
+  },
 ];
 
 async function existingColumns(db, table) {
@@ -152,4 +158,5 @@ export async function migrate(db) {
     log.info('db.migration_applied', { id: m.id });
   }
   await reconcileEntityTables(db);
+  await runDataMigrations(db);
 }
