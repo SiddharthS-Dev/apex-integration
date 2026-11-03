@@ -320,3 +320,19 @@ test('guessVideoType heuristics', () => {
   assert.equal(guessVideoType('Chapter Recap'), 'revision');
   assert.equal(guessVideoType('Severity Levels'), 'concept');
 });
+
+test('letter-spaced chapter openers are found and part-page chapter lists are not mistaken for them', () => {
+  const filler = (topic) => `${`Notes about ${topic}. `.repeat(40)}\n`;
+  const parts = [`Front matter\n${'x'.repeat(6000)}\n`];
+  const chaptersIn = [[1, 'AI Basics'], [2, 'AI for Everyone'], [10, 'Neural Networks'], [11, 'Deep Learning']];
+  for (const [i, group] of [[0, chaptersIn.slice(0, 2)], [1, chaptersIn.slice(2)]]) {
+    parts.push(`P A R T   ${i ? 'I I' : 'I'}\nPart title\nChapters in this part\n${group.map(([n, t]) => `Chapter ${n}   ${t}`).join('\n')}\n`);
+    for (const [n, t] of group) parts.push(`C H A P T E R   ${String(n).split('').join(' ')}\n${t}\n${filler(t)}`);
+  }
+  const text = parts.join('\n');
+  assert.equal(chapters.normalizeSpacedHeadings('C H A P T E R   1 0\nP A R T   I I I\nA B C   1'), 'Chapter 10\nPart III\nA B C   1');
+  const { best } = detectChapters(text, []);
+  assert.deepEqual(best.chapters.map((c) => c.title), chaptersIn.map(([, t]) => t));
+  for (const c of best.chapters) assert.ok(c.content.length > 500, `${c.title} keeps its body, not just the list line`);
+  assert.ok(best.chapters[2].content.startsWith('Chapter 10\nNeural Networks'));
+});
