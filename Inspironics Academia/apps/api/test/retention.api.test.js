@@ -75,9 +75,9 @@ before(async () => {
   await admin.ok('POST', '/auth/register', { email: 'admin@example.com', password: 'Admin-pass-123', full_name: 'Ada Admin' });
   learnerId = (await learner.ok('POST', '/auth/register', { email: 'lee@example.com', password: 'Learner-pass-123', full_name: 'Lee Learner' })).user.id;
 
-  const playbook = await admin.create('Playbook', { title: 'SRE Playbook', file_url: 'local://x', recert_grace_days: 21 });
+  const playbook = await admin.create('Playbook', { title: 'SRE Playbook', file_url: 'local://x', recert_grace_days: 21, category: 'corporate' });
   await admin.create('PlaybookVersion', { playbook_id: playbook.id, version_label: 'v1' });
-  const course = await admin.create('Course', { playbook_id: playbook.id, title: 'SRE Foundations', status: 'pending_review' });
+  const course = await admin.create('Course', { playbook_id: playbook.id, title: 'SRE Foundations', status: 'pending_review', category: 'corporate' });
   const mod = await admin.create('Module', { course_id: course.id, title: 'Incidents', order: 0 });
   const lesson = await admin.create('Lesson', { module_id: mod.id, title: 'Paging', status: 'approved', source_chapter: 'Incident Response' });
   for (let i = 0; i < 3; i++) await admin.create('Flashcard', { lesson_id: lesson.id, front: `Q${i}`, back: `A${i}`, status: 'approved' });
@@ -153,7 +153,7 @@ test('recertification: playbook change → updated course published → learner 
   assert.equal((await client().fn('verifyCertificate', { certificate_id: world.certId })).status, 'recert_required');
 
   // The rebuilt course from the new version.
-  const v2 = await admin.create('Course', { playbook_id: world.playbook.id, title: 'SRE Foundations v2', status: 'pending_review' });
+  const v2 = await admin.create('Course', { playbook_id: world.playbook.id, title: 'SRE Foundations v2', status: 'pending_review', category: 'corporate' });
   const mod = await admin.create('Module', { course_id: v2.id, title: 'Incidents', order: 0 });
   const lesson = await admin.create('Lesson', { module_id: mod.id, title: 'Paging v2', status: 'approved', source_chapter: 'Incident Response' });
   const assessment = await admin.create('Assessment', { course_id: v2.id, title: 'Final', type: 'certification', status: 'published', passing_score: 50 });
