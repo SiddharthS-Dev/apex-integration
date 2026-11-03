@@ -5,7 +5,7 @@ import {
 import { config } from '../config.js';
 import { withLock } from '../db/locks.js';
 import { listFolderRecursive } from '../dropbox/client.js';
-import { getSyncSettings, loadConnection, meetingsAccount, withDropboxAccount } from '../dropbox/connection.js';
+import { getSyncSettings, loadConnection, meetingsAccount, sourceAccount, withDropboxAccount } from '../dropbox/connection.js';
 import { loadPlaybookBytes } from '../files/playbookSource.js';
 import { log } from '../lib/logger.js';
 import { mapPool } from '../lib/pool.js';
@@ -108,11 +108,9 @@ async function runLocked(trigger, plan) {
 
   try {
     const { root_path: root, meetings_path: meetingsPath } = await getSyncSettings();
-    // Files an admin deleted and kept out of syncs are invisible to both passes.
+    // Files an admin deleted and kept out of syncs are invisible to every pass.
     const ignored = await ignoredDropboxIds();
     const seenAt = startedAt.toISOString();
-    const limitMb = config.maxExtractMb;
-    const tooLargeMsg = `File exceeds the ${limitMb} MB extraction limit`;
 
     // Playbooks (when their folder is set and Dropbox is connected).
     let listing = [];
@@ -126,58 +124,31 @@ async function runLocked(trigger, plan) {
         return { id, status, counts };
       }
 
-      // 2. Compare. Files in the meetings folder are transcripts, not playbooks.
-      const stored = await entities.Playbook.filter({ source: 'dropbox' }, undefined, 10000);
-      const playbookFiles = listing.filter((f) => !inFolder(f.path_lower, meetingsPath));
-      const plan = planSync(playbookFiles, stored, { maxBytes: limitMb * 1024 * 1024 });
-      counts.discovered = plan.add.length + plan.update.length + plan.unchanged.length + plan.resume.length;
-      const width = config.syncConcurrency;
+      // 2–4. Files in the meetings folder are transcripts, and files in a category source's folder
+      // read through this same app belong to that source: neither is a main-folder playbook.
+      const settings = await getSyncSettings();
+      const sharedSourceFolders = Object.entries(settings.sources)
+        .filter(([key, folder]) => folder && folder !== '/' && sourceAccount(key) === 'playbooks')
+        .map(([, folder]) => folder);
+      const files = listing.filter((f) => !inFolder(f.path_lower, meetingsPath) && !sharedSourceFolders.some((d) => inFolder(f.path_lower, d)));
+      const stored = (await entities.Playbook.filter({ source: 'dropbox' }, undefined, 10000)).filter((p) => !p.dropbox_source);
+      await syncPlaybookFolder({ files, stored, category: SYNC_DEFAULT_CATEGORY, source: '', seenAt, counts, errors, fail });
+    }
 
-      // Unchanged: only refresh last_seen_at (plus path/name if the file was moved or renamed).
-      const touch = await mapPool([...plan.unchanged, ...plan.resume], width, ({ file, playbook }) => {
-        const patch = { last_seen_at: seenAt };
-        if (playbook.dropbox_path !== file.path_display) Object.assign(patch, { dropbox_path: file.path_display, file_name: file.name });
-        return entities.Playbook.update(playbook.id, patch);
+    // 4b. Category sources: each category's own Dropbox folder (and app, when it has one).
+    for (const key of plan.sources || []) {
+      await withDropboxAccount(sourceAccount(key), async () => {
+        const folder = (await getSyncSettings()).sources[key];
+        let files;
+        try {
+          files = (await listFolderRecursive(folder === '/' ? '' : folder)).filter((f) => !ignored.has(f.id));
+        } catch (err) {
+          errors.push(`${key} discovery failed: ${shortError(err)}`);
+          return; // nothing is archived on a failed discovery
+        }
+        const stored = await entities.Playbook.filter({ source: 'dropbox', dropbox_source: key }, undefined, 10000);
+        await syncPlaybookFolder({ files, stored, category: key, source: key, seenAt, counts, errors, fail });
       });
-      touch.forEach((r, i) => { if (!r.ok) errors.push(`${plan.unchanged.concat(plan.resume)[i].file.name}: ${shortError(r.error)}`); });
-      counts.unchanged = plan.unchanged.length + plan.resume.length;
-
-      // Index new and changed files.
-      const toProcess = [];
-      const index = await mapPool([...plan.add, ...plan.update], width, async ({ file, playbook, tooLarge }) => {
-        const fields = { ...fileFields(file), last_seen_at: seenAt, status: tooLarge ? 'failed' : 'uploaded', error: tooLarge ? tooLargeMsg : '', progress: 0 };
-        const rec = playbook
-          ? await entities.Playbook.update(playbook.id, fields)
-          // A new Dropbox document goes to the Corporate Knowledge Base until an admin assigns it; an
-        // existing one keeps its category (fields never include it), so a manual choice survives.
-        : await entities.Playbook.create({ title: stripExt(file.name), category: SYNC_DEFAULT_CATEGORY, category_source: 'default', ...fields });
-        if (playbook) counts.updated++; else counts.added++;
-        if (tooLarge) fail(file.name, tooLargeMsg);
-        else toProcess.push(rec);
-      });
-      index.forEach((r, i) => { if (!r.ok) fail([...plan.add, ...plan.update][i].file.name, r.error); });
-      for (const { playbook } of plan.resume) toProcess.push(playbook);
-
-      // 3. Process: cache bytes (keyed by file id + rev) and extract, never more than `width` at once.
-      const runExtract = toProcess.length && config.autoExtractOnSync ? await loadRunner('runExtract') : null;
-      const processed = await mapPool(toProcess, width, async (playbook) => {
-        await loadPlaybookBytes(playbook);
-        if (runExtract) await runExtract(playbook.id);
-      });
-      for (const [i, r] of processed.entries()) {
-        if (r.ok) continue;
-        const p = toProcess[i];
-        fail(p.file_name, r.error);
-        await entities.Playbook.update(p.id, { status: 'failed', error: shortError(r.error) }).catch(() => {});
-      }
-
-      // 4. Archive — discovery succeeded end-to-end, so absence is real.
-      const archived = await mapPool(plan.archive, width, (p) => entities.Playbook.update(p.id, { status: 'archived' }));
-      archived.forEach((r, i) => {
-        if (r.ok) counts.archived++;
-        else errors.push(`Archive ${plan.archive[i].file_name}: ${shortError(r.error)}`);
-      });
-
     }
 
     // 5. Meetings — their own discovery (through their own Dropbox app when one is set up).
@@ -196,6 +167,63 @@ async function runLocked(trigger, plan) {
       .catch((err) => log.error('sync.log_write_failed', { id, error: shortError(err) }));
     log.info('sync.finished', { id, trigger, status, duration_ms: durationMs, ...counts });
   }
+}
+
+// One playbook folder: compare files with the playbooks it owns, refresh unchanged ones, index new
+// and changed ones (new ones get `category`; an existing one keeps its category, so a manual choice
+// survives), extract them, and archive the ones that are gone. `source` is '' for the main folder or
+// the category key of a category source.
+export async function syncPlaybookFolder({ files, stored, category, source, seenAt, counts, errors, fail }) {
+  const limitMb = config.maxExtractMb;
+  const tooLargeMsg = `File exceeds the ${limitMb} MB extraction limit`;
+  const plan = planSync(files, stored, { maxBytes: limitMb * 1024 * 1024 });
+  counts.discovered += plan.add.length + plan.update.length + plan.unchanged.length + plan.resume.length;
+  const width = config.syncConcurrency;
+
+  // Unchanged: only refresh last_seen_at (plus path/name if the file was moved or renamed).
+  const touch = await mapPool([...plan.unchanged, ...plan.resume], width, ({ file, playbook }) => {
+    const patch = { last_seen_at: seenAt };
+    if (playbook.dropbox_path !== file.path_display) Object.assign(patch, { dropbox_path: file.path_display, file_name: file.name });
+    return entities.Playbook.update(playbook.id, patch);
+  });
+  touch.forEach((r, i) => { if (!r.ok) errors.push(`${plan.unchanged.concat(plan.resume)[i].file.name}: ${shortError(r.error)}`); });
+  counts.unchanged += plan.unchanged.length + plan.resume.length;
+
+  // Index new and changed files.
+  const toProcess = [];
+  const index = await mapPool([...plan.add, ...plan.update], width, async ({ file, playbook, tooLarge }) => {
+    const fields = { ...fileFields(file), last_seen_at: seenAt, status: tooLarge ? 'failed' : 'uploaded', error: tooLarge ? tooLargeMsg : '', progress: 0 };
+    const rec = playbook
+      ? await entities.Playbook.update(playbook.id, fields)
+      : await entities.Playbook.create({
+        title: stripExt(file.name), category, category_source: 'default', dropbox_source: source || undefined, ...fields,
+      });
+    if (playbook) counts.updated++; else counts.added++;
+    if (tooLarge) fail(file.name, tooLargeMsg);
+    else toProcess.push(rec);
+  });
+  index.forEach((r, i) => { if (!r.ok) fail([...plan.add, ...plan.update][i].file.name, r.error); });
+  for (const { playbook } of plan.resume) toProcess.push(playbook);
+
+  // Process: cache bytes (keyed by file id + rev) and extract, never more than `width` at once.
+  const runExtract = toProcess.length && config.autoExtractOnSync ? await loadRunner('runExtract') : null;
+  const processed = await mapPool(toProcess, width, async (playbook) => {
+    await loadPlaybookBytes(playbook);
+    if (runExtract) await runExtract(playbook.id);
+  });
+  for (const [i, r] of processed.entries()) {
+    if (r.ok) continue;
+    const p = toProcess[i];
+    fail(p.file_name, r.error);
+    await entities.Playbook.update(p.id, { status: 'failed', error: shortError(r.error) }).catch(() => {});
+  }
+
+  // Archive — discovery succeeded end-to-end, so absence is real.
+  const archived = await mapPool(plan.archive, width, (p) => entities.Playbook.update(p.id, { status: 'archived' }));
+  archived.forEach((r, i) => {
+    if (r.ok) counts.archived++;
+    else errors.push(`Archive ${plan.archive[i].file_name}: ${shortError(r.error)}`);
+  });
 }
 
 // Transcripts in the meetings folder → Meeting records, processed into meeting notes. Counts add to
@@ -275,10 +303,17 @@ export async function syncPlan() {
   const { root_path: root, meetings_path: meetings } = await getSyncSettings();
   const playbooksConnected = !!(await loadConnection());
   const meetingsConnected = !!(await withDropboxAccount(meetingsAccount(), () => loadConnection()));
+  // Category sources with a folder chosen and a connected account.
+  const { sources: folders } = await getSyncSettings();
+  const sources = [];
+  for (const [key, folder] of Object.entries(folders)) {
+    if (folder && (await withDropboxAccount(sourceAccount(key), () => loadConnection()))) sources.push(key);
+  }
   return {
     playbooks: playbooksConnected && !!root,
     meetings: meetingsConnected && !!meetings,
-    connected: playbooksConnected || meetingsConnected,
+    sources,
+    connected: playbooksConnected || meetingsConnected || sources.length > 0,
   };
 }
 
@@ -286,7 +321,7 @@ export async function syncPlan() {
 export async function runSync({ trigger = 'manual' } = {}) {
   const plan = await syncPlan();
   if (!plan.connected) return { started: false, reason: 'Dropbox is not connected' };
-  if (!plan.playbooks && !plan.meetings) return { started: false, reason: FOLDER_REQUIRED };
+  if (!plan.playbooks && !plan.meetings && !plan.sources.length) return { started: false, reason: FOLDER_REQUIRED };
   const { acquired, result } = await withLock(SYNC_LOCK, () => runLocked(trigger, plan), { ttlMs: 6 * 3600 * 1000 });
   if (!acquired) return { started: false, reason: ALREADY_RUNNING };
   return { started: true, ...result };

@@ -6,11 +6,13 @@ import { Button } from '@/components/ui/button';
 
 const parentOf = (p) => p.split('/').slice(0, -1).join('/');
 
-// source: 'playbooks' (default) or 'meetings' — which Dropbox app's folders to list. rootLabel names
-// the top level (the whole Dropbox, or a meetings app's own folder).
+// source: 'playbooks' (default), 'meetings', or 'source:<category>' — which Dropbox app's folders to
+// list. rootLabel names the top level (the whole Dropbox, or an app's own folder).
 export default function FolderBrowser({ initialPath = '', onSelect, saving, source = 'playbooks', rootLabel = '/ (entire Dropbox)' }) {
   const [path, setPath] = useState(initialPath);
-  const list = source === 'meetings' ? api.dropbox.meetings.listFolders : api.dropbox.listFolders;
+  const list = source === 'meetings' ? api.dropbox.meetings.listFolders
+    : source.startsWith('source:') ? (p) => api.dropbox.sources.listFolders(source.slice(7), p)
+      : api.dropbox.listFolders;
   const { data: folders = [], isLoading, error } = useQuery({ queryKey: ['dropbox-folders', source, path], queryFn: () => list(path) });
   return (
     <div className="rounded-xl border border-border">

@@ -912,6 +912,10 @@ export const ENTITIES = {
         "type": "string",
         "description": "Primary category key (PlaybookCategory.key, or 'unclassified'); decides which audiences see it"
       },
+      "dropbox_source": {
+        "type": "string",
+        "description": "Which Dropbox source synced it: empty = the main playbooks folder; a category key (e.g. learning) = that category's own folder/app"
+      },
       "category_source": {
         "type": "string",
         "enum": [

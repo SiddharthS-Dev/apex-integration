@@ -83,6 +83,10 @@ export const config = Object.freeze({
       redirectUri: env.DROPBOX_MEETINGS_REDIRECT_URI
         || (env.DROPBOX_REDIRECT_URI || `http://localhost:${num(env.PORT, 4000)}/api/dropbox/oauth/callback`).replace(/\/dropbox\/oauth\/callback$/, '/dropbox/meetings/oauth/callback'),
     },
+    // Category sources: a playbook category (e.g. learning) with a Dropbox folder of its own, read
+    // through its own app when DROPBOX_<CATEGORY>_APP_KEY/_APP_SECRET are set (else the main app).
+    // Its redirect URI is …/dropbox/sources/<category>/oauth/callback.
+    sources: categorySources(env),
   },
 
   // Sync scheduler
@@ -110,6 +114,25 @@ export const config = Object.freeze({
   jobsHourUtc: Math.min(23, Math.max(0, num(env.JOBS_HOUR_UTC, 3))),
   jobsEnabled: bool(env.JOBS_ENABLED, true),
 });
+
+function categorySources(env) {
+  const base = env.DROPBOX_REDIRECT_URI || `http://localhost:${num(env.PORT, 4000)}/api/dropbox/oauth/callback`;
+  const keys = new Set(['learning', 'strategic']);
+  for (const name of Object.keys(env)) {
+    const m = name.match(/^DROPBOX_([A-Z][A-Z0-9]*)_APP_KEY$/);
+    if (m && m[1] !== 'MEETINGS') keys.add(m[1].toLowerCase());
+  }
+  return Object.fromEntries([...keys].map((key) => {
+    const K = key.toUpperCase();
+    return [key, {
+      appKey: env[`DROPBOX_${K}_APP_KEY`] || '',
+      appSecret: env[`DROPBOX_${K}_APP_SECRET`] || '',
+      // DROPBOX_<CATEGORY>_ACCESS=full: a Full Dropbox app, so a folder must always be chosen.
+      fullAccess: /^full/i.test(env[`DROPBOX_${K}_ACCESS`] || ''),
+      redirectUri:env[`DROPBOX_${K}_REDIRECT_URI`] || base.replace(/\/dropbox\/oauth\/callback$/, `/dropbox/sources/${key}/oauth/callback`),
+    }];
+  }));
+}
 
 export function dropboxConfigured() {
   return !!(config.dropbox.appKey && config.dropbox.appSecret && config.tokenEncryptionKey);

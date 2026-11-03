@@ -113,6 +113,14 @@ export function createHttpDriver() {
         disconnect: () => request('POST', '/dropbox/meetings/disconnect'),
         listFolders: (path = '') => request('GET', '/dropbox/meetings/folders', { query: { path } }),
       },
+      // Category sources: a category's own Dropbox folder, and app when it has one.
+      sources: {
+        list: () => request('GET', '/dropbox/sources'),
+        connect: (key) => { window.location.href = `${BASE}/api/dropbox/sources/${encodeURIComponent(key)}/oauth/start`; },
+        disconnect: (key) => request('POST', `/dropbox/sources/${encodeURIComponent(key)}/disconnect`),
+        listFolders: (key, path = '') => request('GET', `/dropbox/sources/${encodeURIComponent(key)}/folders`, { query: { path } }),
+        setFolder: (key, path) => request('PATCH', `/dropbox/sources/${encodeURIComponent(key)}`, { body: { path } }),
+      },
     },
 
     sync: {

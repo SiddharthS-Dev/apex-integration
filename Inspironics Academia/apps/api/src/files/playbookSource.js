@@ -1,5 +1,6 @@
 import { PLAYBOOK_FILE_TYPES } from '@academy/shared';
 import { getObject, objectKey, putObject } from './objectStore.js';
+import { currentAccount, sourceAccount, withDropboxAccount } from '../dropbox/connection.js';
 
 // Playbook.file_url is a server-side reference, never a public URL:
 //   upload:<objectKey>          → uploaded through POST /api/files
@@ -27,7 +28,9 @@ export async function loadPlaybookBytes(playbook) {
     const cached = await getObject(key);
     if (cached) return cached;
     const { downloadFile } = await import('../dropbox/client.js');
-    const buf = await downloadFile(ref.id);
+    // A playbook from a category's own Dropbox source is downloaded through that source's app.
+    const account = playbook.dropbox_source ? sourceAccount(playbook.dropbox_source) : currentAccount();
+    const buf = await withDropboxAccount(account, () => downloadFile(ref.id));
     await putObject(key, buf, { source: 'dropbox', file_id: ref.id, rev: playbook.revision, name: playbook.file_name });
     return buf;
   }

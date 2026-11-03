@@ -25,6 +25,13 @@ export const withDropboxAccount = (account, fn) => accountStore.run(account, fn)
 export const currentAccount = () => accountStore.getStore() || 'playbooks';
 
 export const meetingsAppConfigured = () => !!(config.dropbox.meetings.appKey && config.dropbox.meetings.appSecret);
+
+// A category source with a Dropbox app of its own (DROPBOX_<CATEGORY>_APP_KEY/SECRET).
+export const sourceAppConfigured = (key) => !!(config.dropbox.sources[key]?.appKey && config.dropbox.sources[key]?.appSecret);
+/** An own app with App folder access, where '/' is just that app's folder (DROPBOX_<KEY>_ACCESS=full marks a Full Dropbox app). */
+export const sourceAppFolder = (key) => sourceAppConfigured(key) && !config.dropbox.sources[key]?.fullAccess;
+/** The account a category source's folder is read through: its own app when set up, else the main one. */
+export const sourceAccount = (key) => (sourceAppConfigured(key) ? `source:${key}` : 'playbooks');
 /** The account meeting transcripts are read through: their own app when configured, else the playbooks one. */
 export const meetingsAccount = () => (meetingsAppConfigured() ? 'meetings' : 'playbooks');
 
@@ -32,6 +39,10 @@ export const meetingsAccount = () => (meetingsAppConfigured() ? 'meetings' : 'pl
 export function accountConfig(account = currentAccount()) {
   if (account === 'meetings' && meetingsAppConfigured()) {
     return { account, ...config.dropbox.meetings, connectionKey: MEETINGS_CONNECTION_KEY, lock: 'dropbox:token-refresh:meetings' };
+  }
+  const source = String(account).startsWith('source:') ? account.slice(7) : null;
+  if (source && sourceAppConfigured(source)) {
+    return { account, ...config.dropbox.sources[source], connectionKey: `dropbox.source.${source}.connection`, lock: `dropbox:token-refresh:${source}` };
   }
   return {
     account: 'playbooks', appKey: config.dropbox.appKey, appSecret: config.dropbox.appSecret, redirectUri: config.dropbox.redirectUri,
@@ -91,7 +102,12 @@ export async function deleteConnection() {
 
 export async function getSyncSettings() {
   const s = await getSetting(SETTINGS_KEY, null);
-  return { root_path: s?.root_path ?? config.dropbox.defaultRoot ?? '', meetings_path: s?.meetings_path ?? '' };
+  return {
+    root_path: s?.root_path ?? config.dropbox.defaultRoot ?? '',
+    meetings_path: s?.meetings_path ?? '',
+    // Category sources: { learning: '/Interns' } — each category's own Dropbox folder ('' = none).
+    sources: s?.sources && typeof s.sources === 'object' ? s.sources : {},
+  };
 }
 
 export async function saveSyncSettings(patch) {

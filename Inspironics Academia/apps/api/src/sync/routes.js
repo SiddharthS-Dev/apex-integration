@@ -27,7 +27,7 @@ router.post('/run', asyncHandler(async (req, res) => {
   if (!dropboxConfigured()) throw new HttpError(503, 'Dropbox is not configured');
   const plan = await syncPlan();
   if (!plan.connected) throw new HttpError(409, 'Dropbox is not connected');
-  if (!plan.playbooks && !plan.meetings) throw new HttpError(409, FOLDER_REQUIRED);
+  if (!plan.playbooks && !plan.meetings && !plan.sources.length) throw new HttpError(409, FOLDER_REQUIRED);
   if (await isLocked(SYNC_LOCK)) return res.status(409).json({ error: ALREADY_RUNNING });
   // Background run; the lock inside runSync is the real guard against a race with another trigger.
   runSync({ trigger: 'manual' })
