@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, Library, Loader2, Megaphone, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, Library, Loader2, Megaphone, Settings2, Trash2, X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { api } from '@/api/client';
@@ -10,6 +10,13 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import ConfirmDialog from '@/components/admin/playbooks/ConfirmDialog';
+import ClassifyDialog from '@/components/admin/playbooks/ClassifyDialog';
+import ManageCategoriesDialog from '@/components/admin/playbooks/ManageCategoriesDialog';
+import CategoryTiles from '@/components/categories/CategoryTiles';
+import PlaybookFilters, { DEFAULT_FILTERS } from '@/components/categories/PlaybookFilters';
+import {
+  UNCLASSIFIED, UNCLASSIFIED_CATEGORY, categoryKey, categoryStats, filterOptions, filterPlaybooks, findCategory, useCategories,
+} from '@/lib/categories';
 import usePlaybookActions from '@/components/admin/playbooks/usePlaybookActions';
 import { useDropboxStatus, useSyncLogs, useSyncStatus } from '@/components/admin/integrations/integrationQueries';
 import HubHeader from './HubHeader';
@@ -81,32 +88,63 @@ function ErrorLogDialog({ playbook, onClose }) {
   );
 }
 
+// The repository is organised by audience: three (or more) categories, each a tab with its counts,
+// plus Unclassified for documents awaiting an admin. Within a category the existing status filters,
+// cards, Build Course in Studio, versions and deletion work as before.
 export default function PlaybookHub() {
   const actions = usePlaybookActions();
   const [filter, setFilter] = useState('all');
   const [errorTarget, setErrorTarget] = useState(null);
+  const { categories } = useCategories();
+  const [category, setCategory] = useState('corporate');
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [classifyTarget, setClassifyTarget] = useState(null);
+  const [managing, setManaging] = useState(false);
 
+  // Enough for every count on the category tiles.
   const { data: playbooks = [], isLoading } = useQuery({
     queryKey: ['playbooks'],
-    queryFn: () => api.entities.Playbook.list('-created_date', 200),
+    queryFn: () => api.entities.Playbook.list('-created_date', 5000),
     refetchInterval: (query) => (query.state.data?.some((p) => p.status === 'processing') ? 3000 : false),
   });
-  const ids = playbooks.map((p) => p.id);
   const { data: courses = [] } = useQuery({
-    queryKey: ['hub-courses', ids.join(',')],
-    enabled: ids.length > 0,
-    queryFn: () => api.entities.Course.filter({ playbook_id: { $in: ids } }, '-updated_date', 500),
+    queryKey: ['hub-courses', playbooks.length],
+    enabled: playbooks.length > 0,
+    queryFn: () => api.entities.Course.list('-updated_date', 5000),
   });
   const dropbox = useDropboxStatus();
   const connected = !!(dropbox.data?.configured && dropbox.data?.connected);
   const sync = useSyncStatus(connected);
   const logs = useSyncLogs(connected, !!sync.data?.running);
 
-  const items = sortForHub(playbooks.map((p) => ({ playbook: p, variant: variantOf(p, actions.busyIds.includes(p.id)) })));
+  // Category tiles: each category's playbooks and counts; Unclassified for documents awaiting review.
+  const byCategory = useMemo(() => {
+    const m = new Map();
+    for (const p of playbooks) m.set(categoryKey(p), [...(m.get(categoryKey(p)) || []), p]);
+    return m;
+  }, [playbooks]);
+  const known = new Set(categories.map((c) => c.key));
+  // A playbook whose category was deleted or never existed is shown as unclassified.
+  const orphans = [...byCategory].filter(([k]) => k !== UNCLASSIFIED && !known.has(k)).flatMap(([, list]) => list);
+  const inCategoryOf = (key) => (key === UNCLASSIFIED ? [...(byCategory.get(UNCLASSIFIED) || []), ...orphans] : byCategory.get(key) || []);
+  const tiles = [
+    ...categories.map((c) => ({ category: c, stats: categoryStats(inCategoryOf(c.key), courses) })),
+    { category: UNCLASSIFIED_CATEGORY, stats: categoryStats(inCategoryOf(UNCLASSIFIED), courses) },
+  ];
+  const selectedCategory = category === 'all' ? null : findCategory(categories, category);
+  const inScope = category === 'all' ? playbooks : inCategoryOf(category);
+  const options = filterOptions(playbooks);
+  const filtered = filterPlaybooks(inScope, filters);
+
+  const withVariant = filtered.map((p) => ({ playbook: p, variant: variantOf(p, actions.busyIds.includes(p.id)) }));
+  // "Recently updated" keeps the hub's own order (cards needing action first); other sorts as chosen.
+  const items = filters.sort === 'updated' ? sortForHub(withVariant) : withVariant;
   const counts = items.reduce((acc, { variant }) => ({ ...acc, [variant]: (acc[variant] || 0) + 1 }), {});
-  counts.stalled = playbooks.filter((p) => isStalled(p, actions.busyIds.includes(p.id))).length;
+  counts.stalled = filtered.filter((p) => isStalled(p, actions.busyIds.includes(p.id))).length;
   const active = FILTERS.find((f) => f.key === filter);
   const shown = items.filter(({ variant }) => active.match(variant));
+  const viewLabel = `${selectedCategory ? selectedCategory.label : 'All categories'} · ${active.label}`;
+  const categoryCounts = Object.fromEntries(categories.map((c) => [c.key, inCategoryOf(c.key).length]));
   // The live course for a playbook (archived ones are old versions).
   const courseFor = (id) => courses.find((c) => c.playbook_id === id && c.status !== 'archived');
 
@@ -120,10 +158,31 @@ export default function PlaybookHub() {
         <StatusBanner counts={counts} />
         <HubHeader dropbox={dropbox.data} syncRunning={!!sync.data?.running} />
 
+        <section aria-label="Categories" className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-semibold">Knowledge by audience</h2>
+              <p className="text-sm text-muted-foreground">Interns come here to learn, employees to execute, leadership to lead.</p>
+            </div>
+            <button type="button" onClick={() => setManaging(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-[hsl(var(--glass-line))] px-3 h-9 text-sm font-medium hover:bg-muted/40">
+              <Settings2 className="w-4 h-4" /> Manage categories
+            </button>
+          </div>
+          <CategoryTiles
+            tiles={tiles}
+            selected={category}
+            onSelect={(k) => { setCategory(k); setFilter('all'); }}
+            allTile={category === 'all' ? null : `Show all ${playbooks.length} playbooks`}
+          />
+        </section>
+
         <div className="grid gap-5 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_320px] items-start">
           <section className="glass tone-idle p-4 sm:p-5 min-w-0">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-              <h2 className="text-lg font-semibold">Playbook Hub</h2>
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold">{selectedCategory ? selectedCategory.label : 'All playbooks'}</h2>
+                {selectedCategory?.audience_label && <p className="text-xs text-muted-foreground">{selectedCategory.audience_label}</p>}
+              </div>
               <div role="tablist" aria-label="Filter playbooks" className="flex flex-wrap gap-1.5">
                 {FILTERS.map((f) => {
                   const n = items.filter(({ variant }) => f.match(variant)).length;
@@ -148,12 +207,17 @@ export default function PlaybookHub() {
                 {shown.length > 0 && (
                   <button
                     type="button"
-                    onClick={async () => {
-                      // The hub shows the newest 200; deleting a whole view takes every playbook in it.
-                      const every = await api.entities.Playbook.list('-created_date', 10000);
-                      const inView = every.filter((p) => active.match(variantOf(p, actions.busyIds.includes(p.id))));
-                      actions.onDeleteMany(inView, active.label);
-                    }}
+                    onClick={() => setClassifyTarget({ bulk: shown.map((i) => i.playbook), label: viewLabel })}
+                    className="rounded-full px-3 h-8 text-xs font-medium border border-[hsl(var(--glass-line))] text-muted-foreground hover:text-foreground hover:bg-muted/40 inline-flex items-center gap-1.5 transition-colors"
+                    title="Move every playbook in this view to another category"
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5" /> Move these to…
+                  </button>
+                )}
+                {shown.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => actions.onDeleteMany(shown.map((i) => i.playbook), viewLabel)}
                     className="rounded-full px-3 h-8 text-xs font-medium border border-rose-500/40 text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 inline-flex items-center gap-1.5 transition-colors"
                     title={`Delete every playbook in “${active.label}”`}
                   >
@@ -163,6 +227,8 @@ export default function PlaybookHub() {
               </div>
             </div>
 
+            <div className="mb-5"><PlaybookFilters value={filters} onChange={setFilters} options={options} idPrefix="hub" /></div>
+
             {isLoading ? (
               <div className="h-64 flex items-center justify-center text-muted-foreground"><Loader2 className="w-6 h-6 animate-spin" /></div>
             ) : shown.length === 0 ? (
@@ -170,7 +236,9 @@ export default function PlaybookHub() {
                 <Library className="w-8 h-8 text-muted-foreground" />
                 <p className="font-medium">{playbooks.length ? 'Nothing in this view' : 'No playbooks yet'}</p>
                 <p className="text-sm text-muted-foreground max-w-sm">
-                  {playbooks.length ? 'Try another filter.' : 'Upload a PDF or DOCX playbook above, or sync one from Dropbox.'}
+                  {!playbooks.length ? 'Upload a PDF or DOCX playbook above, or sync one from Dropbox.'
+                    : category === UNCLASSIFIED ? 'Nothing is waiting for review: every document has a category.'
+                      : 'Try another category, filter or search.'}
                 </p>
               </div>
             ) : (
@@ -194,6 +262,8 @@ export default function PlaybookHub() {
                         onDownload={actions.onDownload}
                         onDelete={actions.onDelete}
                         onShowError={setErrorTarget}
+                        category={findCategory(categories, known.has(categoryKey(playbook)) ? categoryKey(playbook) : UNCLASSIFIED)}
+                        onClassify={setClassifyTarget}
                       />
                     </motion.div>
                   ))}
@@ -207,6 +277,8 @@ export default function PlaybookHub() {
       </div>
 
       <ErrorLogDialog playbook={errorTarget} onClose={() => setErrorTarget(null)} />
+      <ClassifyDialog target={classifyTarget} onOpenChange={(o) => !o && setClassifyTarget(null)} suggestions={options} />
+      <ManageCategoriesDialog open={managing} onOpenChange={setManaging} counts={categoryCounts} />
       <ConfirmDialog
         open={!!actions.reprocessTarget}
         onOpenChange={(o) => !o && actions.setReprocessTarget(null)}
