@@ -1,4 +1,4 @@
-import { gradeFinalTest, issueCertificate, loadFinalTestPool } from '@academy/shared';
+import { canSeeCategory, gradeFinalTest, issueCertificate, loadFinalTestPool } from '@academy/shared';
 import { withLock } from '../db/locks.js';
 import { badRequest, conflict, notFound, unauthorized } from '../lib/errors.js';
 import { entities } from '../repo/entities.js';
@@ -23,6 +23,8 @@ export default async function submitFinalTest(payload = {}, ctx = {}) {
 
   const course = await entities.Course.get(courseId);
   if (!course || course.status !== 'published') throw notFound('Course not found');
+  // The course must be in a category the learner's audience may see (as for every content read).
+  if (!canSeeCategory(user, course.category, await entities.PlaybookCategory.filter({}, null, 1000))) throw notFound('Course not found');
 
   const pool = await loadFinalTestPool(filter, courseId);
   if (!pool.count) throw badRequest('This course has no final test yet.');

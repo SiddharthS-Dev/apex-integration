@@ -9,6 +9,7 @@ import verifyCertificate from './verifyCertificate.js';
 import processMeeting from './processMeeting.js';
 import publishMeeting from './publishMeeting.js';
 import deletePlaybooks from './deletePlaybooks.js';
+import classifyPlaybooks from './classifyPlaybooks.js';
 import {
   getComplianceReport, getMyRecertifications, getReviewQueue, runComplianceChecks, submitFlashcardReview, waiveRecertification,
 } from './retention.js';
@@ -31,6 +32,7 @@ export const handlers = {
   processMeeting,
   publishMeeting,
   deletePlaybooks,
+  classifyPlaybooks,
 };
 
 // Server-side entry points (no HTTP request), e.g. the Dropbox sync auto-extract.
