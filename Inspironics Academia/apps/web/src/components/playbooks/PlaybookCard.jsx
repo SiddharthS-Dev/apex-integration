@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Building2, FileText, Layers, UserRound } from 'lucide-react';
 import StatusBadge from '@/components/admin/StatusBadge';
+import { CategoryChip, ClassificationBadges } from '@/components/categories/CategoryChip';
 
 function Meta({ icon: Icon, children }) {
   return (
@@ -10,7 +11,7 @@ function Meta({ icon: Icon, children }) {
   );
 }
 
-export default function PlaybookCard({ playbook, courses, showStatus }) {
+export default function PlaybookCard({ playbook, courses, showStatus, category }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-5 flex flex-col gap-4">
       <div className="flex items-start gap-3">
@@ -28,6 +29,12 @@ export default function PlaybookCard({ playbook, courses, showStatus }) {
             <Meta icon={Layers}>{playbook.chapter_count || 0} chapters</Meta>
             {playbook.version && <span>v{playbook.version}</span>}
           </div>
+          {(category || playbook.department || playbook.skill_level || playbook.tech_tags?.length > 0) && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <CategoryChip category={category} />
+              <ClassificationBadges playbook={playbook} />
+            </div>
+          )}
         </div>
       </div>
       {playbook.toc_summary && <p className="text-sm text-muted-foreground line-clamp-3">{playbook.toc_summary}</p>}

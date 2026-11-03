@@ -7,11 +7,14 @@ import PageHeader from '@/components/PageHeader';
 import EmptyState from '@/components/EmptyState';
 import CatalogFilters from '@/components/catalog/CatalogFilters';
 import CourseGrid from '@/components/catalog/CourseGrid';
+import { categoryKey, useCategories } from '@/lib/categories';
 
 export default function CourseCatalog() {
   const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [difficulty, setDifficulty] = useState('all');
+  const [category, setCategory] = useState('all');
+  const { categories } = useCategories();
 
   const coursesQ = useQuery({
     queryKey: ['catalog-courses'],
@@ -33,15 +36,21 @@ export default function CourseCatalog() {
     return published.filter(
       (c) =>
         (difficulty === 'all' || (c.difficulty || 'beginner') === difficulty) &&
+        (category === 'all' || categoryKey(c) === category) &&
         (!q || `${c.title} ${c.description || ''}`.toLowerCase().includes(q)),
     );
-  }, [published, search, difficulty]);
+  }, [published, search, difficulty, category]);
 
   const loading = coursesQ.isLoading;
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       <PageHeader icon={Library} title="Course Catalog" description="Structured learning paths built from our engineering playbooks." />
-      <CatalogFilters search={search} onSearch={setSearch} difficulty={difficulty} onDifficulty={setDifficulty} />
+      {/* Only categories that have courses this learner can see (the API filters by audience). */}
+      <CatalogFilters
+        search={search} onSearch={setSearch} difficulty={difficulty} onDifficulty={setDifficulty}
+        category={category} onCategory={setCategory}
+        categories={categories.filter((cat) => published.some((c) => categoryKey(c) === cat.key))}
+      />
       {!loading && published.length === 0 ? (
         <EmptyState icon={Library} title="No courses yet" description="Published courses will appear here." />
       ) : !loading && courses.length === 0 ? (

@@ -8,6 +8,8 @@ import StatusBadge from '@/components/admin/StatusBadge';
 import RunSyncButton from '@/components/admin/integrations/RunSyncButton';
 import { useDropboxStatus, useSyncStatus } from '@/components/admin/integrations/integrationQueries';
 import { DashEmpty, HeaderLink, Panel, SectionHeader } from '@/components/dashboard/DashParts';
+import { CategoryChip } from '@/components/categories/CategoryChip';
+import { categoryKey, findCategory, useCategories } from '@/lib/categories';
 
 function DropboxGlyph({ className }) {
   return (
@@ -77,7 +79,7 @@ function DropboxBar({ status, sync }) {
   );
 }
 
-function PlaybookRow({ playbook, courses, isAdmin }) {
+function PlaybookRow({ playbook, courses, isAdmin, category }) {
   const course = courses.find((c) => c.playbook_id === playbook.id);
   const to = course ? `/courses/${course.id}` : isAdmin ? `/admin/studio/${playbook.id}` : '/playbooks';
   return (
@@ -88,8 +90,9 @@ function PlaybookRow({ playbook, courses, isAdmin }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium truncate group-hover:text-primary transition-colors">{playbook.title || playbook.file_name}</div>
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-0.5">
-            <span className="inline-flex items-center gap-1"><Layers className="w-3 h-3" />{playbook.chapter_count || 0} chapters</span>
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-0.5 min-w-0">
+            {category && <CategoryChip category={category} className="shrink-0" />}
+            <span className="inline-flex items-center gap-1 shrink-0"><Layers className="w-3 h-3" />{playbook.chapter_count || 0} chapters</span>
             <span className="truncate">{course ? course.title : 'No published course yet'}</span>
           </div>
         </div>
@@ -111,13 +114,14 @@ export default function PlaybookLibrary({ isAdmin, courses }) {
     refetchInterval: sync.data?.running ? 5000 : false,
   });
   const visible = (isAdmin ? playbooks.filter((p) => p.status !== 'archived') : playbooks.filter((p) => p.status === 'published')).slice(0, 6);
+  const { categories } = useCategories();
 
   return (
     <Panel>
       <SectionHeader
         icon={BookMarked}
         title="Playbook Library"
-        subtitle={isAdmin ? 'Synced from Dropbox or uploaded' : 'The engineering playbooks behind every course'}
+        subtitle={isAdmin ? 'Synced from Dropbox or uploaded, organised by audience' : 'The playbooks behind every course, for your role'}
         action={<HeaderLink to={isAdmin ? '/admin/playbooks' : '/playbooks'}>View all</HeaderLink>}
       />
       {isAdmin && dropbox.data && <DropboxBar status={dropbox.data} sync={sync.data} />}
@@ -135,7 +139,7 @@ export default function PlaybookLibrary({ isAdmin, courses }) {
         />
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
-          {visible.map((p) => <PlaybookRow key={p.id} playbook={p} courses={courses} isAdmin={isAdmin} />)}
+          {visible.map((p) => <PlaybookRow key={p.id} playbook={p} courses={courses} isAdmin={isAdmin} category={findCategory(categories, categoryKey(p))} />)}
         </ul>
       )}
     </Panel>
