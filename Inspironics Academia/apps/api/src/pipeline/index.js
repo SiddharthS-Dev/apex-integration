@@ -8,6 +8,7 @@ import submitFinalTest from './submitFinalTest.js';
 import verifyCertificate from './verifyCertificate.js';
 import processMeeting from './processMeeting.js';
 import publishMeeting from './publishMeeting.js';
+import generateMeetingVideo from './generateMeetingVideo.js';
 import deletePlaybooks from './deletePlaybooks.js';
 import classifyPlaybooks from './classifyPlaybooks.js';
 import {
@@ -31,6 +32,7 @@ export const handlers = {
   runComplianceChecks,
   processMeeting,
   publishMeeting,
+  generateMeetingVideo,
   deletePlaybooks,
   classifyPlaybooks,
 };

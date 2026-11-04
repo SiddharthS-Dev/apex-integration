@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, CalendarDays, Clock, Cloud, Download, Eye, EyeOff, FileDown, FileSpreadsheet, Loader2, Pencil, RefreshCw, Upload, Users,
+  ArrowLeft, CalendarDays, Clapperboard, Clock, Cloud, Download, Eye, EyeOff, FileDown, FileSpreadsheet, Loader2, Pencil, RefreshCw, Upload, Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
@@ -18,6 +18,7 @@ import { OverviewTab, QuestionsRisksTab, RequirementsTab } from '@/components/me
 import ActionItemsTab from '@/components/meetings/ActionItemsTab';
 import TranscriptTab from '@/components/meetings/TranscriptTab';
 import ParticipationTab from '@/components/meetings/ParticipationTab';
+import VideoBriefingTab from '@/components/meetings/VideoBriefingTab';
 import useMeetingActions from '@/components/meetings/useMeetingActions';
 import ConfirmDeleteButton from '@/components/admin/editor/ConfirmDeleteButton';
 import { useAuth } from '@/lib/AuthContext';
@@ -192,6 +193,10 @@ export default function MeetingDetail() {
               <TabsTrigger value="questions">Questions & risks</TabsTrigger>
               <TabsTrigger value="transcript">Transcript</TabsTrigger>
               <TabsTrigger value="participation">Participation</TabsTrigger>
+              <TabsTrigger value="video" className="gap-1.5">
+                <Clapperboard className="h-3.5 w-3.5" /> Video briefing
+                {meeting.briefing_status === 'ready' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-label="ready" />}
+              </TabsTrigger>
             </TabsList>
           </div>
           <TabsContent value="overview" className="pt-4"><OverviewTab meeting={meeting} /></TabsContent>
@@ -202,6 +207,7 @@ export default function MeetingDetail() {
             <TranscriptTab transcript={transcript.data} isLoading={transcript.isLoading} participants={meeting.participants || []} focusTime={focusTime} />
           </TabsContent>
           <TabsContent value="participation" className="pt-4"><ParticipationTab meeting={meeting} /></TabsContent>
+          <TabsContent value="video" className="pt-4"><VideoBriefingTab meeting={meeting} isAdmin={isAdmin} /></TabsContent>
         </Tabs>
       )}
     </div>

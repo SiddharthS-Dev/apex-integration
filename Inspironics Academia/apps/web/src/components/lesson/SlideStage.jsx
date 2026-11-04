@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { itemCount, pointsShown, sceneAt } from '@/components/lesson/scenes';
 import { BOUNCE, once, size } from '@/components/lesson/slideKit';
 import { LAYOUT_COMPONENTS } from '@/components/lesson/SlideLayouts';
+import TeacherPresenter from '@/components/lesson/TeacherPresenter';
 
 // All motion is CSS. Entrances (.sa-once) always run to the end, even while the narration is paused,
 // so nothing can be left invisible half-way in; ambient loops pause with the narration (.sa-paused).
@@ -417,7 +418,9 @@ export default function SlideStage({ scenes, current, playing, onToggle, context
   const flow = steps && scene.points.length <= 3;
   const Layout = LAYOUT_COMPONENTS[scene.layout];
   // Lists and definitions leave room for an illustration; the structured layouts need the full width.
-  const illustrated = (!Layout && !flow) || scene.layout === 'definition';
+  // With a presenter (context.presenter) the teacher stands on the right instead of the illustration.
+  const presenter = !!context.presenter;
+  const illustrated = !presenter && ((!Layout && !flow) || scene.layout === 'definition');
   const sourceLabel = [scene.playbook, scene.source].filter(Boolean).join('  ·  ');
   const Visual = VISUALS[active % VISUALS.length];
   const Icon = topicIcon(scene);
@@ -486,7 +489,7 @@ export default function SlideStage({ scenes, current, playing, onToggle, context
           )}
 
           {/* the slide; the lower quarter is left clear for the subtitles and the controls */}
-          <div className={cn('absolute left-0 top-[9.5cqw] bottom-[25%] px-[6cqw]', illustrated ? 'right-[29cqw]' : 'right-0')}>
+          <div className={cn('absolute left-0 top-[9.5cqw] bottom-[25%] px-[6cqw]', illustrated ? 'right-[29cqw]' : presenter ? 'right-[24cqw]' : 'right-0')}>
             <FitBox deps={[active, scene.title, itemCount(scene)]}>
               <div
                 className="sa-once flex items-center gap-[1cqw] font-semibold uppercase tracking-[0.2em]"
@@ -517,6 +520,8 @@ export default function SlideStage({ scenes, current, playing, onToggle, context
           </div>
         </div>
       </div>
+
+      {presenter && <TeacherPresenter playing={playing} accent={accent} className="absolute right-[1.5cqw] bottom-[6cqw] z-10 h-[36cqw] w-[24cqw]" />}
     </div>
   );
 }

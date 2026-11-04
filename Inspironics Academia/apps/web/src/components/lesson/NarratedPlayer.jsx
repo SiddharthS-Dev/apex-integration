@@ -110,7 +110,7 @@ export default function NarratedPlayer({ videoUrl, audioUrl, title, autoPlay, sc
         <MediaPlaceholder title={title} label="Audio narration" audio />
       )}
       <audio ref={p.audioRef} src={audioUrl} preload="auto" />
-      {hasCaptions && captionsOn && <Captions cue={captionAt(scenes, p.current)} />}
+      {hasCaptions && captionsOn && <Captions cue={captionAt(scenes, p.current)} besidePresenter={slides && !!context?.presenter} />}
       {p.blocked && !p.playing && <NarrationOverlay onPlay={p.play} />}
       <PlayerControls
         playing={p.playing}
