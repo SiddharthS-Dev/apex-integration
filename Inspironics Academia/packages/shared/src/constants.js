@@ -34,6 +34,7 @@ export const FUNCTIONS = Object.freeze({
   runComplianceChecks: { admin: true },
   processMeeting: { admin: true },
   publishMeeting: { admin: true },
+  generateMeetingVideo: { admin: true },
   deletePlaybooks: { admin: true },
   classifyPlaybooks: { admin: true },
 });

@@ -74,6 +74,10 @@ const handlers = {
     await sleep(200);
     throw new ApiError(503, 'Media generation is disabled (MEDIA_PROVIDER=none)');
   },
+  async generateMeetingVideo() {
+    await sleep(200);
+    throw new ApiError(503, 'Media generation is disabled (MEDIA_PROVIDER=none)');
+  },
   // Same contract as the API's submitFinalTest: grade here, never trust the browser's score.
   async submitFinalTest({ course_id: courseId, answers, today } = {}, { user }) {
     const course = courseId ? findOne('Course', { id: String(courseId) }) : null;

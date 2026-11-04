@@ -1814,6 +1814,40 @@ export const ENTITIES = {
       "published_date": {
         "type": "string",
         "format": "date"
+      },
+      "briefing_status": {
+        "type": "string",
+        "enum": [
+          "",
+          "generating",
+          "ready",
+          "failed"
+        ],
+        "description": "Video briefing (generateMeetingVideo): generating → ready, or failed"
+      },
+      "briefing_audio_url": {
+        "type": "string",
+        "description": "Narration track of the video briefing (/api/media/<key>)"
+      },
+      "briefing_scenes": {
+        "type": "string",
+        "description": "JSON scenes of the video briefing: [{ start, end, title, layout, points, ..., text, captions }]"
+      },
+      "briefing_method": {
+        "type": "string",
+        "description": "ai (written by the AI) or notes (written from the meeting notes)"
+      },
+      "briefing_voice": {
+        "type": "string",
+        "description": "recorded (media provider voice-over in briefing_audio_url) or browser (read aloud by the viewer's browser)"
+      },
+      "briefing_generated_at": {
+        "type": "string",
+        "description": "When the video briefing was generated"
+      },
+      "briefing_error": {
+        "type": "string",
+        "description": "Why the last video briefing failed"
       }
     },
     "required": [
