@@ -159,9 +159,9 @@ In the repository root:
 VITE_API_BASE_URL=http://localhost:4000
 ```
 
-`src/api/base44Client.js` picks the backend from that variable. With it set,
-the app uses this server for everything; with it unset it falls back to Base44
-or to the bundled local demo backend.
+`src/api/backendClient.js` picks the backend from that variable. With it set,
+the app uses this server for everything; with it unset (and `VITE_DEMO_MODE=true`)
+it uses the bundled local demo backend.
 
 **Serve the app and the API on the same site.** One domain, with `/api` proxied
 to the backend, is the arrangement the session cookie is designed for

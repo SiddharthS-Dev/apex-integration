@@ -1,11 +1,10 @@
 /**
- * Local backend used when no Base44 app id is configured.
+ * Local demo backend (VITE_DEMO_MODE=true, no API server).
  *
- * It implements the same surface the app consumes from the Base44 SDK
+ * It implements the same surface the app consumes from the SlidesVault API
  * (entities, auth, functions, integrations) on top of localStorage, so the
  * whole product — search, analytics, RBAC, offline downloads, the copilot —
- * is explorable without any cloud credentials. Point VITE_BASE44_APP_ID at a
- * real app and every call in this file is replaced by the real SDK.
+ * is explorable without any server. Set VITE_API_BASE_URL to use the real API.
  */
 import { buildSeedPresentations, buildSeedAnalytics, buildSeedUsers } from './seed';
 import { DOMAIN_NAMES, DOMAINS } from '@/lib/domains';
@@ -524,7 +523,7 @@ const functions = {
         return {
           data: {
             error:
-              'Dropbox OAuth needs a deployed backend. Configure VITE_BASE44_APP_ID and deploy base44/functions/dropboxAuth, then register the redirect URI shown above.',
+              'Dropbox OAuth needs the SlidesVault API server. Set VITE_API_BASE_URL, connect Dropbox there, and register the redirect URI shown above.',
           },
         };
       case 'test':

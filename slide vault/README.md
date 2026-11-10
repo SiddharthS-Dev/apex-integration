@@ -51,13 +51,12 @@ generated PDFs so the viewer, downloads and offline mode are all live.
 
 ## Connecting a real backend
 
-`src/api/base44Client.js` is the only place that knows which backend is in play; everything above
+`src/api/backendClient.js` is the only place that knows which backend is in play; everything above
 it (`entities.js`, `functions.js`, `integrations.js`) has an identical API whichever it is.
 
 | Mode | Selected by | What it is |
 | ---- | ----------- | ---------- |
 | **API server** | `VITE_API_BASE_URL` | The enterprise Dropbox integration layer in [`server/`](server/) |
-| Base44 | `VITE_BASE44_APP_ID` | The serverless functions in [`base44/`](base44/) |
 | Local | `VITE_DEMO_MODE=true` | The bundled demo backend (opt-in; with nothing configured the app reports an error) |
 
 ### API server (recommended)
@@ -82,16 +81,6 @@ keeps the library current on its own.
 See [`apps/api/README.md`](apps/api/README.md), and
 [`apps/api/docs/DEPLOYMENT.md`](apps/api/docs/DEPLOYMENT.md) for the full walk-through.
 
-### Base44
-
-1. Create a Base44 app and deploy the entities in [`legacy/base44/entities/`](legacy/base44/entities/) and the
-   functions in [`legacy/base44/functions/`](legacy/base44/functions/).
-2. Set the server-side secrets: `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_ROOT_FOLDER`.
-3. Copy `.env.example` to `.env` and set `VITE_BASE44_APP_ID`.
-4. `npm install @base44/sdk` — it is loaded lazily, so it is only needed in this mode.
-5. Sign in as an admin, open **Dropbox Settings**, register the redirect URI the page shows in the
-   Dropbox App Console, connect the account, pick a folder and run a sync.
-
 ---
 
 ## Architecture
@@ -101,7 +90,7 @@ apps/
   web/                    @slidesvault/web — the React + Vite client
     src/
       api/          backend adapter — apiClient (the API server), localClient
-                    (bundled offline backend), base44Client (legacy chooser),
+                    (bundled offline backend), backendClient (backend chooser),
                     entities / functions / integrations, seed catalog
       lib/          domains (palette over the shared taxonomy), offline-db
                     (IndexedDB), analytics, useTheme, AuthContext,
@@ -135,8 +124,6 @@ packages/
                   roles, files. Imports nothing, so bare Node and Vite can
                   both consume it.
 
-legacy/
-  base44/         retired Base44 entities and functions, kept for reference
 ```
 
 ### Sync pipeline

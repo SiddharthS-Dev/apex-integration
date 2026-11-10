@@ -1,4 +1,4 @@
-import { getClient } from './base44Client';
+import { getClient } from './backendClient';
 
 async function core(method, payload) {
   const client = await getClient();

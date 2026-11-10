@@ -1,9 +1,8 @@
-import { getClient } from './base44Client';
+import { getClient } from './backendClient';
 
 /**
- * Calls a backend function by name. On Base44 these are the handlers under
- * base44/functions/<name>/entry.ts; locally they are simulated in localClient.
- * Every call resolves to { data } to match the SDK's response envelope.
+ * Calls a backend function by name: on the SlidesVault API server, or simulated in localClient for
+ * the local demo. Every call resolves to { data }.
  */
 function fn(name) {
   return async (payload = {}) => {

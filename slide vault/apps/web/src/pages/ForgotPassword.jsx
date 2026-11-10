@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, Mail, MailCheck } from 'lucide-react';
-import { getClient } from '@/api/base44Client';
+import { getClient } from '@/api/backendClient';
 import { Button, Input, Label } from '@/components/ui';
 import { AuthShell, FormError } from '@/pages/Login';
 

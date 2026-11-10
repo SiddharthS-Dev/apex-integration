@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, Lock } from 'lucide-react';
-import { getClient, isLocalMode } from '@/api/base44Client';
+import { getClient, isLocalMode } from '@/api/backendClient';
 import { Button, Input, Label } from '@/components/ui';
 import { AuthShell, FormError } from '@/pages/Login';
 

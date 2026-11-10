@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { backendMode, getClient } from '@/api/base44Client';
+import { backendMode, getClient } from '@/api/backendClient';
 import { recordLogin } from '@/lib/analytics';
 import { deleteLegacyOfflineData, deleteOfflineData, setOfflineOwner } from '@/lib/offline-db';
 import { registerServiceWorker } from '@/lib/serviceWorker';
@@ -265,7 +265,7 @@ export function AuthProvider({ children }) {
       capabilities,
       googleEnabled: capabilities.google === true,
       // The API server says whether its AI is configured; the demo backend
-      // simulates the Copilot and Base44 hosts the model, so both have one.
+      // simulates the Copilot.
       aiEnabled: backendMode === 'api' ? capabilities.ai === true : backendMode !== 'none',
       isAdmin: user?.role === 'admin',
       refresh,

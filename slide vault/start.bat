@@ -28,10 +28,10 @@ rem apart from any other app that happens to hold the same port.
 set "PROJECT=%~dp0"
 if "%PROJECT:~-1%"=="\" set "PROJECT=%PROJECT:~0,-1%"
 
-set "BASE44APP="
+set "APIURL="
 if exist ".env" (
   for /f "usebackq tokens=1,* delims==" %%K in (".env") do (
-    if /I "%%K"=="VITE_BASE44_APP_ID" if not "%%L"=="" set "BASE44APP=%%L"
+    if /I "%%K"=="VITE_API_BASE_URL" if not "%%L"=="" set "APIURL=%%L"
   )
 )
 
@@ -138,11 +138,11 @@ if /I "%MODE%"=="preview" (
   if "%PORT%"=="5173" ( echo       Stop : stop.bat ) else ( echo       Stop : stop.bat %PORT%)
 )
 echo.
-if defined BASE44APP (
-  echo       Backend: Base44 app %BASE44APP%
-  echo       Sign in with your Base44 account.
+if defined APIURL (
+  echo       Backend: SlidesVault API at %APIURL%
+  echo       Sign in with your SlidesVault account.
 ) else (
-  echo       Backend: local demo catalog ^(no VITE_BASE44_APP_ID set^)
+  echo       Backend: local demo catalog ^(no VITE_API_BASE_URL set^)
   echo       Sign in with a seeded demo account ^(password: slidesvault^)
   echo         admin  : avery.raman@inspironics.net
   echo         member : sana.kapoor@inspironics.net
