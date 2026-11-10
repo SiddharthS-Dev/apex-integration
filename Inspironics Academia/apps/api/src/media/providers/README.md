@@ -1,80 +1,44 @@
-# Media providers
+# Voice-over (text-to-speech) providers
 
-`generateLessonMedia` produces an explainer video and narration audio for a lesson through a
-pluggable provider chosen by the `MEDIA_PROVIDER` environment variable (default `none`).
+Lesson videos and meeting briefings are narrated through a pluggable text-to-speech provider chosen by
+`MEDIA_PROVIDER` (default `none`). The router is `media/index.js`; videos themselves are rendered from
+slides by the FFmpeg engine in `media/video/` (no provider generates video clips).
 
-| Provider | Video | Narration | Notes |
-|---|---|---|---|
-| `none` | – | – | Default. `generateLessonMedia` returns 503 and leaves the lesson untouched; the web app shows a placeholder and narrates with the browser's `speechSynthesis`. |
-| `base44` | ✓ | ✓ | The Base44 app's built-in `Core.GenerateVideo` (8 s, 16:9) and `Core.GenerateSpeech` (MP3), billed to its integration credits. Needs `BASE44_APP_ID` (plus `BASE44_EMAIL`/`BASE44_PASSWORD` if the app requires sign-in). Files are downloaded into the object store. |
+| Provider | Needs | Notes |
+|---|---|---|
+| `none` | — | Default. No recorded narration: the web players read the script aloud with the browser's voice. |
+| `google` | `GOOGLE_TTS_API_KEY`, or `GOOGLE_APPLICATION_CREDENTIALS` (service-account key file) | Google Cloud Text-to-Speech. MP3 44.1 kHz; text over 5,000 bytes is split at sentence ends and joined in order. |
+| `elevenlabs` | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | Optional. MP3 44.1 kHz / 128 kbps. |
+| `piper` | `PIPER_EXECUTABLE_PATH`, `PIPER_MODEL_PATH` | Optional, local and free; WAV converted to MP3 with FFmpeg. Runs on the API server's CPU. |
+
+Voice settings (`TTS_LANGUAGE`, `TTS_VOICE`, `TTS_SPEAKING_RATE`, `TTS_PITCH`) are defaults; a request
+(e.g. from AI Studio) may override them. `TTS_VOICE` applies to the default provider only.
+
+## What the router adds around every provider
+
+- **Audio cache** (`ENABLE_AUDIO_CACHE=true`): the key is a hash of the normalised text, provider,
+  voice, language, rate, pitch and format. The same narration is never paid for twice.
+- **Limits**: the monthly character limit is checked before a paid request (429 when exceeded).
+- **Usage log**: every request, including cache hits, failures and blocked requests, goes into
+  `generation_log` with characters and estimated cost (`TTS_PRICE_PER_MILLION_CHARS`).
+- **Storage**: audio lives in the object store and is served at `/api/media/<key>` to signed-in users.
 
 ## Contract
 
-A provider is a plain object exported as the default export of `providers/<name>.js`:
+A provider is the default export of `providers/<name>.js`:
 
 ```js
 export default {
   name: 'example',
-  // optional; `false` makes mediaEnabled() return false
-  enabled: true,
-  // optional; omit when the provider can't do video
-  async generateVideo({ prompt, durationSeconds, aspectRatio }) { /* ... */ },
-  // optional; omit when the provider can't do speech
-  async generateNarration({ text, voice }) { /* ... */ },
-};
-```
-
-Each method returns one of:
-
-- `{ bytes: Buffer, contentType: 'video/mp4' | 'audio/mpeg' | ... }` — preferred. The pipeline stores the
-  bytes in the object store (`objectKey('media', lessonId, kind, sha256)`) and sets
-  `lesson.video_url` / `lesson.audio_url` to `/api/media/<key>`, served (signed-in users only) by
-  `GET /api/media/:key` with the stored content type.
-- `{ url: 'https://…' }` — for providers that host the file themselves. Only use this for URLs that are
-  durable and safe to hand to browsers.
-
-Throw an `Error` on failure. The pipeline makes 2 attempts per asset and runs video and narration in
-parallel (`Promise.allSettled`), so one can fail while the other succeeds. `voice` is a provider-neutral
-hint (the pipeline passes `storm`); map it to one of your provider's voices.
-
-Never log prompts, narration text or API keys.
-
-## Adding a provider
-
-1. Create `providers/<name>.js` implementing the contract. Use Node's built-in `fetch` — do not add
-   npm dependencies.
-2. Register it in `media/index.js`:
-   ```js
-   import openai from './providers/openai.js';
-   const PROVIDERS = { none, openai };
-   ```
-3. Read its credentials from `process.env` (e.g. `OPENAI_API_KEY`) inside the provider and throw a clear
-   error when they're missing.
-4. Set `MEDIA_PROVIDER=<name>` on the API server. `/api/config` then reports `media_enabled: true`.
-
-### Example: OpenAI text-to-speech (narration only)
-
-```js
-// providers/openai.js
-const VOICES = { storm: 'onyx' };
-
-export default {
-  name: 'openai',
-  async generateNarration({ text, voice }) {
-    const key = process.env.OPENAI_API_KEY;
-    if (!key) throw new Error('OPENAI_API_KEY is not set');
-    const res = await fetch('https://api.openai.com/v1/audio/speech', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice: VOICES[voice] || 'alloy', input: text, response_format: 'mp3' }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    if (!res.ok) throw new Error(`OpenAI TTS failed (HTTP ${res.status})`);
-    return { bytes: Buffer.from(await res.arrayBuffer()), contentType: 'audio/mpeg' };
+  ready: () => !!process.env.EXAMPLE_API_KEY,             // configured?
+  async synthesize({ text, voice, language, rate, pitch }) {
+    return { bytes /* MP3 Buffer */, contentType: 'audio/mpeg' };
   },
-  // no generateVideo → video attempts fail with "does not support video"; narration still succeeds
+  async voices(language) { return [{ id, name, languages: [], gender: '' }]; },
 };
 ```
 
-Video providers are usually asynchronous (submit a job, poll until done, then download). Do the polling
-inside `generateVideo` with a bounded timeout and return the downloaded bytes.
+Return MP3 (any MPEG-1/2 sample rate; 44.1 kHz preferred) so narration parts can be joined frame by
+frame. Throw on failure; use `postJson` from `ai/providers/http.js` for retries with backoff on 429/5xx.
+Never log narration text or API keys. Register the provider in `TTS_PROVIDERS` in `media/index.js` and
+add a mocked test in `test/tts.test.js`.

@@ -308,11 +308,9 @@ test('a file with no speaker turns fails with a clear message', async () => {
 
 test('the AI analysis schema is valid for structured outputs and matches what normalizeAnalysis reads', async () => {
   const { ANALYSIS_SCHEMA } = await import('../src/pipeline/processMeeting.js');
-  const { strictSchema } = await import('../src/ai/claude.js');
-  const strict = strictSchema(ANALYSIS_SCHEMA);
-  assert.equal(strict.additionalProperties, false);
+  const { requireAllFields } = await import('../src/ai/schema.js');
+  const strict = requireAllFields(ANALYSIS_SCHEMA);
   const item = strict.properties.action_items.items;
-  assert.equal(item.additionalProperties, false);
   assert.ok(!item.required.includes('time'), 'a transcript without timestamps has no time to give');
   const shape = normalizeAnalysis({});
   assert.deepEqual(Object.keys(strict.properties).sort(), Object.keys(shape).sort());

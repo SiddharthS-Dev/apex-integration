@@ -641,6 +641,71 @@ export const ENTITIES = {
         "type": "number",
         "description": "Display order within the module",
         "default": 0
+      },
+      "rendered_video_url": {
+        "type": "string",
+        "description": "Rendered MP4 of the lesson (/api/media/<key>)"
+      },
+      "rendered_thumbnail_url": {
+        "type": "string",
+        "description": "Thumbnail of the rendered lesson video"
+      },
+      "rendered_subtitles_url": {
+        "type": "string",
+        "description": "WebVTT subtitles of the rendered lesson video"
+      },
+      "rendered_srt_url": {
+        "type": "string",
+        "description": "SRT subtitles of the rendered lesson video"
+      },
+      "rendered_video_seconds": {
+        "type": "number",
+        "description": "Length of the rendered video"
+      },
+      "rendered_video_rendered_at": {
+        "type": "string",
+        "description": "When the video was rendered"
+      },
+      "rendered_scenes_signature": {
+        "type": "string",
+        "description": "The scenes and narration the rendered video was made from (to tell when it is out of date)"
+      },
+      "rendered_dropbox_path": {
+        "type": "string",
+        "description": "Where the rendered lesson video was uploaded in Dropbox"
+      },
+      "rendered_dropbox_id": {
+        "type": "string",
+        "description": "Dropbox file id of the uploaded video"
+      },
+      "rendered_dropbox_rev": {
+        "type": "string",
+        "description": "Dropbox revision of the uploaded video"
+      },
+      "rendered_output_error": {
+        "type": "string",
+        "description": "Why the last upload of the rendered video failed"
+      },
+      "content_generated_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "When the lesson's script, quiz and flashcards were last generated"
+      },
+      "content_error": {
+        "type": "string",
+        "description": "Why the last content generation failed (cleared on success)"
+      },
+      "content_attempts": {
+        "type": "number",
+        "description": "Content generation attempts (for batch progress and retries)"
+      },
+      "content_error_retryable": {
+        "type": "boolean",
+        "description": "The last failure was temporary (provider overloaded / rate-limited): the next batch retries it"
+      },
+      "media_error": {
+        "type": "string",
+        "description": "Why the last narration / slide generation failed (cleared on success)"
       }
     },
     "required": [
@@ -953,6 +1018,14 @@ export const ENTITIES = {
           "type": "string"
         },
         "description": "Secondary tags (a playbook has one primary category; tags never duplicate it)"
+      },
+      "extracted_revision": {
+        "type": "string",
+        "description": "Source revision (Dropbox rev, or content hash) whose chapters are stored; the same revision is not extracted twice"
+      },
+      "extracted_at": {
+        "type": "string",
+        "description": "When the chapters were last extracted"
       }
     },
     "required": [
@@ -1021,6 +1094,14 @@ export const ENTITIES = {
       "chapters_snapshot": {
         "type": "string",
         "description": "JSON string: array of {title, number, summary, content}"
+      },
+      "source_revision": {
+        "type": "string",
+        "description": "Dropbox revision the version was extracted from"
+      },
+      "content_hash": {
+        "type": "string",
+        "description": "Dropbox content hash of that revision"
       }
     },
     "required": [
@@ -1805,7 +1886,7 @@ export const ENTITIES = {
           "ai",
           "heuristic"
         ],
-        "description": "ai = written by Claude; heuristic = keyword rules (AI off)"
+        "description": "ai = written by the AI provider; heuristic = keyword rules (AI off)"
       },
       "action_item_count": {
         "type": "number",
@@ -1848,6 +1929,46 @@ export const ENTITIES = {
       "briefing_error": {
         "type": "string",
         "description": "Why the last video briefing failed"
+      },
+      "briefing_video_url": {
+        "type": "string",
+        "description": "Rendered MP4 of the meeting briefing (/api/media/<key>)"
+      },
+      "briefing_thumbnail_url": {
+        "type": "string",
+        "description": "Thumbnail of the rendered meeting briefing video"
+      },
+      "briefing_subtitles_url": {
+        "type": "string",
+        "description": "WebVTT subtitles of the rendered meeting briefing video"
+      },
+      "briefing_srt_url": {
+        "type": "string",
+        "description": "SRT subtitles of the rendered meeting briefing video"
+      },
+      "briefing_video_seconds": {
+        "type": "number",
+        "description": "Length of the rendered video"
+      },
+      "briefing_video_rendered_at": {
+        "type": "string",
+        "description": "When the video was rendered"
+      },
+      "briefing_dropbox_path": {
+        "type": "string",
+        "description": "Where the rendered meeting briefing video was uploaded in Dropbox"
+      },
+      "briefing_dropbox_id": {
+        "type": "string",
+        "description": "Dropbox file id of the uploaded video"
+      },
+      "briefing_dropbox_rev": {
+        "type": "string",
+        "description": "Dropbox revision of the uploaded video"
+      },
+      "briefing_output_error": {
+        "type": "string",
+        "description": "Why the last upload of the rendered video failed"
       }
     },
     "required": [
@@ -2151,6 +2272,155 @@ export const ENTITIES = {
             }
           }
         ]
+      },
+      "delete": {
+        "user_condition": {
+          "role": "admin"
+        }
+      }
+    }
+  },
+  "VideoProject": {
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "Video title"
+      },
+      "source_type": {
+        "type": "string",
+        "enum": [
+          "lesson",
+          "meeting",
+          "document",
+          "text",
+          "blank",
+          "dropbox"
+        ],
+        "description": "What the video was created from"
+      },
+      "source_id": {
+        "type": "string",
+        "description": "Lesson or meeting id when made from one"
+      },
+      "eyebrow": {
+        "type": "string",
+        "description": "Header line shown on every slide"
+      },
+      "scenes": {
+        "type": "string",
+        "description": "JSON scenes: [{ id, rev, title, layout, points, quote?, table?, columns?, events?, narration, image_key? }]"
+      },
+      "voice_provider": {
+        "type": "string",
+        "description": "Text-to-speech provider (empty = the server default)"
+      },
+      "voice": {
+        "type": "string",
+        "description": "Voice id (empty = the provider default)"
+      },
+      "language": {
+        "type": "string",
+        "description": "Narration language, e.g. en-IN"
+      },
+      "rate": {
+        "type": "number",
+        "description": "Speaking rate (1 = normal)"
+      },
+      "presenter": {
+        "type": "boolean",
+        "description": "Show the animated teacher",
+        "default": true
+      },
+      "burn_captions": {
+        "type": "boolean",
+        "description": "Draw subtitles into the picture",
+        "default": true
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "rendering",
+          "ready",
+          "failed"
+        ],
+        "default": "draft"
+      },
+      "video_url": {
+        "type": "string"
+      },
+      "thumbnail_url": {
+        "type": "string"
+      },
+      "subtitles_url": {
+        "type": "string",
+        "description": "WebVTT"
+      },
+      "srt_url": {
+        "type": "string"
+      },
+      "video_seconds": {
+        "type": "number"
+      },
+      "rendered_at": {
+        "type": "string"
+      },
+      "scenes_rendered": {
+        "type": "number"
+      },
+      "scenes_reused": {
+        "type": "number"
+      },
+      "error": {
+        "type": "string"
+      },
+      "source_revision": {
+        "type": "string",
+        "description": "Dropbox revision of the source document"
+      },
+      "source_path": {
+        "type": "string",
+        "description": "Dropbox path of the source document when it was used"
+      },
+      "source_account": {
+        "type": "string",
+        "description": "Which Dropbox connection the source came from"
+      },
+      "dropbox_path": {
+        "type": "string",
+        "description": "Where the rendered project video was uploaded in Dropbox"
+      },
+      "dropbox_id": {
+        "type": "string",
+        "description": "Dropbox file id of the uploaded video"
+      },
+      "dropbox_rev": {
+        "type": "string",
+        "description": "Dropbox revision of the uploaded video"
+      },
+      "output_error": {
+        "type": "string",
+        "description": "Why the last upload of the rendered video failed"
+      }
+    },
+    "required": [
+      "title"
+    ],
+    "rls": {
+      "read": {
+        "user_condition": {
+          "role": "admin"
+        }
+      },
+      "create": {
+        "user_condition": {
+          "role": "admin"
+        }
+      },
+      "update": {
+        "user_condition": {
+          "role": "admin"
+        }
       },
       "delete": {
         "user_condition": {

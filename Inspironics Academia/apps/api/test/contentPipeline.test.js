@@ -6,12 +6,12 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import JSZip from 'jszip';
 
-// The playbook → course pipeline end to end, with the AI answered by a local stand-in for Base44:
+// The playbook → course pipeline end to end, with the AI answered by a local stand-in for the Gemini API:
 // extract chapters from a DOCX course book, design the course, write lesson content and build
 // assessments. The fake AI misbehaves the way real models do (skips a chapter, numbers its modules,
 // returns malformed quiz questions) so the safeguards are exercised too. No real network.
 
-// ---- fake Base44 AI -------------------------------------------------------------------------
+// ---- fake the AI provider -------------------------------------------------------------------------
 
 const calls = [];
 const behaviour = { designEmpty: false, lessonEmptyScript: false, examFails: false };
@@ -44,7 +44,7 @@ function lessonAnswer() {
   });
   return {
     video_title: 'Learning the essentials',
-    teaching_script: 'Welcome. Today we learn the essentials, step by step.',
+    teaching_script: `Welcome. Today we learn the essentials, step by step. ${'We walk through each rule of the chapter and apply it to a real engineering scenario. '.repeat(25)}`,
     summary: 'A short summary.',
     examples: ['Example one.', 'Example two.'],
     key_points: ['- Point one', 'Point two'],
@@ -91,12 +91,13 @@ const ai = http.createServer((req, res) => {
   req.on('data', (c) => { raw += c; });
   req.on('end', () => {
     const body = JSON.parse(raw || '{}');
-    const prompt = String(body.prompt || '');
+    // Gemini generateContent: the system prompt and the user prompt arrive separately.
+    const prompt = [body.systemInstruction?.parts?.[0]?.text, body.contents?.[0]?.parts?.at(-1)?.text].filter(Boolean).join('\n\n');
     calls.push(prompt);
     const out = answer(prompt);
-    if (out === null) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ message: 'model overloaded' })); }
+    if (out === null) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: { message: 'model overloaded' } })); }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify(out));
+    return res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(out) }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50 } }));
   });
 });
 await new Promise((r) => ai.listen(0, '127.0.0.1', r));
@@ -104,8 +105,8 @@ await new Promise((r) => ai.listen(0, '127.0.0.1', r));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'academy-content-'));
 Object.assign(process.env, {
   DATA_DIR: dir, SQLITE_PATH: path.join(dir, 'test.db'), DATABASE_URL: '', LOG_LEVEL: 'error',
-  AI_ENABLED: 'true', AI_PROVIDER: 'base44', BASE44_APP_ID: 'app-test', BASE44_EMAIL: '', BASE44_PASSWORD: '',
-  BASE44_SERVER_URL: `http://127.0.0.1:${ai.address().port}/`, MEDIA_PROVIDER: 'none',
+  AI_ENABLED: 'true', AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'test-key', GEMINI_MODEL: 'gemini-test',
+  GEMINI_BASE_URL: `http://127.0.0.1:${ai.address().port}/v1beta`, MEDIA_PROVIDER: 'none', ENABLE_CONTENT_CACHE: 'false',
 });
 
 const { getDb, closeDb } = await import('../src/db/index.js');
@@ -312,7 +313,9 @@ test('lesson content: an empty script fails and the lesson goes back to pending'
   const [, second] = await entities.Lesson.filter({ module_id: (await firstLesson()).module_id });
   behaviour.lessonEmptyScript = true;
   try {
-    await assert.rejects(generateLessonContent({ lesson_id: second.id }), /no teaching script/);
+    // Incomplete answer (empty script, missing fields): rejected by the structure check or the
+    // script check, retried once, then failed with the reason.
+    await assert.rejects(generateLessonContent({ lesson_id: second.id }), /no teaching script|unexpected format/);
     assert.equal((await entities.Lesson.get(second.id)).status, 'pending');
   } finally {
     behaviour.lessonEmptyScript = false;

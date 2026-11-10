@@ -6,7 +6,6 @@ import { config } from '../config.js';
 import { withLock } from '../db/locks.js';
 import { listFolderRecursive } from '../dropbox/client.js';
 import { getSyncSettings, loadConnection, meetingsAccount, sourceAccount, withDropboxAccount } from '../dropbox/connection.js';
-import { loadPlaybookBytes } from '../files/playbookSource.js';
 import { log } from '../lib/logger.js';
 import { mapPool } from '../lib/pool.js';
 import { entities } from '../repo/entities.js';
@@ -205,12 +204,11 @@ export async function syncPlaybookFolder({ files, stored, category, source, seen
   index.forEach((r, i) => { if (!r.ok) fail([...plan.add, ...plan.update][i].file.name, r.error); });
   for (const { playbook } of plan.resume) toProcess.push(playbook);
 
-  // Process: cache bytes (keyed by file id + rev) and extract, never more than `width` at once.
+  // Extract (when AUTO_EXTRACT_ON_SYNC is on), never more than `width` at once. The file bytes are
+  // fetched by the extraction itself; with extraction off, the sync is metadata-only (nothing is
+  // downloaded) and documents are processed on demand.
   const runExtract = toProcess.length && config.autoExtractOnSync ? await loadRunner('runExtract') : null;
-  const processed = await mapPool(toProcess, width, async (playbook) => {
-    await loadPlaybookBytes(playbook);
-    if (runExtract) await runExtract(playbook.id);
-  });
+  const processed = runExtract ? await mapPool(toProcess, width, (playbook) => runExtract(playbook.id)) : [];
   for (const [i, r] of processed.entries()) {
     if (r.ok) continue;
     const p = toProcess[i];
@@ -281,10 +279,7 @@ async function syncMeetingsIn({ root, meetingsPath: rawPath, listing, seenAt, co
 
   // One at a time: each analysis is a long model call.
   const runMeeting = toProcess.length && config.autoExtractOnSync ? await loadRunner('runMeeting') : null;
-  const processed = await mapPool(toProcess, 1, async (meeting) => {
-    await loadPlaybookBytes(meeting);
-    if (runMeeting) await runMeeting(meeting.id);
-  });
+  const processed = runMeeting ? await mapPool(toProcess, 1, (meeting) => runMeeting(meeting.id)) : [];
   processed.forEach((r, i) => { if (!r.ok) fail(toProcess[i].file_name, r.error); });
 
   const archived = await mapPool(plan.archive, width, (m) => entities.Meeting.update(m.id, { status: 'archived' }));

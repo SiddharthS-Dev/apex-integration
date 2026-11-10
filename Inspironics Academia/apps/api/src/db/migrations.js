@@ -113,6 +113,65 @@ const CORE_MIGRATIONS = [
     id: '005_user_audience',
     sql: () => "ALTER TABLE users ADD COLUMN audience TEXT NOT NULL DEFAULT 'employee'",
   },
+  {
+    // Every paid (or cached) generation: AI text, voice-over and video renders, with what it used.
+    id: '006_generation_log',
+    sql: (dialect) => `
+      CREATE TABLE IF NOT EXISTS generation_log (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        operation TEXT,
+        provider TEXT,
+        model TEXT,
+        status TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        characters INTEGER NOT NULL DEFAULT 0,
+        seconds ${dialect === 'postgres' ? 'DOUBLE PRECISION' : 'REAL'} NOT NULL DEFAULT 0,
+        cost_usd ${dialect === 'postgres' ? 'DOUBLE PRECISION' : 'REAL'},
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        ref_type TEXT,
+        ref_id TEXT,
+        user_id TEXT,
+        output_ref TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_generation_log_created ON generation_log(created_at);
+      CREATE INDEX IF NOT EXISTS idx_generation_log_kind ON generation_log(kind, created_at)
+    `,
+  },
+  {
+    // Background jobs (video rendering): one active job per dedupe key.
+    id: '007_jobs',
+    sql: () => `
+      CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        result TEXT,
+        error TEXT,
+        progress INTEGER NOT NULL DEFAULT 0,
+        message TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 2,
+        dedupe_key TEXT,
+        ref_type TEXT,
+        ref_id TEXT,
+        cancel_requested INTEGER NOT NULL DEFAULT 0,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        run_after TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, run_after);
+      CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(dedupe_key, status);
+      CREATE INDEX IF NOT EXISTS idx_jobs_ref ON jobs(ref_type, ref_id)
+    `,
+  },
 ];
 
 async function existingColumns(db, table) {

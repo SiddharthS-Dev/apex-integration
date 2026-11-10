@@ -1,6 +1,6 @@
 // Evaluates the declarative RLS rules in ENTITIES[name].rls for a given user.
 //
-// Rule grammar (same as the original Base44 schemas):
+// Rule grammar (historical note: the same grammar the platform's original schemas used):
 //   {}                                  → everyone signed in (the API requires a session for all entity routes)
 //   { "user_condition": { "role": "admin" } }
 //   { "data.user_id": "{{user.id}}" }   → condition on the record

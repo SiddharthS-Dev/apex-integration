@@ -2,7 +2,7 @@
 
 Reference specification for the platform. Sections are numbered as in the original master build prompt.
 
-> **Runtime note:** the platform no longer runs on Base44. The data model, RLS rules and pipeline behaviour below still hold. They are now served by our own API (`apps/api`) and shared contracts (`packages/shared`), and playbooks can also come from Dropbox sync — see the top-level README. Base44 references below describe the original design; the retired code is in `legacy/base44`.
+> **Runtime note (historical document):** the platform no longer runs on Base44. The data model, RLS rules and pipeline behaviour below still hold. They are now served by our own API (`apps/api`) and shared contracts (`packages/shared`), and playbooks can also come from Dropbox sync — see the top-level README. Base44 references below describe the original design only; the retired Base44 code was removed and remains available in git history.
 
 ## 1. Mission
 

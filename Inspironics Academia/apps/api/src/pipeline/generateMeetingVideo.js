@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { aiEnabled, invokeLLM } from '../ai/claude.js';
+import { aiEnabled, invokeLLM } from '../ai/index.js';
 import { withLock } from '../db/locks.js';
 import { objectKey, putObject } from '../files/objectStore.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
@@ -14,7 +14,7 @@ import { asHttpError, errMsg } from './util.js';
 // generateMeetingVideo — a narrated video briefing of a meeting, presented by an animated teacher in
 // the player: why the team met, what was said and decided, what is required, and exactly who has to
 // do what by when. Built like a lesson video: a deck of scenes, each with a slide and a spoken part;
-// the parts are voiced (MEDIA_PROVIDER, e.g. Base44 GenerateSpeech), joined into one track, and
+// the parts are voiced (MEDIA_PROVIDER, e.g. Google Cloud TTS), joined into one track, and
 // meeting.briefing_scenes records when each scene plays, its slide and its subtitles.
 //
 // The AI writes the deck from the meeting notes when it is on; otherwise (or when its answer is
@@ -24,7 +24,6 @@ import { asHttpError, errMsg } from './util.js';
 // Payload: { meeting_id }
 // Returns: { ok: true, meeting_id, audio_url, scenes, method: 'ai' | 'notes', seconds, voice: 'recorded' | 'browser', voice_error? }
 
-const VOICE = 'storm';
 const MAX_SCENE_CHARS = 900; // ≈ 60 s of speech per scene
 const MAX_SCENES = 10;
 const ITEMS_PER_SCENE = 5;
@@ -309,6 +308,8 @@ async function withRetry(label, fn, log, attempts = 2) {
       return await fn();
     } catch (e) {
       lastErr = e;
+      // A limit or exhausted credits will not pass on a retry: stop at once.
+      if (e?.code === 'usage_limit' || e?.status === 429 || e?.details?.upstreamStatus === 402) throw e;
       log.warn('pipeline.meeting_video.attempt_failed', { kind: label, attempt: i, error: errMsg(e) });
       if (i < attempts) await new Promise((r) => setTimeout(r, 1500 * i));
     }
@@ -319,7 +320,7 @@ async function withRetry(label, fn, log, attempts = 2) {
 /** Voices every scene with the media provider and joins the parts into one stored MP3 track. */
 async function recordVoice(meetingId, scenes, log) {
   if (!mediaEnabled()) throw mediaUnavailableError();
-  const voiced = await mapPool(scenes, 3, (s, i) => withRetry(`audio ${i + 1}`, () => generateNarration({ text: s.narration, voice: VOICE }), log));
+  const voiced = await mapPool(scenes, 3, (s, i) => withRetry(`audio ${i + 1}`, () => generateNarration({ text: s.narration }), log));
   const failed = voiced.find((r) => !r.ok);
   if (failed) throw failed.error;
   if (voiced.some((r) => !r.value.bytes)) throw new Error('The media provider returned narration that cannot be joined');
@@ -374,7 +375,7 @@ async function generate(meetingId, ctx) {
     scenes = scenes.map((s) => ({ ...s, narration: sceneSpeech(s.narration) }));
 
     // The voice-over: recorded by the media provider (each scene voiced, then joined so each scene
-    // knows when it plays). When the provider is off or refuses (e.g. Base44 out of monthly credits),
+    // knows when it plays). When the provider is off or refuses (e.g. a usage limit or no credits),
     // the briefing is still made: the player reads it aloud with the browser's voice, scene by scene,
     // with timings estimated from the length of each part.
     let voice;

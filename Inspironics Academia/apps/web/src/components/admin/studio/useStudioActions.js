@@ -77,5 +77,32 @@ export default function useStudioActions(data) {
     else if (r) toast.error(`Failed: ${r.error}`);
   };
 
-  return { job, busy: !!job, generatePackage, regenerateMedia, generateAllTests, approveEverything, publish, buildStructure };
+  // What a bulk action is about to spend, shown for confirmation before it starts.
+  const estimate = (kind, { autoAudio = false } = {}) => {
+    const lessons = ordered();
+    if (kind === 'package') {
+      const n = lessons.filter((l) => l.status === 'pending' || l.status === 'rejected').length;
+      return { count: n, lines: [
+        `${n} lesson${n === 1 ? '' : 's'} without content`,
+        `≈ ${n} AI request${n === 1 ? '' : 's'} (one per lesson: script, quiz and flashcards)`,
+        autoAudio ? `plus ≈ ${n} storyboard requests and the voice-over of every lesson (AUTO_GENERATE_AUDIO is on)` : 'No voice-over or video: generate media separately, per lesson or with Regenerate Media',
+      ] };
+    }
+    if (kind === 'media') {
+      const withScript = lessons.filter((l) => l.teaching_script);
+      const chars = withScript.reduce((sum, l) => sum + Math.min(5000, String(l.teaching_script).length), 0);
+      return { count: withScript.length, lines: [
+        `${withScript.length} lesson${withScript.length === 1 ? '' : 's'} with a script`,
+        `≈ ${withScript.length} AI requests (slide storyboards)`,
+        `up to ≈ ${chars.toLocaleString()} characters of voice-over (narration already recorded with the same text and voice is reused at no cost)`,
+      ] };
+    }
+    const modules = data?.modules?.length || 0;
+    return { count: modules + 1, lines: [
+      `${modules} module test${modules === 1 ? '' : 's'} and a final assessment`,
+      `≈ ${modules + 3} AI requests (questions are written 20 at a time)`,
+    ] };
+  };
+
+  return { job, busy: !!job, generatePackage, regenerateMedia, generateAllTests, approveEverything, publish, buildStructure, estimate };
 }

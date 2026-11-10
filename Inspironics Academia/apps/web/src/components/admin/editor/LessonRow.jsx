@@ -11,7 +11,7 @@ import useAppConfig, { AI_DISABLED_REASON } from '@/lib/useAppConfig';
 export default function LessonRow({ lesson, index, actions }) {
   const generating = actions.generatingId === lesson.id || lesson.status === 'generating';
   const hasContent = !!lesson.teaching_script;
-  const { ai_enabled: ai } = useAppConfig();
+  const { ai_enabled: ai, ai_unavailable_reason: aiWhy } = useAppConfig();
   return (
     <Draggable draggableId={lesson.id} index={index}>
       {(provided, snapshot) => (
@@ -34,7 +34,7 @@ export default function LessonRow({ lesson, index, actions }) {
             className="h-8 text-sm flex-1"
           />
           <StatusBadge status={lesson.status || 'pending'} />
-          <DisabledReason reason={ai ? null : AI_DISABLED_REASON}>
+          <DisabledReason reason={ai ? null : (aiWhy || AI_DISABLED_REASON)}>
             <Button size="sm" variant="outline" disabled={!ai || generating || actions.generate.isPending} onClick={() => actions.generate.mutate(lesson)}>
               {generating ? <Loader2 className="animate-spin" /> : <Sparkles />}
               <span className="hidden sm:inline">{hasContent ? 'Regenerate' : 'Generate content'}</span>

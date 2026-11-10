@@ -1,4 +1,6 @@
 import { log } from '../lib/logger.js';
+import { config } from '../config.js';
+import { runWithGeneration } from '../usage/context.js';
 import generateAssessment from './generateAssessment.js';
 import generateLessonContent from './generateLessonContent.js';
 import generateLessonMedia from './generateLessonMedia.js';
@@ -9,6 +11,7 @@ import verifyCertificate from './verifyCertificate.js';
 import processMeeting from './processMeeting.js';
 import publishMeeting from './publishMeeting.js';
 import generateMeetingVideo from './generateMeetingVideo.js';
+import { publishRenderedVideo, renderLessonVideo, renderMeetingVideo, renderProjectVideo } from './renderVideo.js';
 import deletePlaybooks from './deletePlaybooks.js';
 import classifyPlaybooks from './classifyPlaybooks.js';
 import {
@@ -33,6 +36,10 @@ export const handlers = {
   processMeeting,
   publishMeeting,
   generateMeetingVideo,
+  renderLessonVideo,
+  renderMeetingVideo,
+  renderProjectVideo,
+  publishRenderedVideo,
   deletePlaybooks,
   classifyPlaybooks,
 };
@@ -41,13 +48,15 @@ export const handlers = {
 const systemCtx = () => ({ user: null, log });
 
 /** Extract chapters for a playbook. Returns the processPlaybookExtract result; throws on failure. */
+// Sync work uses AI only when SYNC_AI_EXTRACT / SYNC_AI_MEETINGS say so; otherwise the built-in
+// chapter detection and keyword analysis run, and an admin asks for the AI version explicitly.
 export async function runExtract(playbookId) {
-  return handlers.processPlaybookExtract({ playbook_id: playbookId }, systemCtx());
+  return runWithGeneration({ operation: 'sync:extract' }, () => handlers.processPlaybookExtract({ playbook_id: playbookId, ai: config.syncAiExtract }, systemCtx()));
 }
 
 /** Analyse a meeting transcript (Dropbox sync auto-processing). */
 export async function runMeeting(meetingId) {
-  return handlers.processMeeting({ meeting_id: meetingId }, systemCtx());
+  return runWithGeneration({ operation: 'sync:meeting' }, () => handlers.processMeeting({ meeting_id: meetingId, ai: config.syncAiMeetings }, systemCtx()));
 }
 
 /** Extract, then optionally structure. Returns { extract, structure? }. */

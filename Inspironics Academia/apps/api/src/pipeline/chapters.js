@@ -190,7 +190,11 @@ export function detectHybridNumber(text, toc) {
   let cursor = tocSkip(text);
   toc.forEach((entry, i) => {
     let n = parseNum(entry.number);
-    if (Number.isNaN(n)) n = i + 1;
+    // An unnumbered entry ("Copyright and Ownership", "Document Control") is matched by position
+    // only when its own title is found at that heading; otherwise front-matter titles would be
+    // pasted onto the document's real "Part 1", "Part 2"… headings.
+    const unnumbered = Number.isNaN(n);
+    if (unnumbered) n = i + 1;
     const kw = keywordOf(entry.number);
     const kwAlt = kw ? escapeRe(kw) : KEYWORDS.join('|');
     const wordForm = Object.keys(NUMBER_WORDS).find((k) => NUMBER_WORDS[k] === n);
@@ -209,7 +213,7 @@ export function detectHybridNumber(text, toc) {
       const around = text.slice(m.index, m.index + 300).toLowerCase();
       if (!titleProbe.length || titleProbe.every((w) => around.includes(w))) { chosen = m; break; }
     }
-    const pick = chosen || first;
+    const pick = chosen || (unnumbered ? null : first);
     if (pick) {
       const start = pick.index + (pick[1] ? pick[1].length : 0);
       hits.push({ number: entry.number || String(n), title: entry.title, start });

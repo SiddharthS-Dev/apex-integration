@@ -15,7 +15,6 @@ npm-workspaces monorepo:
 | `apps/web` | `@academy/web` | React client |
 | `apps/api` | `@academy/api` | API: auth, entities + RLS, content pipeline, Dropbox integration, sync |
 | `packages/shared` | `@academy/shared` | Contracts both import — entity schemas + RLS rules, query matcher, roles, file types. Imports nothing, so bare Node and Vite both consume it. |
-| `legacy/base44` | — | Retired Base44 artifacts (reference only) |
 
 ## Tech stack
 
@@ -84,7 +83,7 @@ Triggered by the scheduler (every `SYNC_INTERVAL_MINUTES`, default 30), by an ad
 
 1. **Discovery** — recursive, paginated `list_folder` from the configured root, filtered to `.pdf` / `.docx`.
 2. **Compare** — each file is matched to its Playbook by Dropbox file id + revision. Unchanged files are skipped but get their last-seen stamp refreshed, so an interrupted sync resumes cheaply.
-3. **Process** — new or changed files go through a bounded concurrency pool (`SYNC_CONCURRENCY`). Each is downloaded into the object store (keyed by file id + revision) and auto-extracted (`AUTO_EXTRACT_ON_SYNC`). Files over `MAX_EXTRACT_MB` are indexed but flagged, not parsed.
+3. **Process** — sync itself reads metadata only. With `AUTO_EXTRACT_ON_SYNC=true`, new or changed files go through a bounded concurrency pool (`SYNC_CONCURRENCY`): each is downloaded into memory, extracted, and released — no copy is kept (`DROPBOX_SOURCE_CACHE=temporary`). A revision already extracted is never extracted again unless forced. Files over `MAX_EXTRACT_MB` are indexed but flagged, not parsed.
 4. **Archive** — Dropbox playbooks not seen this run are marked `archived`, never deleted. This only runs when discovery fully succeeded, so a transient failure can't wipe the library. Narrowing the sync folder archives everything outside it.
 5. **Bookkeeping** — counts, duration and errors go to `sync_log`. Status is `success`, or `partial` if any file failed.
 
@@ -94,7 +93,9 @@ The web app calls its own origin: in dev through the Vite proxy (`/api` → `:40
 
 The client (`apps/web/src/api/client.js`) is swappable behind one interface: the API server (default) or the bundled in-browser demo backend (`VITE_BACKEND=demo`). No page or hook knows which one is in play.
 
-Playbook files are served by `GET /api/playbooks/:id/content` (content proxy) and generated media by `GET /api/media/:key`. Both come out of a local, content-addressed object store (`apps/api/data/objects`). The cache is disposable; Dropbox remains the source of truth.
+Playbook files are served by `GET /api/playbooks/:id/content` (content proxy): uploads from the local object store, Dropbox files streamed straight from Dropbox (Range supported) without a copy on disk. Generated media comes from `GET /api/media/:key` (local, content-addressed object store, `apps/api/data/objects`), or `GET /api/outputs/:type/:id/video` for videos kept in Dropbox. Dropbox remains the source of truth.
+
+Storage, clean-up, retention and Dropbox output are documented in [docs/dropbox/](docs/dropbox/) — start with [DROPBOX_OPTIMIZED_ARCHITECTURE.md](docs/dropbox/DROPBOX_OPTIMIZED_ARCHITECTURE.md). Admins see measured usage and run the clean-up in AI Studio → Storage & Dropbox.
 
 ## Running it
 

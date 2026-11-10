@@ -4,8 +4,11 @@ import { migrate } from './db/migrations.js';
 import { purgeExpiredSessions } from './auth/sessions.js';
 import { log } from './lib/logger.js';
 import { createApp } from './app.js';
+import { describeAiConfig } from './ai/index.js';
 import { startScheduler, stopScheduler } from './sync/scheduler.js';
 import { startJobs, stopJobs } from './notify/jobs.js';
+import { startJobWorker, stopJobWorker } from './jobs/queue.js';
+import { startStorageMaintenance, stopStorageMaintenance } from './storage/storage.js';
 import { SYNC_LOCK } from './sync/pipeline.js';
 import { closeStaleRuns } from './sync/log.js';
 import { isLocked } from './db/locks.js';
@@ -63,7 +66,7 @@ const server = app.listen(config.port, config.host, () => {
     host: config.host,
     port: config.port,
     ai: config.aiEnabled,
-    model: config.aiEnabled ? (config.aiProvider === 'base44' ? 'base44' : config.anthropicModel) : undefined,
+    ai_config: describeAiConfig(),
     media: config.mediaProvider,
     dropbox: dropboxConfigured(),
   });
@@ -71,6 +74,8 @@ const server = app.listen(config.port, config.host, () => {
 
 startScheduler();
 startJobs();
+startJobWorker().catch((err) => log.error('jobs.worker_start_failed', { error: err.message }));
+startStorageMaintenance();
 
 const sessionSweep = setInterval(() => purgeExpiredSessions().catch(() => {}), 3600_000);
 sessionSweep.unref();
@@ -82,6 +87,8 @@ async function shutdown(signal) {
   log.info('api.shutdown', { signal });
   stopScheduler();
   stopJobs();
+  stopJobWorker();
+  stopStorageMaintenance();
   server.close();
   await closeDb();
   process.exit(0);

@@ -4,7 +4,7 @@ import { MEETING_EXTENSIONS, isMeetingFile, meetingFromFileName } from '@academy
 import { config } from '../config.js';
 import { requireAdmin } from '../auth/sessions.js';
 import { objectKey, putObject } from '../files/objectStore.js';
-import { loadPlaybookBytes } from '../files/playbookSource.js';
+import { streamPlaybookSource } from '../files/playbookSource.js';
 import { meetingsAccount, withDropboxAccount } from '../dropbox/connection.js';
 import { asyncHandler, badRequest, notFound } from '../lib/errors.js';
 import { entities } from '../repo/entities.js';
@@ -51,13 +51,12 @@ router.post(
 router.get('/meetings/:id/content', requireAdmin, asyncHandler(async (req, res) => {
   const meeting = await entities.Meeting.get(req.params.id);
   if (!meeting) throw notFound('Meeting not found');
-  const bytes = await withDropboxAccount(meetingsAccount(), () => loadPlaybookBytes(meeting));
-  const name = meeting.file_name || `${meeting.title}.${meeting.file_type || 'docx'}`;
-  res.setHeader('Content-Type', MIME[meeting.file_type] || 'application/octet-stream');
-  res.setHeader('Content-Length', bytes.length);
-  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
-  res.setHeader('Cache-Control', 'private, no-store');
-  res.end(bytes);
+  // Streamed from Dropbox (or the object store for uploads): no copy is written to disk.
+  await withDropboxAccount(meetingsAccount(), () => streamPlaybookSource(meeting, req, res, {
+    contentType: MIME[meeting.file_type] || 'application/octet-stream',
+    fileName: meeting.file_name || `${meeting.title}.${meeting.file_type || 'docx'}`,
+    attachment: true,
+  }));
 }));
 
 export default router;

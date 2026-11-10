@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,6 +7,24 @@ const apiRoot = path.resolve(here, '..');
 
 const bool = (v, d = false) => (v === undefined || v === '' ? d : ['1', 'true', 'yes', 'on'].includes(String(v).toLowerCase()));
 const num = (v, d) => (v === undefined || v === '' || Number.isNaN(Number(v)) ? d : Number(v));
+const optNum = (v) => num(v, null);
+
+const AI_PROVIDERS = ['gemini', 'ollama', 'none'];
+// Google Gemini is the default provider. Model codes as published at ai.google.dev (checked 2026-11-10):
+// gemini-3.8-flash is Google's recommendation for new projects; gemini-3.8-flash-tts is its speech model.
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+export const DEFAULT_GEMINI_TTS_MODEL = 'gemini-3.8-flash-tts';
+const aiProviderName = (v) => {
+  const p = String(v || 'gemini').trim().toLowerCase();
+  return AI_PROVIDERS.includes(p) ? p : 'none';
+};
+/** True when the provider has what it needs to make a call (a key, a model, a server URL). */
+function aiProviderReady(p, e) {
+  if (p === 'gemini') return !!e.GEMINI_API_KEY; // GEMINI_MODEL defaults to DEFAULT_GEMINI_MODEL
+  if (p === 'ollama') return !!(e.OLLAMA_BASE_URL && e.OLLAMA_MODEL);
+  return false;
+}
+export { AI_PROVIDERS, aiProviderReady };
 
 const env = process.env;
 const dataDir = path.resolve(apiRoot, env.DATA_DIR || 'data');
@@ -45,23 +64,104 @@ export const config = Object.freeze({
   // Secrets at rest (Dropbox refresh token). 32 bytes, base64 or hex.
   tokenEncryptionKey: env.TOKEN_ENCRYPTION_KEY || '',
 
-  // AI. AI_PROVIDER=anthropic (Claude via @anthropic-ai/sdk) or base44 (the Base44 app's built-in
-  // InvokeLLM, called anonymously when the app allows it, else as a signed-in Base44 user — billed to the Base44 plan's integration credits).
-  aiProvider: (env.AI_PROVIDER || 'anthropic').toLowerCase(),
-  aiEnabled: bool(env.AI_ENABLED, false) && ((env.AI_PROVIDER || 'anthropic').toLowerCase() === 'base44'
-    ? !!env.BASE44_APP_ID
-    : !!(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN)),
-  anthropicModel: env.ANTHROPIC_MODEL || 'claude-opus-5',
-  base44: {
-    serverUrl: (env.BASE44_SERVER_URL || 'https://base44.app').replace(/\/+$/, ''),
-    appId: env.BASE44_APP_ID || '',
-    email: env.BASE44_EMAIL || '',
-    password: env.BASE44_PASSWORD || '',
-    model: env.BASE44_MODEL || '', // empty = the Base44 app's own model setting
+  // AI text generation, always called from this server (keys never reach the browser).
+  // AI_PROVIDER = gemini (default) | ollama | none. AI_FALLBACK_PROVIDER optionally names a
+  // second one; unset means no fallback (a failed call reports its error, it is never re-sent elsewhere).
+  aiProvider: aiProviderName(env.AI_PROVIDER),
+  aiFallbackProvider: env.AI_FALLBACK_PROVIDER ? aiProviderName(env.AI_FALLBACK_PROVIDER) : '',
+  aiEnabled: bool(env.AI_ENABLED, false) && aiProviderReady(aiProviderName(env.AI_PROVIDER), env),
+  ai: {
+    gemini: {
+      apiKey: env.GEMINI_API_KEY || '',
+      model: env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+      baseUrl: (env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, ''),
+      timeoutMs: num(env.GEMINI_TIMEOUT_SECONDS, 300) * 1000,
+      attempts: Math.min(8, Math.max(1, num(env.GEMINI_MAX_ATTEMPTS, 5))),
+    },
+    // Lessons generated at once by a course batch (each is one large request; keep it low for rate limits).
+    batchConcurrency: Math.min(3, Math.max(1, num(env.AI_BATCH_CONCURRENCY, 1))),
+    // When the provider is overloaded (503) or rate-limited, a batch waits this long and tries the lesson once more.
+    batchRetryDelayMs: Math.max(0, num(env.AI_BATCH_RETRY_DELAY_SECONDS, 60)) * 1000,
+    ollama: { baseUrl: (env.OLLAMA_BASE_URL || '').replace(/\/+$/, ''), model: env.OLLAMA_MODEL || '' },
+    // Identical requests are answered from the cache (an explicit "regenerate" bypasses it).
+    contentCache: bool(env.ENABLE_CONTENT_CACHE, true),
+    // Optional price overrides (USD per million tokens) for providers without a built-in price table.
+    priceInputPerMTok: optNum(env.AI_PRICE_INPUT_PER_MTOK),
+    priceOutputPerMTok: optNum(env.AI_PRICE_OUTPUT_PER_MTOK),
   },
 
-  // Lesson media (video + narration). 'none' = placeholder + browser narration.
+  // Voice-over (text to speech). MEDIA_PROVIDER = gemini | google | elevenlabs | piper | none
+  // (gemini = Gemini speech generation with the same GEMINI_API_KEY; google = Google Cloud Text-to-Speech).
+  // ('none' = no recorded narration; players read the script aloud with the browser's voice).
   mediaProvider: (env.MEDIA_PROVIDER || 'none').toLowerCase(),
+  tts: {
+    language: env.TTS_LANGUAGE || 'en-US',
+    voice: env.TTS_VOICE || '',
+    rate: optNum(env.TTS_SPEAKING_RATE) ?? 1,
+    pitch: optNum(env.TTS_PITCH) ?? 0,
+    audioCache: bool(env.ENABLE_AUDIO_CACHE, true),
+    pricePerMillionChars: optNum(env.TTS_PRICE_PER_MILLION_CHARS),
+    google: {
+      apiKey: env.GOOGLE_TTS_API_KEY || '',
+      credentialsFile: env.GOOGLE_APPLICATION_CREDENTIALS || '',
+      projectId: env.GOOGLE_CLOUD_PROJECT_ID || '',
+    },
+    gemini: {
+      model: env.GEMINI_TTS_MODEL || DEFAULT_GEMINI_TTS_MODEL,
+      voice: env.GEMINI_TTS_VOICE || 'Kore',
+      // Delivery direction sent with the text (Gemini speech style); set it empty to send none.
+      style: env.GEMINI_TTS_STYLE ?? 'clear, warm and encouraging, at a steady teaching pace',
+      // Wait before retrying after a speech rate limit (429), multiplied by the attempt (30 s, 60 s, 90 s).
+      rateLimitWaitMs: Math.max(0, num(env.GEMINI_TTS_RATE_LIMIT_WAIT_SECONDS, 30)) * 1000,
+    },
+    elevenlabs: { apiKey: env.ELEVENLABS_API_KEY || '', voiceId: env.ELEVENLABS_VOICE_ID || '', model: env.ELEVENLABS_MODEL || '' },
+    piper: { executable: env.PIPER_EXECUTABLE_PATH || '', model: env.PIPER_MODEL_PATH || '' },
+  },
+
+  // Video rendering (template-based MP4 from slides + narration + subtitles).
+  video: {
+    provider: (env.VIDEO_PROVIDER || 'ffmpeg').toLowerCase(),
+    ffmpegPath: env.FFMPEG_PATH || '',
+    width: num(env.VIDEO_WIDTH, 1280),
+    height: num(env.VIDEO_HEIGHT, 720),
+    fps: num(env.VIDEO_FPS, 25),
+    sceneCache: bool(env.ENABLE_SCENE_REGENERATION, true),
+  },
+
+  // What happens without being asked. Off by default: paid generation runs only on an explicit action.
+  autoGenerateAudio: bool(env.AUTO_GENERATE_AUDIO, false),
+  syncAiExtract: bool(env.SYNC_AI_EXTRACT, false),
+  syncAiMeetings: bool(env.SYNC_AI_MEETINGS, false),
+
+  // Usage limits (empty = no limit). Admins can change them in AI Studio; these are the defaults.
+  limits: {
+    aiDailyRequests: optNum(env.AI_DAILY_LIMIT),
+    aiMonthlyBudgetUsd: optNum(env.AI_MONTHLY_BUDGET),
+    ttsMonthlyChars: optNum(env.TTS_MONTHLY_CHARACTER_LIMIT),
+    videoMonthlyMinutes: optNum(env.VIDEO_MONTHLY_RENDER_LIMIT),
+  },
+  maxConcurrentJobs: Math.max(1, num(env.MAX_CONCURRENT_JOBS, 1)),
+
+  // Storage policy. Dropbox is the primary store for original documents: APEX keeps their metadata and
+  // fetches the bytes only when a step needs them. DROPBOX_SOURCE_CACHE=temporary (default) keeps no
+  // local copy; permanent keeps one per revision (the old behaviour; faster re-extraction, more disk).
+  storage: {
+    dropboxSourceCache: (env.DROPBOX_SOURCE_CACHE || 'temporary').toLowerCase() === 'permanent' ? 'permanent' : 'temporary',
+    tempDir: env.TEMP_PROCESSING_DIR ? path.resolve(apiRoot, env.TEMP_PROCESSING_DIR) : path.join(os.tmpdir(), 'apex-academia'),
+    tempMaxAgeHours: num(env.TEMP_MAX_AGE_HOURS, 6),
+    // Retention for regenerable caches (days; 0 = keep). Referenced media is never deleted by these.
+    aiCacheDays: num(env.AI_CACHE_RETENTION_DAYS, 90),
+    ttsCacheDays: num(env.TTS_CACHE_RETENTION_DAYS, 180),
+    sceneCacheDays: num(env.SCENE_CACHE_RETENTION_DAYS, 30),
+    extractCacheDays: num(env.EXTRACT_CACHE_RETENTION_DAYS, 90),
+    // Daily automatic clean-up of the safe categories (off: run it from AI Studio → Storage).
+    autoCleanup: bool(env.STORAGE_AUTO_CLEANUP, false),
+    // Where rendered videos go: apex (the media store) or dropbox (uploaded to DROPBOX_OUTPUT_FOLDER).
+    videoOutput: (env.VIDEO_OUTPUT_DESTINATION || 'apex').toLowerCase() === 'dropbox' ? 'dropbox' : 'apex',
+    dropboxOutputFolder: env.DROPBOX_OUTPUT_FOLDER || '/APEX Generated Videos',
+    // With Dropbox output: also keep the MP4 in APEX (off = stream it back from Dropbox, saving disk).
+    keepLocalCopy: bool(env.VIDEO_KEEP_LOCAL_COPY, true),
+  },
   // Scenes per lesson video: each is one generated clip shown for its slice of the narration.
   mediaMaxScenes: Math.min(12, Math.max(1, num(env.MEDIA_MAX_SCENES, 8))),
   // Each scene is an explainer slide (heading, key points, subtitles) drawn by the player from the

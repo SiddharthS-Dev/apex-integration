@@ -2,11 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.AI_ENABLED = 'false';
-process.env.BASE44_APP_ID = 'app-media-test';
-process.env.BASE44_SERVER_URL = 'http://127.0.0.1:9';
 
 const { buildVideoPrompt, narrationText } = await import('../src/pipeline/generateLessonMedia.js');
-const base44Media = (await import('../src/media/providers/base44.js')).default;
 
 const lesson = {
   title: 'Introduction to the Octagonal Engine',
@@ -31,42 +28,6 @@ test('narration keeps the whole script when short and cuts at a sentence when lo
   const out = narrationText(long);
   assert.ok(out.length <= 5000);
   assert.ok(out.endsWith('.'));
-});
-
-test('base44 media provider is enabled by the app id and refuses non-Base44 media URLs', async () => {
-  assert.equal(base44Media.enabled, true);
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => {
-    if (String(url).includes('/integration-endpoints/Core/GenerateVideo')) {
-      return new Response(JSON.stringify({ url: 'https://evil.example.com/clip.mp4' }), { status: 200 });
-    }
-    throw new Error(`unexpected fetch ${url}`);
-  };
-  try {
-    await assert.rejects(base44Media.generateVideo({ prompt: 'x', durationSeconds: 8, aspectRatio: '16:9' }), /no media URL/);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-});
-
-test('base44 media provider downloads the returned file into bytes', async () => {
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => {
-    if (String(url).includes('/integration-endpoints/Core/GenerateSpeech')) {
-      return new Response(JSON.stringify({ url: 'https://media.base44.com/files/public/app/speech.mp3' }), { status: 200 });
-    }
-    if (String(url) === 'https://media.base44.com/files/public/app/speech.mp3') {
-      return new Response(Buffer.from('ID3fake-mp3'), { status: 200, headers: { 'content-type': 'audio/mpeg' } });
-    }
-    throw new Error(`unexpected fetch ${url}`);
-  };
-  try {
-    const out = await base44Media.generateNarration({ text: 'Hello', voice: 'storm' });
-    assert.equal(out.contentType, 'audio/mpeg');
-    assert.equal(out.bytes.toString(), 'ID3fake-mp3');
-  } finally {
-    globalThis.fetch = realFetch;
-  }
 });
 
 const { splitNarration, sceneCount, fallbackTitle } = await import('../src/pipeline/generateLessonMedia.js');

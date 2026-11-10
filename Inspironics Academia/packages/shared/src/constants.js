@@ -35,6 +35,10 @@ export const FUNCTIONS = Object.freeze({
   processMeeting: { admin: true },
   publishMeeting: { admin: true },
   generateMeetingVideo: { admin: true },
+  renderLessonVideo: { admin: true },
+  renderMeetingVideo: { admin: true },
+  renderProjectVideo: { admin: true },
+  publishRenderedVideo: { admin: true },
   deletePlaybooks: { admin: true },
   classifyPlaybooks: { admin: true },
 });

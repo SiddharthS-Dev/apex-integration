@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Award, BookOpen, Bookmark, BrainCircuit, ClipboardList, GraduationCap, LayoutDashboard, Library, Presentation, Shield, User } from 'lucide-react';
+import { Award, BookOpen, Bookmark, BrainCircuit, ClipboardList, GraduationCap, LayoutDashboard, Library, Presentation, Shield, User, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useReviewQueue } from '@/lib/retention';
 
@@ -16,7 +16,7 @@ function navItems(isAdmin) {
     { to: '/certificates', label: 'Certificates', icon: Award, compact: true },
     { to: '/profile', label: 'Profile', icon: User, compact: true },
   ];
-  if (isAdmin) items.push({ to: '/admin', label: 'Admin', icon: Shield, end: true });
+  if (isAdmin) items.push({ to: '/admin/ai-studio', label: 'AI Studio', icon: Wand2, compact: true }, { to: '/admin', label: 'Admin', icon: Shield, end: true });
   return items;
 }
 

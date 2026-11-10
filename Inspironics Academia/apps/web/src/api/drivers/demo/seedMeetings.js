@@ -1,6 +1,6 @@
 import { addDays, parseTranscript, speakerStats } from '@academy/shared';
 
-// Demo meetings: a published release-readiness review with a full analysis (as Claude would write
+// Demo meetings: a published release-readiness review with a full analysis (as the AI provider would write
 // it), and a stand-up transcript waiting for the admin to process and publish.
 
 const READINESS = `Checkout v4 Release Readiness Review-{STAMP}-Meeting Recording

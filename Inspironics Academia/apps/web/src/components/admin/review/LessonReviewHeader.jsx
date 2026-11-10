@@ -7,7 +7,7 @@ import useAppConfig, { AI_DISABLED_REASON } from '@/lib/useAppConfig';
 
 export default function LessonReviewHeader({ lesson, module, actions }) {
   const { pending } = actions;
-  const { ai_enabled: ai } = useAppConfig();
+  const { ai_enabled: ai, ai_unavailable_reason: aiWhy } = useAppConfig();
   const busy = !!pending || lesson.status === 'generating';
   const hasContent = !!lesson.teaching_script;
   const spin = (key, Icon) => (pending === key ? <Loader2 className="animate-spin" /> : <Icon />);
@@ -23,7 +23,7 @@ export default function LessonReviewHeader({ lesson, module, actions }) {
       </div>
       <SourceRef playbook={lesson.source_playbook} chapter={lesson.source_chapter} section={lesson.source_section} />
       <div className="flex flex-wrap gap-2">
-        <DisabledReason reason={ai ? null : AI_DISABLED_REASON}>
+        <DisabledReason reason={ai ? null : (aiWhy || AI_DISABLED_REASON)}>
           <Button size="sm" variant="outline" disabled={busy || !ai} onClick={actions.generateContent}>
             {spin('content', Sparkles)}
             {hasContent ? 'Regenerate content' : 'Generate content'}

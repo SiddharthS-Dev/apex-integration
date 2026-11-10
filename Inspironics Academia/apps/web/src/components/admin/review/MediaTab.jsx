@@ -3,7 +3,9 @@ import { Button } from '@/components/ui/button';
 import DisabledReason from '@/components/DisabledReason';
 import AiVideoPlayer from '@/components/AiVideoPlayer';
 import { hasSlides, parseScenes } from '@/components/lesson/scenes';
+import { useQueryClient } from '@tanstack/react-query';
 import useAppConfig, { MEDIA_DISABLED_REASON } from '@/lib/useAppConfig';
+import RenderedVideoPanel from '@/components/studio/RenderedVideoPanel';
 
 const fmt = (s = 0) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -14,6 +16,7 @@ export default function MediaTab({ lesson, busy, onGenerateMedia, onRebuildSlide
   // Narration recorded scene by scene can take new slides without being recorded again.
   const canRebuild = !!(lesson.audio_url && scenes.length && onRebuildSlides);
   const { media_enabled: media } = useAppConfig();
+  const queryClient = useQueryClient();
   return (
     <div className="space-y-4">
       {hasMedia ? (
@@ -32,6 +35,17 @@ export default function MediaTab({ lesson, busy, onGenerateMedia, onRebuildSlide
           <Film className="w-8 h-8" />
           <span className="text-sm">No video generated yet</span>
         </div>
+      )}
+      {lesson.audio_url && scenes.length > 0 && (
+        <RenderedVideoPanel
+          target={{ type: 'lesson', id: lesson.id }}
+          fn="renderLessonVideo"
+          payload={{ lesson_id: lesson.id }}
+          title={lesson.video_title || lesson.title}
+          isAdmin
+          onRendered={() => queryClient.invalidateQueries({ queryKey: ['studio'] })}
+          video={{ url: lesson.rendered_video_url, thumbnail: lesson.rendered_thumbnail_url, vtt: lesson.rendered_subtitles_url, srt: lesson.rendered_srt_url, seconds: lesson.rendered_video_seconds, renderedAt: lesson.rendered_video_rendered_at }}
+        />
       )}
       {scenes.length > 1 && (
         <div className="rounded-xl border border-border p-3">
