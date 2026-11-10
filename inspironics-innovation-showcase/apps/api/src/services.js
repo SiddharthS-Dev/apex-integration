@@ -48,7 +48,7 @@ export async function createServices(config, log, overrides = {}) {
   const enricher = overrides.enricher || createEnricher({ config, log, metrics })
   const seeds = overrides.seeds || loadSeeds(config.sync.seedPath, log)
   const sync = createSyncService({ config, repos, dropbox, dropboxAuth, store, enricher, seeds, log, metrics })
-  const scheduler = overrides.scheduler || startScheduler({ config, sync, log })
+  const scheduler = overrides.scheduler || startScheduler({ config, sync, store, log })
 
   return { config, log, metrics, db, repos, key, dropboxAuth, dropbox, store, enricher, seeds, sync, scheduler }
 }

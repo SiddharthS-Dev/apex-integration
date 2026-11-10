@@ -94,6 +94,8 @@ export function loadConfig(env = process.env) {
       sqlitePath: fromRoot(str(env.SQLITE_PATH, 'data/app.db')),
     },
     objectStoreDir: fromRoot(str(env.OBJECT_STORE_DIR, 'data/objects')),
+    /** Cached previews/thumbnails unused for this long are removed by the daily sweep (they are re-fetched on demand). */
+    objectCacheTtlHours: int(env.OBJECT_CACHE_TTL_HOURS, 336, { min: 1 }),
 
     /** 32 bytes, hex or base64. Encrypts the Dropbox refresh token at rest. */
     encryptionKey: str(env.ENCRYPTION_KEY),

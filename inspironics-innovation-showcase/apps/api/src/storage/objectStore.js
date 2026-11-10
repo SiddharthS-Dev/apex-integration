@@ -43,8 +43,14 @@ export function createObjectStore(dir) {
       const p = locate(fileId, rev, kind)
       await mkdir(p.folder, { recursive: true })
       const tmp = `${p.data}.${process.pid}.${Date.now()}.tmp`
-      await writeFile(tmp, data)
-      await rename(tmp, p.data)
+      try {
+        await writeFile(tmp, data)
+        await rename(tmp, p.data)
+      } catch (error) {
+        // A failed write (disk full, permissions) must not leave a partial file behind.
+        await rm(tmp, { force: true }).catch(() => {})
+        throw error
+      }
       await writeFile(p.meta, JSON.stringify({ contentType, size: data.length, storedAt: new Date().toISOString() }))
     },
 
@@ -63,6 +69,33 @@ export function createObjectStore(dir) {
         /* empty or missing: zero */
       }
       return { objects: files, bytes }
+    },
+
+    /**
+     * Retention: removes derivatives nobody has read or written for `hours` (old revisions are never
+     * looked up again, so without this the cache only grows), and partial writes left by a crash.
+     * Always safe: anything removed is fetched again on the next request.
+     */
+    async purgeOlderThan(hours) {
+      const cutoff = Date.now() - hours * 3600_000
+      let removed = 0
+      for (const sub of await readdir(dir).catch(() => [])) {
+        const folder = path.join(dir, sub)
+        for (const name of await readdir(folder).catch(() => [])) {
+          if (!name.endsWith('.bin') && !name.endsWith('.tmp')) continue
+          const full = path.join(folder, name)
+          try {
+            const s = await stat(full)
+            if (Math.max(s.atimeMs, s.mtimeMs) >= cutoff) continue
+            await rm(full, { force: true })
+            if (name.endsWith('.bin')) await rm(full.replace(/.bin$/, '.json'), { force: true })
+            removed++
+          } catch {
+            /* raced with a write or another sweep */
+          }
+        }
+      }
+      return removed
     },
 
     clear: () => rm(dir, { recursive: true, force: true }),
