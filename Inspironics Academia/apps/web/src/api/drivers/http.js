@@ -129,6 +129,8 @@ export function createHttpDriver() {
       courses: () => request('GET', '/studio/courses'),
       courseProgress: (id) => request('GET', `/studio/courses/${id}/progress`),
       generateCourse: (id, body) => request('POST', `/studio/courses/${id}/generate`, { body }),
+      checkCourseQuality: (id, body = {}) => request('POST', `/studio/courses/${id}/quality-check`, { body }),
+      approvePassedLessons: (id, body = {}) => request('POST', `/studio/courses/${id}/approve-passed`, { body }),
     },
 
     meetings: {

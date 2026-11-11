@@ -36,7 +36,17 @@ function designAnswer(prompt) {
   };
 }
 
-function lessonAnswer() {
+// A script built from the source chapter's own vocabulary (as a grounded answer would be), varied
+// so the automatic quality check sees neither repetition nor invented content.
+function groundedScript(prompt) {
+  const source = (/SOURCE CHAPTER TEXT[^"]*"""([\s\S]*?)"""/.exec(prompt) || [])[1] || '';
+  const vocab = [...new Set((source.toLowerCase().match(/[a-z]{7,}/g) || []))].slice(0, 40);
+  const v = vocab.length ? vocab : ['playbook'];
+  // Each sentence carries a short unique marker (p0, p1…), too short to count as vocabulary.
+  return Array.from({ length: 70 }, (_, i) => `Part p${i} relates ${v[i % v.length]} q${i} to ${v[(i * 7 + 3) % v.length]} r${i}.`).join(' ');
+}
+
+function lessonAnswer(prompt = '') {
   if (behaviour.lessonEmptyScript) return { video_title: 'x', teaching_script: '  ', mcqs: [], flashcards: [] };
   const mcq = (n, extra = {}) => ({
     question_text: `Question ${n}?`, options: ['Alpha', 'Beta', 'Gamma', 'Delta'], correct_answer: 'Beta',
@@ -44,7 +54,7 @@ function lessonAnswer() {
   });
   return {
     video_title: 'Learning the essentials',
-    teaching_script: `Welcome. Today we learn the essentials, step by step. ${'We walk through each rule of the chapter and apply it to a real engineering scenario. '.repeat(25)}`,
+    teaching_script: `Welcome. Today we learn the essentials, step by step. ${groundedScript(prompt)}`,
     summary: 'A short summary.',
     examples: ['Example one.', 'Example two.'],
     key_points: ['- Point one', 'Point two'],
@@ -81,7 +91,7 @@ function answer(prompt) {
     return { title: 'AI Engineering Course Book', author: '', version: '2.0', organization: 'Inspironics', chapters: Array.from({ length: n }, (_, index) => ({ index, summary: `Summary of chapter ${index + 1}.`, corrected_title: '' })) };
   }
   if (prompt.includes('senior instructional designer')) return designAnswer(prompt);
-  if (prompt.includes('recording a video lesson')) return lessonAnswer();
+  if (prompt.includes('recording a video lesson')) return lessonAnswer(prompt);
   if (prompt.includes('certification exam author')) return examAnswer(prompt);
   return {};
 }

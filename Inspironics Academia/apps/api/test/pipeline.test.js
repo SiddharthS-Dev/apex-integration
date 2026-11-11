@@ -406,3 +406,40 @@ test('letter-spaced chapter openers are found and part-page chapter lists are no
   for (const c of best.chapters) assert.ok(c.content.length > 500, `${c.title} keeps its body, not just the list line`);
   assert.ok(best.chapters[2].content.startsWith('Chapter 10\nNeural Networks'));
 });
+
+// ---- automatic lesson quality check ------------------------------------------------------------
+
+test('quality check: a grounded, complete lesson passes; problems are named', async () => {
+  const { assessLessonQuality, balanceAnswerPositions } = await import('../src/pipeline/lessonQuality.js');
+  const source = 'Telemetry flows through the gateway. Firmware updates follow the provisioning contract. Evidence supports traceability and governance of every controller.';
+  const vocab = ['telemetry', 'gateway', 'firmware', 'provisioning', 'contract', 'evidence', 'traceability', 'governance', 'controller'];
+  const script = Array.from({ length: 120 }, (_, i) => `Item a${i} links ${vocab[i % 9]} b${i} with ${vocab[(i * 4 + 2) % 9]} c${i}.`).join(' ');
+  const q = (n, pos) => {
+    const options = ['Firmware is staged', 'Telemetry is dropped', 'Gateway restarts', 'Evidence is lost'];
+    return { question_text: `Question ${n}?`, options, correct_answer: options[pos], explanation: 'The provisioning contract says so.' };
+  };
+  const good = {
+    video_title: 'Gateway and firmware', teaching_script: script, summary: 'One. Two. Three.',
+    key_points: '- Keep evidence\n- Stage firmware\n- Watch telemetry\n- Govern controllers\n- Trace changes',
+    examples: '- A gateway update', questions: [0, 1, 2, 3, 0, 1].map((p, i) => q(i, p)),
+    flashcards: [1, 2, 3, 4, 5].map((n) => ({ front: `Term ${n}`, back: 'A precise meaning.' })),
+  };
+  const ok = assessLessonQuality(good, source);
+  assert.equal(ok.passed, true, JSON.stringify(ok.issues));
+  assert.equal(ok.score, 100);
+
+  const looping = assessLessonQuality({ ...good, teaching_script: 'the gateway sends telemetry to the cloud. '.repeat(80) }, source);
+  assert.ok(looping.issues.some((i) => i.code === 'repetition' && i.severity === 'error'));
+  const offTopic = assessLessonQuality({ ...good, key_points: '- Marketing budgets\n- Quarterly spreadsheets', teaching_script: Array.from({ length: 120 }, (_, i) => `Topic z${i} discusses marketing budgets and quarterly spreadsheet planning y${i}.`).join(' ') }, source);
+  assert.ok(offTopic.issues.some((i) => i.code === 'grounding' && i.severity === 'error'));
+  const invented = assessLessonQuality({ ...good, summary: 'Latency drops by 73% within 450 ms.' }, source);
+  assert.match(invented.issues.find((i) => i.code === 'numbers').message, /73%, 450/);
+  const samePos = assessLessonQuality({ ...good, questions: [0, 1, 2, 3, 4, 5].map((i) => q(i, 2)) }, source);
+  assert.ok(samePos.issues.some((i) => i.code === 'quiz_pattern'));
+  const wrong = assessLessonQuality({ ...good, questions: good.questions.map((x, i) => (i ? x : { ...x, correct_answer: 'Not an option' })) }, source);
+  assert.ok(wrong.issues.some((i) => i.code === 'quiz_answer' && i.severity === 'error'));
+
+  const balanced = balanceAnswerPositions([0, 1, 2, 3, 4, 5].map((i) => q(i, 2)));
+  assert.deepEqual(balanced.map((x) => x.options.indexOf(x.correct_answer)), [0, 1, 2, 3, 0, 1], 'answers spread over the positions');
+  assert.ok(balanced.every((x) => x.options.length === 4 && new Set(x.options).size === 4));
+});

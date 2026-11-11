@@ -7,6 +7,7 @@ import { entities } from '../repo/entities.js';
 import generateLessonMedia from './generateLessonMedia.js';
 import { loadLessonSource, matchChapter } from './source.js';
 import { structureFor } from './videoPlan.js';
+import { assessLessonQuality, balanceAnswerPositions } from './lessonQuality.js';
 import { runWithGeneration } from '../usage/context.js';
 import { asHttpError, cleanMcq, errMsg, pipelineError, withLessonLock } from './util.js';
 
@@ -150,6 +151,7 @@ Produce:
 5. "key_points": 5-8 crisp takeaways, each a single sentence.
 6. "mcqs": EXACTLY 6 multiple-choice questions:
    - exactly 4 distinct, plausible options each; one unambiguously correct answer;
+   - make the options similar in length and detail, so the correct one cannot be spotted by being the longest or most specific;
    - "correct_answer" must be copied EXACTLY (character for character) from one of the options — never a letter;
    - "explanation": why the answer is correct and why the main distractor is wrong, referencing the playbook;
    - mix "difficulty" (basic | intermediate | advanced) and "cognitive_level" (recall | understanding | application | analysis) — include at least 2 application/analysis scenario questions;
@@ -165,7 +167,7 @@ Produce:
         throw badOutput('The AI returned no teaching script for this lesson.');
       }
 
-      const questions = (Array.isArray(result.mcqs) ? result.mcqs : [])
+      const questions = balanceAnswerPositions((Array.isArray(result.mcqs) ? result.mcqs : [])
         .map((q) => {
           const clean = cleanMcq(q);
           if (!clean) return null;
@@ -185,7 +187,7 @@ Produce:
           };
         })
         .filter(Boolean)
-        .slice(0, 6);
+        .slice(0, 6));
 
       const flashcards = (Array.isArray(result.flashcards) ? result.flashcards : [])
         .filter((f) => String(f?.front || '').trim() && String(f?.back || '').trim())
@@ -201,13 +203,13 @@ Produce:
         }))
         .slice(0, 5);
 
-      // Quality gate before anything is saved: a short script or too few usable questions/flashcards
-      // means the response was incomplete — fail (the lesson keeps what it had) rather than store it.
-      const words = String(result.teaching_script).trim().split(/\s+/).length;
-      if (words < 300) throw badOutput(`The AI returned a teaching script of only ${words} words (at least 300 expected) — nothing was saved; retry this lesson.`);
-      if (questions.length < 4) throw badOutput(`The AI returned only ${questions.length} usable quiz questions (6 requested) — nothing was saved; retry this lesson.`);
-      if (flashcards.length < 3) throw badOutput(`The AI returned only ${flashcards.length} usable flashcards (5 requested) — nothing was saved; retry this lesson.`);
-      return { result, questions, flashcards };
+      // Automatic quality check against the source chapter (lessonQuality.js): errors (runaway text,
+      // not grounded in the playbook, no usable quiz) mean the answer is not saved; warnings are saved
+      // with the lesson for the reviewer.
+      const quality = assessLessonQuality({ ...result, questions, flashcards }, sourceText);
+      const blocking = quality.issues.filter((i) => i.severity === 'error');
+      if (blocking.length) throw badOutput(`Quality check failed: ${blocking.map((i) => i.message).join('; ')} — nothing was saved; retry this lesson.`);
+      return { result, questions, flashcards, quality };
     };
     // A malformed or incomplete answer (models occasionally ramble inside one field) is asked for once
     // more, bypassing the cache; a second bad answer fails the lesson with the reason.
@@ -219,7 +221,7 @@ Produce:
       log.warn('pipeline.lesson_content.retry_bad_output', { lesson_id: lessonId, reason: errMsg(err) });
       produced = await produce(true);
     }
-    const { result, questions, flashcards } = produced;
+    const { result, questions, flashcards, quality } = produced;
 
     // Replace previous lesson quiz questions (never assessment questions) and flashcards.
     const oldQuestions = await sr.Question.filter({ lesson_id: lessonId });
@@ -244,9 +246,11 @@ Produce:
       content_error: '',
       content_error_retryable: false,
       content_attempts: (Number(lesson.content_attempts) || 0) + 1,
+      quality_score: quality.score,
+      quality_report: JSON.stringify(quality),
     });
 
-    return { ok: true, lesson_id: lessonId, question_count: questions.length, flashcard_count: flashcards.length };
+    return { ok: true, lesson_id: lessonId, question_count: questions.length, flashcard_count: flashcards.length, quality_score: quality.score, quality_issues: quality.issues.length };
   } catch (e) {
     log.error('pipeline.lesson_content.failed', { lesson_id: lessonId, error: errMsg(e) });
     try {

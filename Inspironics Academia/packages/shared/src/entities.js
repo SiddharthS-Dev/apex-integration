@@ -699,6 +699,14 @@ export const ENTITIES = {
         "type": "number",
         "description": "Content generation attempts (for batch progress and retries)"
       },
+      "quality_score": {
+        "type": "number",
+        "description": "Automatic quality score 0–100 of the generated content (lessonQuality.js)"
+      },
+      "quality_report": {
+        "type": "string",
+        "description": "JSON: automatic quality check — score, passed, issues (errors/warnings) and metrics"
+      },
       "content_error_retryable": {
         "type": "boolean",
         "description": "The last failure was temporary (provider overloaded / rate-limited): the next batch retries it"

@@ -16,7 +16,8 @@ export function guessVideoType(title) {
   return 'concept';
 }
 
-const lower1 = (s) => (s ? s[0].toLowerCase() + s.slice(1) : s);
+// "Device identity" → "device identity", but acronyms keep their case: "CK Platform", "AIoT", "OTA".
+const lower1 = (s) => (s && !/^[A-Z][A-Z0-9]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s);
 
 function objectiveFor(topic, chapterTitle) {
   const t = String(topic || '').replace(/[.:;]+$/, '');

@@ -24,7 +24,7 @@ import { outputSettings, setOutputSettings } from '../dropbox/output.js';
 import { cleanupStorage, storageReport } from '../storage/storage.js';
 import { db } from '../db/index.js';
 import { cleanScene, createProject, projectScenes, updateProject } from './projects.js';
-import { courseLessons, courseProgress, selectLessons, startCourseBatch } from '../pipeline/courseContent.js';
+import { courseLessons, courseProgress, qualityOf, recheckLessonQuality, selectLessons, startCourseBatch } from '../pipeline/courseContent.js';
 import { aiPrice, PRICES_CHECKED } from '../usage/pricing.js';
 
 // AI Studio API (admin only): content generation, voice-over, video projects, render jobs, the
@@ -314,6 +314,33 @@ router.post('/courses/:id/generate', asyncHandler(async (req, res) => {
   }
   const job = await startCourseBatch({ ...b, course_id: req.params.id }, { user: req.user });
   res.status(202).json({ started: true, selected: selected.length, job });
+}));
+
+// Scores every lesson with content again (free; no AI call) — e.g. after reviewers' edits.
+router.post('/courses/:id/quality-check', asyncHandler(async (req, res) => {
+  const { lessons } = await courseLessons(req.params.id);
+  const results = [];
+  for (const l of lessons) {
+    const q = await recheckLessonQuality(l, { balance: req.body?.balance === true });
+    if (q) results.push(q);
+  }
+  res.json({ checked: results.length, passed: results.filter((q) => q.passed).length, flagged: results.filter((q) => !q.passed).length });
+}));
+
+// Approves, in one step, the lessons that passed every automatic quality check (and their quiz
+// questions and flashcards). Flagged lessons stay for a person to review. Needs { confirm: true }.
+router.post('/courses/:id/approve-passed', asyncHandler(async (req, res) => {
+  const { lessons } = await courseLessons(req.params.id);
+  const passed = lessons.filter((l) => l.status === 'pending_review' && qualityOf(l)?.passed);
+  if (req.body?.confirm !== true) return res.status(409).json({ error: 'Confirm the approval', details: { confirm_required: true, lessons: passed.length } });
+  let questions = 0;
+  let flashcards = 0;
+  for (const l of passed) {
+    await entities.Lesson.update(l.id, { status: 'approved' });
+    for (const q of await entities.Question.filter({ lesson_id: l.id, status: 'pending_review' })) { if (!q.assessment_id) { await entities.Question.update(q.id, { status: 'approved' }); questions++; } }
+    for (const f of await entities.Flashcard.filter({ lesson_id: l.id, status: 'pending_review' })) { await entities.Flashcard.update(f.id, { status: 'approved' }); flashcards++; }
+  }
+  res.json({ lessons: passed.length, questions, flashcards, left_for_review: lessons.filter((l) => l.status === 'pending_review').length - passed.length });
 }));
 
 // ---- storage ------------------------------------------------------------------------------------

@@ -33,18 +33,22 @@ function wav(seconds = 1) {
 
 const ok = (data) => new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
 const fail = (status, message, extra = {}) => new Response(JSON.stringify({ error: { code: status, message, ...extra } }), { status, headers: { 'content-type': 'application/json' } });
+// Realistic mock text: a source chapter and lesson scripts built from the same engineering vocabulary,
+// without repetition (the automatic quality check rejects looping or ungrounded text).
+const VOCAB = ['telemetry', 'gateway', 'firmware', 'provisioning', 'registry', 'canonical', 'evidence', 'traceability', 'differentiation', 'maturity', 'autonomy', 'governance', 'architecture', 'reference', 'boundary', 'contract', 'protocol', 'converter', 'actuation', 'controller', 'envelope', 'approval', 'rollback', 'monitoring', 'lifecycle', 'inventory', 'platform', 'assurance', 'integrity', 'baseline'];
+const prose = (n, seed = 0) => Array.from({ length: n }, (_, i) => `Step ${i + 1} connects ${VOCAB[(i + seed) % VOCAB.length]} m${i} with ${VOCAB[(i * 7 + seed + 3) % VOCAB.length]} for case ${i + seed} n${i}.`).join(' ');
 const words = (n, w = 'concept') => Array.from({ length: n }, (_, i) => `${w}${i % 7}`).join(' ');
 
 function lessonJson(prompt) {
   const title = (/^LESSON: (.+)$/m.exec(prompt) || [])[1] || 'Lesson';
   if (/Broken/.test(title)) return { video_title: title, teaching_script: 'Too short.', summary: 's', examples: [], key_points: [], mcqs: [], flashcards: [] };
-  const mcq = (n) => ({ question_text: `${title}: question ${n}?`, options: ['Alpha', 'Beta', 'Gamma', 'Delta'], correct_answer: 'Gamma', explanation: 'Per the playbook.', difficulty: 'intermediate', cognitive_level: 'application', source_section: title });
+  const mcq = (n) => ({ question_text: `${title}: question ${n}?`, options: ['Alpha', 'Beta', 'Gamma', 'Delta'], correct_answer: 'Gamma', explanation: 'The playbook states this rule in the governance section.', difficulty: 'intermediate', cognitive_level: 'application', source_section: title });
   return {
     video_title: `${title} explained`,
-    teaching_script: `In this lesson on ${title} we follow the playbook. ${words(420)}.`,
+    teaching_script: `In this lesson on ${title} we follow the playbook. ${prose(130, title.length)}`,
     summary: `A summary of ${title}.`,
     examples: ['A worked example from operations.'],
-    key_points: ['Keep evidence for every change', 'Advise before acting', 'Measure what matters'],
+    key_points: ['Keep evidence for every change', 'Advise before acting', 'Measure what matters', 'Stage firmware before rollout', 'Trace every controller command'],
     mcqs: [1, 2, 3, 4, 5, 6].map(mcq),
     flashcards: [1, 2, 3, 4, 5].map((n) => ({ front: `${title} term ${n}`, back: `Meaning ${n}.`, difficulty: 'basic', source_section: title })),
   };
@@ -315,7 +319,7 @@ let courseId;
 let lessonIds;
 async function makeCourse() {
   const playbook = await entities.Playbook.create({ title: 'Ops Playbook', status: 'processed', file_url: 'upload:x', file_name: 'ops.docx' });
-  await entities.Chapter.create({ playbook_id: playbook.id, number: 'Part 1', title: 'Foundations', content: `PART 1\nFoundations\n${words(200, 'evidence')}`, order: 0 });
+  await entities.Chapter.create({ playbook_id: playbook.id, number: 'Part 1', title: 'Foundations', content: `PART 1\nFoundations\n${prose(200)}`, order: 0 });
   const course = await entities.Course.create({ title: 'Ops Course', status: 'pending_review', playbook_id: playbook.id });
   const mod = await entities.Module.create({ course_id: course.id, title: 'Foundations', order: 0 });
   const titles = ['Vision', 'Doctrine', 'Broken lesson', 'Governance', 'Evidence'];
@@ -341,7 +345,7 @@ test('batch: a one-lesson sample first, then a confirmed batch that resumes, ski
   assert.equal((await entities.Question.filter({ lesson_id: vision.id })).length, 6);
   assert.equal((await entities.Flashcard.filter({ lesson_id: vision.id })).length, 5);
   const prompt = calls.filter((c) => /TEACHING OBJECTIVE/.test(c.body.contents[0].parts.at(-1).text)).at(-1).body.contents[0].parts.at(-1).text;
-  assert.match(prompt, /evidence0 evidence1/, 'grounded in the playbook chapter text');
+  assert.match(prompt, /Step 1 connects telemetry m0 with provisioning for case 0 n0\./, 'grounded in the playbook chapter text');
   const logged = (await db().query("SELECT ref_type, ref_id FROM generation_log WHERE kind = 'ai' AND status = 'ok' ORDER BY created_at DESC LIMIT 1"))[0];
   assert.deepEqual([logged.ref_type, logged.ref_id], ['lesson', vision.id], 'usage is tracked per lesson');
 
@@ -356,7 +360,7 @@ test('batch: a one-lesson sample first, then a confirmed batch that resumes, ski
   assert.deepEqual([rest.selected, rest.completed, rest.failed], [3, 2, 1], 'resumes after the sample');
   assert.equal(rest.failures[0].title, 'Broken lesson');
   const broken = await entities.Lesson.get(lessonIds[2]);
-  assert.match(broken.content_error, /teaching script of only/);
+  assert.match(broken.content_error, /Quality check failed: Script has only 2 words/);
   assert.equal(broken.teaching_script || '', '', 'an incomplete answer is not saved');
   assert.equal((await entities.Lesson.get(lessonIds[4])).teaching_script, 'Approved script that must stay.');
 
@@ -366,6 +370,31 @@ test('batch: a one-lesson sample first, then a confirmed batch that resumes, ski
   // Nothing left to do unless failures are retried explicitly.
   assert.equal((await runCourseBatch({ course_id: courseId })).selected, 0);
   assert.equal((await runCourseBatch({ course_id: courseId, retry_failed: true })).selected, 1);
+});
+
+test('quality: every generated lesson is scored; only lessons that passed can be approved in one step, after confirming', async () => {
+  const progress = await courseProgress(courseId);
+  const generated = progress.lessons.filter((l) => l.content === 'completed' && l.quality);
+  assert.ok(generated.length >= 3, 'scored at generation');
+  assert.ok(generated.every((l) => typeof l.quality.score === 'number'));
+  const quiz = await entities.Question.filter({ lesson_id: lessonIds[0] });
+  assert.ok(new Set(quiz.map((q) => q.options.indexOf(q.correct_answer))).size >= 3, 'answers spread over the positions');
+
+  const recheck = await call('POST', `/studio/courses/${courseId}/quality-check`, {});
+  assert.equal(recheck.status, 200);
+  assert.ok(recheck.data.checked >= 3);
+  // Flag one lesson so it must stay for a person to review.
+  const flagged = await entities.Lesson.get(lessonIds[1]);
+  await entities.Lesson.update(flagged.id, { quality_report: JSON.stringify({ score: 60, passed: false, issues: [{ severity: 'warning', code: 'numbers', message: 'Figures not found in the source chapter: 73%' }] }) });
+
+  assert.equal((await call('POST', `/studio/courses/${courseId}/approve-passed`, {})).status, 409, 'needs confirmation');
+  const r = await call('POST', `/studio/courses/${courseId}/approve-passed`, { confirm: true });
+  assert.equal(r.status, 200);
+  assert.ok(r.data.lessons >= 1);
+  assert.equal((await entities.Lesson.get(flagged.id)).status, 'pending_review', 'flagged lesson left for review');
+  const approved = await entities.Lesson.get(lessonIds[0]);
+  assert.equal(approved.status, 'approved');
+  assert.ok((await entities.Question.filter({ lesson_id: approved.id })).every((q) => q.status === 'approved'));
 });
 
 test('a runaway answer (everything inside one field) is not cached or saved, and is asked for again once', async () => {

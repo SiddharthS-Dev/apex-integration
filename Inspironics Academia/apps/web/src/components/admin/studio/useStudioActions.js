@@ -7,8 +7,14 @@ import { flattenLessons } from '@/lib/progress';
 
 const summarize = (label, r) => {
   if (r.unavailable) return toast.error(`${label} unavailable: ${r.error}`);
+  if (r.stopped) {
+    return toast.error(`${label}: stopped after ${r.succeeded} — ${r.stopped}${r.skipped ? ` (${r.skipped} not attempted; run it again later)` : ''}`, { duration: 15000 });
+  }
+  // Say why, not only how many: the most frequent reason among the failures.
+  const reasons = (r.failures || []).map((f) => f.error).filter(Boolean);
+  const top = reasons.sort((a, b) => reasons.filter((x) => x === b).length - reasons.filter((x) => x === a).length)[0];
   return r.failed
-    ? toast.warning(`${label}: ${r.succeeded} succeeded, ${r.failed} failed`)
+    ? toast.warning(`${label}: ${r.succeeded} succeeded, ${r.failed} failed${top ? ` — ${top}` : ''}`, { duration: 15000 })
     : toast.success(`${label}: ${r.succeeded} completed`);
 };
 

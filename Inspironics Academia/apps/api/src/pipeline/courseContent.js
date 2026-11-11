@@ -10,6 +10,8 @@ import { runWithGeneration } from '../usage/context.js';
 import generateLessonContent from './generateLessonContent.js';
 import generateLessonMedia from './generateLessonMedia.js';
 import { errMsg } from './util.js';
+import { assessLessonQuality, balanceAnswerPositions } from './lessonQuality.js';
+import { loadLessonSource } from './source.js';
 
 // Course content batch: generates the script, summary, key points, quiz and flashcards of every lesson
 // of a course that has none yet, then (optionally) its narrated slides and its MP4 render.
@@ -42,6 +44,15 @@ export async function courseLessons(courseId) {
   return { course, modules, lessons };
 }
 
+export function qualityOf(l) {
+  try {
+    const q = JSON.parse(l.quality_report || 'null');
+    return q ? { score: q.score, passed: !!q.passed, issues: q.issues || [] } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Per-lesson state for the dashboard. */
 export function lessonState(l) {
   const content = l.status === 'generating' ? 'processing' : hasContent(l) ? 'completed' : l.content_error ? 'failed' : 'pending';
@@ -50,7 +61,30 @@ export function lessonState(l) {
     content, content_error: l.content_error || null, content_attempts: Number(l.content_attempts) || 0, content_generated_at: l.content_generated_at || null,
     narration: hasMedia(l) ? 'completed' : l.media_error ? 'failed' : 'pending', media_error: l.media_error || null,
     video: hasVideo(l) ? 'completed' : 'pending', rendered_video_url: l.rendered_video_url || null,
+    quality: qualityOf(l),
   };
+}
+
+/**
+ * Scores a lesson's current content again (no AI call): after a reviewer's edits, or for lessons
+ * generated before the check existed. With balance: true, also spreads the quiz's correct answers
+ * over the option positions.
+ */
+export async function recheckLessonQuality(lesson, { balance = false } = {}) {
+  if (!hasContent(lesson)) return null;
+  const { chapter } = await loadLessonSource(lesson);
+  let questions = (await entities.Question.filter({ lesson_id: lesson.id })).filter((q) => !q.assessment_id).sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)));
+  if (balance) {
+    const balanced = balanceAnswerPositions(questions);
+    for (const [i, q] of balanced.entries()) {
+      if (JSON.stringify(q.options) !== JSON.stringify(questions[i].options)) await entities.Question.update(q.id, { options: q.options });
+    }
+    questions = balanced;
+  }
+  const flashcards = await entities.Flashcard.filter({ lesson_id: lesson.id });
+  const quality = assessLessonQuality({ ...lesson, questions, flashcards }, chapter?.content || '');
+  await entities.Lesson.update(lesson.id, { quality_score: quality.score, quality_report: JSON.stringify(quality) });
+  return quality;
 }
 
 /** Course progress: counts, the active batch job, and each lesson's state. */
@@ -66,6 +100,12 @@ export async function courseProgress(courseId) {
       content: { completed: count('content', 'completed'), processing: count('content', 'processing'), failed: count('content', 'failed'), pending: count('content', 'pending') },
       narration: { completed: count('narration', 'completed'), failed: count('narration', 'failed') },
       video: { completed: count('video', 'completed') },
+      quality: {
+        checked: states.filter((s) => s.quality).length,
+        passed: states.filter((s) => s.quality?.passed).length,
+        flagged: states.filter((s) => s.quality && !s.quality.passed).length,
+        approvable: states.filter((s) => s.quality?.passed && s.status === 'pending_review').length,
+      },
     },
     job: jobs.find((j) => j.type === 'content:course') || null,
     lessons: states,

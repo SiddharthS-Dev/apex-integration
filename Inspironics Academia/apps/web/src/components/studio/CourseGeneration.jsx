@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clapperboard, ExternalLink, Loader2, Mic, RefreshCw, Sparkles, Square, Wand2 } from 'lucide-react';
+import { CheckCheck, Clapperboard, ExternalLink, Loader2, Mic, RefreshCw, ShieldCheck, Sparkles, Square, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import {
@@ -27,6 +27,22 @@ const TONE = {
   pending: 'bg-muted text-muted-foreground',
 };
 const State = ({ value }) => <span className={`rounded-full px-2 py-0.5 text-xs ${TONE[value] || TONE.pending}`}>{value}</span>;
+
+// Automatic quality check (no AI call): score and what to look at when reviewing.
+function Quality({ q }) {
+  if (!q) return <span className="text-xs text-muted-foreground">—</span>;
+  const tone = q.passed ? TONE.completed : q.score >= 70 ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' : TONE.failed;
+  return (
+    <div className="space-y-1">
+      <span className={`rounded-full px-2 py-0.5 text-xs ${tone}`}>{q.passed ? `${q.score} · passed` : `${q.score} · ${q.issues.length} to check`}</span>
+      {!q.passed && (
+        <ul className="list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+          {q.issues.slice(0, 4).map((i) => <li key={`${i.code}-${i.message}`} className={i.severity === 'error' ? 'text-rose-600 dark:text-rose-400' : ''}>{i.message}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function estimateText(e) {
   if (!e) return '';
@@ -78,6 +94,7 @@ export default function CourseGeneration({ config }) {
   const [render, setRender] = useState(false);
   const [confirm, setConfirm] = useState(null); // { body, selected, estimate }
   const [regen, setRegen] = useState(null); // lesson
+  const [approve, setApprove] = useState(0); // lessons that passed, awaiting confirmation
   const [busy, setBusy] = useState('');
   const p = progress.data;
   const job = p?.job;
@@ -163,13 +180,23 @@ export default function CourseGeneration({ config }) {
           </Button>
           {t?.content.failed > 0 && <Button variant="outline" onClick={() => start({ retry_failed: true }, 'failed')} disabled={!aiOn || running || !!busy}><RefreshCw /> Retry {t.content.failed} failed</Button>}
           {!anyContent && <p className="text-xs text-muted-foreground">Start with one lesson, check it in the Content Studio, then generate the rest.</p>}
+          {anyContent && (
+            <Button variant="outline" disabled={!!busy || running} onClick={() => lessonAction('quality', async () => {
+              const r = await api.studio.checkCourseQuality(courseId, { balance: true });
+              toast.info(`Quality: ${r.passed} of ${r.checked} lessons passed every check; ${r.flagged} flagged for review`);
+            })}>{busy === 'quality' ? <Loader2 className="animate-spin" /> : <ShieldCheck />} Re-check quality</Button>
+          )}
+          {t?.quality?.approvable > 0 && (
+            <Button variant="outline" disabled={!!busy || running} onClick={() => setApprove(t.quality.approvable)}><CheckCheck /> Approve {t.quality.approvable} that passed checks…</Button>
+          )}
+          {t?.quality?.checked > 0 && <p className="text-xs text-muted-foreground">Automatic checks: {t.quality.passed} passed, {t.quality.flagged} flagged. Flagged lessons list what to look at.</p>}
         </div>
       </div>
 
       {p && (
         <div className="overflow-x-auto rounded-2xl border border-border bg-card">
           <Table>
-            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Lesson</TableHead><TableHead>Content</TableHead><TableHead>Narration</TableHead><TableHead>Video</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Lesson</TableHead><TableHead>Content</TableHead><TableHead>Quality</TableHead><TableHead>Narration</TableHead><TableHead>Video</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {p.lessons.map((l, i) => (
                 <TableRow key={l.id}>
@@ -180,6 +207,7 @@ export default function CourseGeneration({ config }) {
                     {(l.content_error || l.media_error) && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">{l.content_error || l.media_error}</p>}
                   </TableCell>
                   <TableCell><State value={l.content} /></TableCell>
+                  <TableCell className="min-w-56"><Quality q={l.quality} /></TableCell>
                   <TableCell><State value={l.narration} /></TableCell>
                   <TableCell>{l.rendered_video_url ? <a className="text-primary underline" href={l.rendered_video_url} target="_blank" rel="noreferrer">MP4</a> : <State value={l.video} />}</TableCell>
                   <TableCell className="whitespace-nowrap text-right">
@@ -219,6 +247,24 @@ export default function CourseGeneration({ config }) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => { const body = confirm.body; setConfirm(null); start(body, 'all'); }}><Wand2 /> Generate</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!approve} onOpenChange={(o) => !o && setApprove(0)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve {approve} lessons that passed every automatic check?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Their script, quiz questions and flashcards are marked approved. The checks cover grounding in the playbook, figures not found in the source, repetition, quiz answers and options, and completeness — not every factual nuance, so spot-check a few. Flagged lessons stay pending for review.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setApprove(0); lessonAction('approve', async () => {
+              const r = await api.studio.approvePassedLessons(courseId, { confirm: true });
+              toast.success(`Approved ${r.lessons} lessons, ${r.questions} questions and ${r.flashcards} flashcards; ${r.left_for_review} left for review`);
+            }); }}><CheckCheck /> Approve</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

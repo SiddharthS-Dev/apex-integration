@@ -41,6 +41,12 @@ async function runSequential(items, fnName, toPayload, onProgress) {
         return { total, failed: 0, succeeded: 0, failures: [], unavailable: true, error: errorMessage(err) };
       }
       failures.push({ item, error: errorMessage(err) });
+      // A quota or usage limit (429) fails every remaining item the same way: stop and say why.
+      if (err?.status === 429) {
+        const skipped = total - i - 1;
+        onProgress?.({ done: total, total });
+        return { total, failed: failures.length, succeeded: i + 1 - failures.length, skipped, failures, stopped: errorMessage(err) };
+      }
     }
     onProgress?.({ done: i + 1, total, current: items[i + 1] });
   }

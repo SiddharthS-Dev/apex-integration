@@ -89,6 +89,8 @@ export function createDemoDriver() {
       courses: async () => [],
       courseProgress: unavailable('AI Studio'),
       generateCourse: unavailable('AI Studio'),
+      checkCourseQuality: unavailable('AI Studio'),
+      approvePassedLessons: unavailable('AI Studio'),
     },
     sync: {
       status: async () => ({ connected: false, running: false }),
