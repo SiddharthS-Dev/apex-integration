@@ -40,6 +40,11 @@ export function availableVoiceProviders() {
   return Object.keys(TTS_PROVIDERS).filter(ttsReady);
 }
 
+/** Why recorded voice-over is unavailable (the setting to change, never a value); null when it works. */
+export function mediaUnavailableReason() {
+  return mediaEnabled() ? null : mediaUnavailableError().message;
+}
+
 export function mediaUnavailableError() {
   if (config.mediaProvider === 'none') return unavailable('Voice-over is turned off (MEDIA_PROVIDER=none)');
   if (!TTS_PROVIDERS[config.mediaProvider]) return unavailable(`Unknown MEDIA_PROVIDER "${config.mediaProvider}" (available: ${Object.keys(TTS_PROVIDERS).join(', ')}, none)`);

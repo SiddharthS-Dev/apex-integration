@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { config } from '../../config.js';
 import { getObject, objectKey, putObject } from '../../files/objectStore.js';
 import { createTempDir, releaseTempDir } from '../../files/tempStore.js';
+import { assertTempSpace } from '../../lib/tempEnv.js';
 import { unavailable } from '../../lib/errors.js';
 import { assertWithinLimits } from '../../usage/limits.js';
 import { recordGeneration } from '../../usage/log.js';
@@ -182,6 +183,8 @@ export function validateManifest(manifest) {
  */
 export async function renderVideo(manifest, { ref = {}, onProgress = () => {}, signal, jobId } = {}) {
   if (!renderingAvailable()) throw renderingUnavailableError();
+  // Fail clearly before starting when the temp folder is nearly full, instead of ENOSPC part-way through.
+  assertTempSpace();
   const problems = validateManifest(manifest);
   if (problems.length) throw Object.assign(new Error(`Cannot render: ${problems.join('; ')}`), { status: 400 });
   await assertWithinLimits('render', { provider: 'ffmpeg' });

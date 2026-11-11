@@ -4,7 +4,9 @@ import { migrate } from './db/migrations.js';
 import { purgeExpiredSessions } from './auth/sessions.js';
 import { log } from './lib/logger.js';
 import { createApp } from './app.js';
-import { describeAiConfig } from './ai/index.js';
+import { aiUnavailableReason, describeAiConfig } from './ai/index.js';
+import { mediaUnavailableReason } from './media/index.js';
+import { setupProcessTemp } from './lib/tempEnv.js';
 import { startScheduler, stopScheduler } from './sync/scheduler.js';
 import { startJobs, stopJobs } from './notify/jobs.js';
 import { startJobWorker, stopJobWorker } from './jobs/queue.js';
@@ -16,6 +18,9 @@ import { get as getEntity, list as listEntities, update as updateEntity } from '
 import { lessonLockName } from './pipeline/util.js';
 import { createUser, findUserByEmail } from './repo/users.js';
 import { hashPassword, validatePassword } from './auth/passwords.js';
+
+// Temp files of this process and its children (FFmpeg, SQLite) go to TEMP_PROCESSING_DIR when set.
+const tempInfo = setupProcessTemp();
 
 const db = await getDb();
 await migrate(db);
@@ -69,7 +74,12 @@ const server = app.listen(config.port, config.host, () => {
     ai_config: describeAiConfig(),
     media: config.mediaProvider,
     dropbox: dropboxConfigured(),
+    temp: tempInfo,
   });
+  // Say at startup what is configured but cannot work, instead of failing on first use.
+  if (process.env.AI_ENABLED && /^(1|true|yes|on)$/i.test(process.env.AI_ENABLED) && aiUnavailableReason()) log.warn('ai.unavailable', { reason: aiUnavailableReason() });
+  if (config.mediaProvider !== 'none' && mediaUnavailableReason()) log.warn('media.unavailable', { provider: config.mediaProvider, reason: mediaUnavailableReason() });
+  if (!tempInfo.configured && tempInfo.system_free_mb != null && tempInfo.system_free_mb < 1024) log.warn('storage.system_temp_low_space', { dir: tempInfo.os_tmpdir, free_mb: tempInfo.system_free_mb, hint: 'Set TEMP_PROCESSING_DIR to a drive with room' });
 });
 
 startScheduler();

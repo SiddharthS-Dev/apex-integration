@@ -2,7 +2,7 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import { config, dropboxConfigured } from './config.js';
 import { aiEnabled, aiModel, aiUnavailableReason } from './ai/index.js';
-import { mediaEnabled } from './media/index.js';
+import { mediaEnabled, mediaUnavailableReason } from './media/index.js';
 import { loadSession, requireAdmin } from './auth/sessions.js';
 import authRoutes from './auth/routes.js';
 import entityRoutes from './entities/routes.js';
@@ -40,6 +40,7 @@ export function createApp() {
     ai_unavailable_reason: aiUnavailableReason(),
     media_provider: config.mediaProvider,
     media_enabled: mediaEnabled(),
+    media_unavailable_reason: mediaUnavailableReason(),
     video_render_enabled: renderingAvailable(),
     dropbox_configured: dropboxConfigured(),
     registration_open: config.allowRegistration,

@@ -275,15 +275,39 @@ router.get('/courses/:id/progress', asyncHandler(async (req, res) => {
  * far when there are any (actual usage × list price), otherwise from the source size and the model's
  * list price with a typical output length. Always an estimate; the provider's invoice is what is billed.
  */
-async function estimateBatch(courseLessonsList, selected) {
-  const done = courseLessonsList.filter((l) => String(l.teaching_script || '').trim()).map((l) => l.id);
-  if (done.length) {
-    const marks = done.map(() => '?').join(',');
-    const [row] = await db().query(`SELECT count(DISTINCT ref_id) AS lessons, sum(cost_usd) AS cost, sum(input_tokens) AS input, sum(output_tokens) AS output FROM generation_log WHERE ref_type = 'lesson' AND status = 'ok' AND kind IN ('ai', 'tts') AND cost_usd IS NOT NULL AND ref_id IN (${marks})`, done);
-    if (Number(row?.lessons) > 0 && row.cost != null) {
-      const perLesson = Number(row.cost) / Number(row.lessons);
-      return { basis: 'measured', per_lesson_usd: +perLesson.toFixed(4), total_usd: +(perLesson * selected.length).toFixed(2), sample_lessons: Number(row.lessons) };
+// Measured per-lesson cost from what successful lessons actually needed: the final successful content
+// request of each lesson (earlier attempts that were retried or rejected are not part of a normal
+// lesson), and — for narrated lessons — its final slide-storyboard request plus its recorded voice-over.
+export async function measuredLessonCost(lessons) {
+  const done = lessons.filter((l) => String(l.teaching_script || '').trim());
+  const latestCost = async (lessonId, operation) => {
+    const [row] = await db().query("SELECT cost_usd FROM generation_log WHERE ref_type = 'lesson' AND ref_id = ? AND kind = 'ai' AND status = 'ok' AND operation = ? AND cost_usd IS NOT NULL ORDER BY created_at DESC LIMIT 1", [lessonId, operation]);
+    return row ? Number(row.cost_usd) : null;
+  };
+  const content = [];
+  const media = [];
+  for (const l of done) {
+    const c = await latestCost(l.id, 'generateLessonContent');
+    if (c != null) content.push(c);
+    if (String(l.audio_url || '').trim()) {
+      const storyboard = await latestCost(l.id, 'generateLessonMedia');
+      const [tts] = await db().query("SELECT sum(cost_usd) AS c FROM generation_log WHERE ref_type = 'lesson' AND ref_id = ? AND kind = 'tts' AND status = 'ok' AND cost_usd IS NOT NULL", [l.id]);
+      if (storyboard != null || tts?.c != null) media.push((storyboard || 0) + Number(tts?.c || 0));
     }
+  }
+  const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  return { content: avg(content), content_samples: content.length, media: avg(media), media_samples: media.length };
+}
+
+async function estimateBatch(courseLessonsList, selected, { media = false } = {}) {
+  const m = await measuredLessonCost(courseLessonsList);
+  if (m.content != null && (!media || m.media != null)) {
+    const perLesson = m.content + (media ? m.media : 0);
+    return {
+      basis: 'measured', per_lesson_usd: +perLesson.toFixed(4), total_usd: +(perLesson * selected.length).toFixed(2),
+      sample_lessons: m.content_samples, content_per_lesson_usd: +m.content.toFixed(4),
+      ...(media ? { narration_per_lesson_usd: +m.media.toFixed(4), narration_samples: m.media_samples } : {}),
+    };
   }
   const price = aiPrice(config.aiProvider, PROVIDER_MODEL());
   if (!price) return { basis: 'unknown', per_lesson_usd: null, total_usd: null };
@@ -309,7 +333,7 @@ router.post('/courses/:id/generate', asyncHandler(async (req, res) => {
   const selected = selectLessons(lessons, { limit: b.limit, lessonIds: b.lesson_ids, retryFailed: b.retry_failed === true });
   if (!selected.length) return res.json({ started: false, reason: 'Every selected lesson already has content (nothing is overwritten; use Regenerate on a lesson to replace it).' });
   if (selected.length > 1 && b.confirm !== true) {
-    const estimate = await estimateBatch(lessons, selected);
+    const estimate = await estimateBatch(lessons, selected, { media: b.media === true });
     return res.status(409).json({ error: 'Confirm the batch', confirm_required: true, selected: selected.length, estimate, details: { confirm_required: true, selected: selected.length, estimate } });
   }
   const job = await startCourseBatch({ ...b, course_id: req.params.id }, { user: req.user });
