@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import express from 'express';
-import { fileExtension, isPlaybookFile } from '@academy/shared';
+import { ENTITIES, fileExtension, isPlaybookFile, matchesQuery, ruleFor, ruleToQuery } from '@academy/shared';
+import { createScope } from '../entities/categoryScope.js';
 import { config } from '../config.js';
 import { requireAdmin, requireUser } from '../auth/sessions.js';
 import { asyncHandler, badRequest, notFound } from '../lib/errors.js';
@@ -52,6 +53,13 @@ router.get('/outputs/:refType/:refId/video', requireUser, asyncHandler(async (re
   if (req.params.refType === 'project' && req.user.role !== 'admin') throw notFound('Not found');
   const record = await entities[spec[0]].get(req.params.refId);
   if (req.params.refType === 'meeting' && record?.status !== 'published' && req.user.role !== 'admin') throw notFound('Not found');
+  // A lesson's video follows the lesson's own read rule and the learner's category scope, exactly
+  // like GET /api/entities/Lesson/:id: an unapproved lesson, or one outside the audience, is not found.
+  if (req.params.refType === 'lesson' && record && req.user.role !== 'admin') {
+    const rule = ruleToQuery(ruleFor(ENTITIES.Lesson, 'read'), req.user);
+    const scope = await createScope(req.user)('Lesson');
+    if (rule === false || (rule !== true && !matchesQuery(record, rule)) || (scope && !matchesQuery(record, scope))) throw notFound('Not found');
+  }
   const fileId = record?.[spec[1]];
   if (!fileId) throw notFound('Video not found');
   const { openDownload } = await import('../dropbox/client.js');

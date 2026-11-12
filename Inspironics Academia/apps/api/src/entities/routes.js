@@ -124,11 +124,29 @@ router.get('/:name/:id', asyncHandler(async (req, res) => {
   res.json(record);
 }));
 
+// Results only the server may record: the final test is graded by submitFinalTest, which writes the
+// final attempt and the progress fields below. A learner may write the rest of their own progress
+// (lessons done, chapter tests), but not claim a final-test pass the admin dashboards would trust.
+// field -> how its value compares (writing back the unchanged value, as a full-record save does, is fine)
+const SERVER_OWNED = { CourseProgress: { final_score: (v) => Number(v) || 0, final_passed: (v) => !!v } };
+function guardServerOwned(name, data, user, existing = null) {
+  if (user?.role === 'admin' || !data || typeof data !== 'object') return;
+  if (name === 'QuizAttempt' && (data.type === 'final' || existing?.type === 'final')) {
+    throw forbidden('Final test attempts are recorded by the server when the test is submitted');
+  }
+  for (const [field, norm] of Object.entries(SERVER_OWNED[name] || {})) {
+    if (field in data && norm(data[field]) !== norm(existing?.[field])) {
+      throw forbidden(`${field} is recorded by the server when the final test is submitted`);
+    }
+  }
+}
+
 async function createOne(name, body, user) {
   const rule = access(name, 'create', user);
   if (rule === false) throw forbidden(`Not allowed to create ${name}`);
   const data = repo.sanitize(name, body);
   if (!allowed(data, rule)) throw forbidden(`Not allowed to create this ${name}`);
+  guardServerOwned(name, data, user);
   return data;
 }
 
@@ -165,6 +183,7 @@ router.patch('/:name/:id', asyncHandler(async (req, res) => {
   if (!existing || !allowed(existing, access(name, 'read', req.user))) throw notFound(`${name} not found`);
   if (!allowed(existing, rule)) throw forbidden(`Not allowed to update this ${name}`);
   const body = await beforeUpdate(name, existing, req.body, req.user);
+  guardServerOwned(name, repo.sanitize(name, body, { partial: true }), req.user, existing);
   const merged = { ...existing, ...repo.sanitize(name, body, { partial: true }) };
   if (!allowed(merged, rule)) throw forbidden('Update would move the record outside your access');
   const updated = await repo.update(name, id, body);

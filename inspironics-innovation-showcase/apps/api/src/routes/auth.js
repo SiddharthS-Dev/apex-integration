@@ -137,14 +137,9 @@ export function authRoutes({ config, repos, metrics, log }) {
     })
   )
 
-  r.get(
-    '/pending',
-    route(async (req, res) => {
-      const email = normaliseEmail(req.query.email)
-      const kind = req.query.kind === 'reset' ? 'reset' : 'verification'
-      res.json({ pending: email ? await repos.codes.pending(email, kind) : null })
-    })
-  )
+  // (GET /pending was removed: it was public and unthrottled and told anyone whether a verification
+  // or reset code was pending for any email address — undoing /forgot's care not to reveal accounts.
+  // The web app keeps the pending state of its own flow in the browser and never called it.)
 
   r.post(
     '/resend',
@@ -221,6 +216,12 @@ export function authRoutes({ config, repos, metrics, log }) {
           throw new HttpError(403, 'No account for that Google identity — ask an administrator.')
         }
         user = await repos.users.create({ email, name: profile.name || email, provider: 'google', verified: true, picture: profile.picture })
+      } else if (!user.verified) {
+        // Google proves who owns this email; the unverified account's password does not — anyone
+        // could have registered the address first and set it. Drop it so it cannot be used to sign
+        // in; the owner can set a password later with "Forgot password".
+        await repos.users.update(user.id, { verified: true, password_hash: null, picture: profile.picture || user.picture })
+        user = { ...user, verified: true, password_hash: null }
       } else {
         await repos.users.update(user.id, { verified: true, picture: profile.picture || user.picture })
       }
