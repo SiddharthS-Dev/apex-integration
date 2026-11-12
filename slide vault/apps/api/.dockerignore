@@ -1,9 +1,0 @@
-node_modules
-data
-tests
-.env
-.env.*
-*.log
-Dockerfile
-docker-compose.yml
-docs

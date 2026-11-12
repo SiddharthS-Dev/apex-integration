@@ -14,7 +14,9 @@
 
 services:
   api:
-    build: ./apps/api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     image: slidesvault-api
     restart: unless-stopped
     ports:
@@ -54,15 +56,19 @@ services:
   # ----------------------------------------------------- multi-instance --
   api-pg:
     profiles: ['postgres']
-    build: ./apps/api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     image: slidesvault-api
     restart: unless-stopped
     # Several replicas share one Postgres; the advisory locks in the database
     # keep them from syncing or refreshing on top of each other.
     deploy:
       replicas: ${API_REPLICAS:-2}
-    ports:
-      - '${PORT:-4000}:4000'
+    # No fixed host port: two replicas cannot both bind it. Put the load balancer (or reverse proxy)
+    # on the compose network in front of them and route it to api-pg:4000.
+    expose:
+      - '4000'
     environment:
       NODE_ENV: production
       PORT: 4000
