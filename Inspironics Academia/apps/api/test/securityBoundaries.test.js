@@ -64,8 +64,10 @@ before(async () => {
   const approved = await admin.create('Lesson', { module_id: mod.id, title: 'Paging', status: 'approved', rendered_dropbox_id: 'id:approved' });
   const draft = await admin.create('Lesson', { module_id: mod.id, title: 'Draft', status: 'pending_review', rendered_dropbox_id: 'id:draft' });
   const assessment = await admin.create('Assessment', { course_id: course.id, title: 'Final', type: 'certification', status: 'published', passing_score: 50 });
-  const question = await admin.create('Question', { assessment_id: assessment.id, question_text: 'Who pages?', options: ['on-call', 'nobody'], correct_answer: 'on-call', status: 'approved' });
-  w = { course, approved, draft, question };
+  const question = await admin.create('Question', { assessment_id: assessment.id, question_text: 'Who pages?', options: ['on-call', 'nobody'], correct_answer: 'on-call', explanation: 'The on-call engineer is paged.', status: 'approved' });
+  await admin.create('Question', { lesson_id: approved.id, question_text: 'Lesson Q1?', options: ['yes', 'no'], correct_answer: 'yes', explanation: 'Because the playbook says so.', status: 'approved' });
+  await admin.create('Question', { lesson_id: approved.id, question_text: 'Lesson Q2?', options: ['yes', 'no'], correct_answer: 'no', explanation: 'Because the playbook says otherwise.', status: 'approved' });
+  w = { course, mod, approved, draft, question };
 });
 
 after(async () => {
@@ -86,17 +88,54 @@ test('a learner cannot record a final-test pass on their own progress', async ()
   assert.equal(saved.percentage, 50);
 });
 
-test('a learner cannot create a final test attempt, only a chapter or lesson one', async () => {
+test('a learner cannot write quiz attempts or chapter completion; the server records them', async () => {
   const attempt = { user_id: learnerId, course_id: w.course.id, score: 1, total: 1, percentage: 100, passed: true };
-  assert.equal((await learner.call('POST', '/entities/QuizAttempt', { ...attempt, type: 'final' })).status, 403);
-  assert.equal((await learner.call('POST', '/entities/QuizAttempt/bulk', [{ ...attempt, type: 'final' }])).status, 403);
-  const chapter = await learner.create('QuizAttempt', { ...attempt, type: 'chapter' });
-  assert.equal((await learner.call('PATCH', `/entities/QuizAttempt/${chapter.id}`, { type: 'final' })).status, 403);
+  for (const type of ['final', 'chapter', 'lesson']) {
+    assert.equal((await learner.call('POST', '/entities/QuizAttempt', { ...attempt, type })).status, 403, type);
+  }
+  assert.equal((await learner.call('POST', '/entities/QuizAttempt/bulk', [{ ...attempt, type: 'chapter' }])).status, 403);
+  const [progress] = await learner.ok('GET', `/entities/CourseProgress${q({ user_id: learnerId })}`);
+  assert.equal((await learner.call('PATCH', `/entities/CourseProgress/${progress.id}`, { completed_chapters: [w.mod.id] })).status, 403);
+});
+
+test('learners read questions without their answers; admins see them', async () => {
+  const mine = await learner.ok('GET', `/entities/Question${q({ lesson_id: w.approved.id })}`);
+  assert.equal(mine.length, 2);
+  assert.ok(mine.every((x) => !('correct_answer' in x) && !('explanation' in x) && x.options.length === 2));
+  const one = await learner.ok('GET', `/entities/Question/${w.question.id}`);
+  assert.ok(!('correct_answer' in one));
+  assert.equal((await admin.ok('GET', `/entities/Question/${w.question.id}`)).correct_answer, 'on-call');
+});
+
+test('a lesson quiz is graded on the server and returns the review', async () => {
+  const qs = await learner.ok('GET', `/entities/Question${q({ lesson_id: w.approved.id })}`);
+  const answers = qs.map((x) => ({ question_id: x.id, selected: x.question_text === 'Lesson Q1?' ? 'yes' : 'no' }));
+  const r = await learner.ok('POST', '/functions/submitQuiz', { type: 'lesson', lesson_id: w.approved.id, answers });
+  assert.deepEqual([r.score, r.total, r.percentage, r.passed], [2, 2, 100, true]);
+  assert.ok(r.answers.every((a) => a.is_correct && a.correct_answer && a.explanation));
+  const recorded = await learner.ok('GET', `/entities/QuizAttempt${q({ type: 'lesson' })}`);
+  assert.equal(recorded.length, 1);
+  // Not one sitting of the quiz: a question left out, or one from elsewhere.
+  assert.equal((await learner.call('POST', '/functions/submitQuiz', { type: 'lesson', lesson_id: w.approved.id, answers: answers.slice(1) })).status, 400);
+  assert.equal((await learner.call('POST', '/functions/submitQuiz', { type: 'lesson', lesson_id: w.draft.id, answers })).status, 404, 'unapproved lesson');
+});
+
+test('a passed chapter test marks the chapter complete; a failed one does not', async () => {
+  const qs = await learner.ok('GET', `/entities/Question${q({ lesson_id: w.approved.id })}`);
+  const failed = await learner.ok('POST', '/functions/submitQuiz', { type: 'chapter', module_id: w.mod.id, answers: qs.map((x) => ({ question_id: x.id, selected: null })) });
+  assert.equal(failed.passed, false);
+  let [progress] = await learner.ok('GET', `/entities/CourseProgress${q({ user_id: learnerId })}`);
+  assert.deepEqual(progress.completed_chapters || [], []);
+  const answers = qs.map((x) => ({ question_id: x.id, selected: x.question_text === 'Lesson Q1?' ? 'yes' : 'no' }));
+  assert.equal((await learner.ok('POST', '/functions/submitQuiz', { type: 'chapter', module_id: w.mod.id, answers })).passed, true);
+  [progress] = await learner.ok('GET', `/entities/CourseProgress${q({ user_id: learnerId })}`);
+  assert.deepEqual(progress.completed_chapters, [w.mod.id]);
 });
 
 test('the server still records the final test, and an admin can still correct progress', async () => {
   const graded = await learner.ok('POST', '/functions/submitFinalTest', { course_id: w.course.id, answers: [{ question_id: w.question.id, selected: 'on-call' }] });
-  assert.ok(JSON.stringify(graded).includes('"passed":true'), JSON.stringify(graded));
+  assert.equal(graded.passed, true);
+  assert.deepEqual(graded.answers, [{ question_id: w.question.id, selected: 'on-call', correct_answer: 'on-call', explanation: 'The on-call engineer is paged.', is_correct: true, marks: 1 }]);
   const [progress] = await admin.ok('GET', `/entities/CourseProgress${q({ user_id: learnerId })}`);
   assert.equal(progress.final_passed, true);
   assert.equal((await learner.ok('GET', `/entities/QuizAttempt${q({ type: 'final' })}`)).length, 1);

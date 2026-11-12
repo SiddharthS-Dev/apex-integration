@@ -1,5 +1,5 @@
 import {
-  FUNCTIONS, certificateStatus, complianceReport, gradeFinalTest, issueCertificate, loadFinalTestPool, loadReviewQueue,
+  FUNCTIONS, certificateStatus, complianceReport, gradeFinalTest, gradeQuiz, issueCertificate, loadFinalTestPool, loadQuizPool, loadReviewQueue, reviewAnswers,
   myRecertifications, recordReview, resolveToday, runComplianceChecks, waiveRecertification,
 } from '@academy/shared';
 import { ApiError } from '@/api/drivers/http';
@@ -109,7 +109,32 @@ const handlers = {
       certificateId = cert.certificate_id;
     }
     persist();
-    return { ...result, certificate_id: certificateId };
+    return { ...result, certificate_id: certificateId, answers: reviewAnswers(pool.questions, answers) };
+  },
+  // Same contract as the API's submitQuiz: lesson quizzes and chapter tests are graded here too.
+  async submitQuiz({ type, lesson_id: lessonId, module_id: moduleId, answers } = {}, { user }) {
+    const lesson = type === 'lesson' && lessonId ? findOne('Lesson', { id: String(lessonId) }) : null;
+    if (type === 'lesson' && lesson?.status !== 'approved') throw notFound('Lesson not found');
+    if (type !== 'lesson' && type !== 'chapter') throw badRequest('type must be "lesson" or "chapter"');
+    const mod = findOne('Module', { id: String(lesson ? lesson.module_id : moduleId || '') });
+    const course = mod ? findOne('Course', { id: mod.course_id }) : null;
+    if (!mod || course?.status !== 'published') throw notFound('Course not found');
+    const pool = await loadQuizPool((name, q, sort, limit) => findAll(name, q, sort).slice(0, limit), { type, lessonId: lesson?.id, moduleId: mod.id });
+    if (!pool.questions.length) throw badRequest('This quiz has no questions yet.');
+    const result = gradeQuiz(pool, answers);
+    if (!result) throw badRequest('These answers do not match this quiz — reload the page and try again.');
+    insert('QuizAttempt', {
+      user_id: user.id, course_id: course.id, module_id: mod.id, ...(lesson ? { lesson_id: lesson.id } : {}),
+      assessment_id: pool.assessment?.id, type, score: result.score, total: result.total, percentage: result.percentage, passed: result.passed,
+    }, user.id);
+    if (type === 'chapter' && result.passed) {
+      const progress = findOne('CourseProgress', { user_id: user.id, course_id: course.id });
+      const completed = Array.from(new Set([...(progress?.completed_chapters || []), mod.id]));
+      if (progress) patch('CourseProgress', progress.id, { completed_chapters: completed });
+      else insert('CourseProgress', { user_id: user.id, course_id: course.id, completed_lessons: [], completed_chapters: completed, started: true }, user.id);
+    }
+    persist();
+    return result;
   },
   async verifyCertificate({ certificate_id: certId } = {}) {
     const cert = certId ? findOne('Certificate', { certificate_id: String(certId) }) : null;

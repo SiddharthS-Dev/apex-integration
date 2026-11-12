@@ -63,23 +63,15 @@ export default function FinalTest() {
   const passingScore = assessment?.passing_score ?? 70;
   const duration = assessment?.duration_minutes || 60;
 
-  const handleComplete = async (r) => {
-    try {
-      // The server re-grades the answers against its own copy of the test, records the attempt and
-      // progress, and issues the certificate on a pass — learners cannot create certificates.
-      const { data: graded } = await api.functions.invoke('submitFinalTest', {
-        course_id: course.id,
-        answers: r.answers.map(({ question_id, selected }) => ({ question_id, selected })),
-        today: localDay(),
-      });
-      if (graded.passed) {
-        setCertified(true);
-        toast.success('Congratulations — your certificate is ready!');
-      }
-      ['progress', 'attempts', 'certificates', 'certificate', 'my-recertifications', 'notifications'].forEach((k) => queryClient.invalidateQueries({ queryKey: [k] }));
-    } catch (e) {
-      toast.error(e?.message || 'Could not save your result');
+  // The server grades the answers against its own copy of the test, records the attempt and progress,
+  // issues the certificate on a pass, and returns the review — learners cannot create certificates.
+  const grade = async (answers) => (await api.functions.invoke('submitFinalTest', { course_id: course.id, answers, today: localDay() })).data;
+  const handleComplete = (graded) => {
+    if (graded.passed) {
+      setCertified(true);
+      toast.success('Congratulations — your certificate is ready!');
     }
+    ['progress', 'attempts', 'certificates', 'certificate', 'my-recertifications', 'notifications'].forEach((k) => queryClient.invalidateQueries({ queryKey: [k] }));
   };
 
   const certificateAction = certified ? (
@@ -96,7 +88,7 @@ export default function FinalTest() {
           <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
             <QuizRunner
               questions={questions} title="Final test" passingScore={passingScore} durationMinutes={duration}
-              onComplete={handleComplete} resultActions={certificateAction}
+              grade={grade} onComplete={handleComplete} resultActions={certificateAction}
             />
           </div>
         ) : (

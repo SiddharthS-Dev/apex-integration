@@ -1321,31 +1321,19 @@ export const ENTITIES = {
         ]
       },
       "create": {
-        "data.user_id": "{{user.id}}"
+        "user_condition": {
+          "role": "admin"
+        }
       },
       "update": {
-        "$or": [
-          {
-            "data.user_id": "{{user.id}}"
-          },
-          {
-            "user_condition": {
-              "role": "admin"
-            }
-          }
-        ]
+        "user_condition": {
+          "role": "admin"
+        }
       },
       "delete": {
-        "$or": [
-          {
-            "data.user_id": "{{user.id}}"
-          },
-          {
-            "user_condition": {
-              "role": "admin"
-            }
-          }
-        ]
+        "user_condition": {
+          "role": "admin"
+        }
       }
     }
   },

@@ -18,8 +18,9 @@ export default function QuestionReview({ question, answer, index }) {
             Your answer: {answer?.selected ?? <em>Not answered</em>}
           </p>
         )}
-        <p className="text-emerald-600 dark:text-emerald-400">Correct answer: {question.correct_answer}</p>
-        {question.explanation && <p className="text-muted-foreground">{question.explanation}</p>}
+        {/* The answer and explanation come from the server's review of this attempt. */}
+        <p className="text-emerald-600 dark:text-emerald-400">Correct answer: {answer?.correct_answer ?? question.correct_answer}</p>
+        {(answer?.explanation || question.explanation) && <p className="text-muted-foreground">{answer?.explanation || question.explanation}</p>}
       </div>
     </div>
   );

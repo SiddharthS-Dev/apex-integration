@@ -4,6 +4,7 @@ export { matchesQuery, sortRecords, isOperatorObject } from './query.js';
 export { ruleToQuery, ruleFor } from './rls.js';
 export {
   loadFinalTestPool, gradeFinalTest, newCertificateId, FINAL_TEST_SAMPLE, DEFAULT_PASSING_SCORE,
+  loadQuizPool, gradeQuiz, reviewAnswers, ANSWER_FIELDS, withoutAnswers,
 } from './finalTest.js';
 export {
   ROLES, PLAYBOOK_FILE_TYPES, PLAYBOOK_EXTENSIONS, fileExtension, isPlaybookFile, FUNCTIONS, SESSION_COOKIE,

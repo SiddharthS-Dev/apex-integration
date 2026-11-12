@@ -7,6 +7,7 @@ import generateLessonMedia from './generateLessonMedia.js';
 import processPlaybookExtract from './processPlaybookExtract.js';
 import processPlaybookStructure from './processPlaybookStructure.js';
 import submitFinalTest from './submitFinalTest.js';
+import submitQuiz from './submitQuiz.js';
 import verifyCertificate from './verifyCertificate.js';
 import processMeeting from './processMeeting.js';
 import publishMeeting from './publishMeeting.js';
@@ -26,6 +27,7 @@ export const handlers = {
   generateLessonMedia,
   generateAssessment,
   submitFinalTest,
+  submitQuiz,
   verifyCertificate,
   getReviewQueue,
   submitFlashcardReview,
