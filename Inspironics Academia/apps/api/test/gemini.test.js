@@ -365,7 +365,9 @@ test('batch: a one-lesson sample first, then a confirmed batch that resumes, ski
   assert.equal((await entities.Lesson.get(lessonIds[4])).teaching_script, 'Approved script that must stay.');
 
   const progress = await courseProgress(courseId);
-  assert.deepEqual(progress.totals.content, { completed: 4, processing: 0, failed: 1, pending: 0 });
+  // The approved lesson kept with only a script is reported incomplete, but never regenerated automatically.
+  assert.deepEqual(progress.totals.content, { completed: 3, processing: 0, failed: 1, pending: 1, incomplete: 1 });
+  assert.deepEqual(progress.lessons.find((l) => l.id === lessonIds[4]).missing_fields, ['video title', 'summary', 'key points', 'examples']);
 
   // Nothing left to do unless failures are retried explicitly.
   assert.equal((await runCourseBatch({ course_id: courseId })).selected, 0);

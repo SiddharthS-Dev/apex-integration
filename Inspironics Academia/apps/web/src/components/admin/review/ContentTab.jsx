@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Loader2, Save } from 'lucide-react';
+import { AlertCircle, Loader2, Save } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +15,28 @@ const FIELDS = [
   { key: 'examples', label: 'Examples', rows: 5 },
 ];
 
+const LABELS = { video_title: 'video title', teaching_script: 'teaching script', summary: 'summary', key_points: 'key points', examples: 'examples' };
+
+// Says why fields are empty instead of showing blank boxes: never generated, generating, or failed.
+function GenerationNotice({ lesson }) {
+  const missing = Object.keys(LABELS).filter((k) => !String(lesson[k] || '').trim());
+  if (!missing.length) return null;
+  const none = !String(lesson.teaching_script || '').trim();
+  const text = lesson.status === 'generating'
+    ? 'Content is being generated for this lesson — the fields fill in when it finishes.'
+    : lesson.content_error
+      ? `The last generation failed: ${lesson.content_error}`
+      : none
+        ? 'This lesson has not been generated yet. Use Generate content above, or Generate Learning Package to fill every lesson of the course.'
+        : `Incomplete content — empty: ${missing.map((k) => LABELS[k]).join(', ')}. Regenerate content above, or Generate Learning Package, fills it.`;
+  return (
+    <Alert variant={lesson.content_error ? 'destructive' : 'default'}>
+      <AlertCircle className="h-4 w-4" />
+      <AlertDescription>{text}</AlertDescription>
+    </Alert>
+  );
+}
+
 const pick = (lesson) => Object.fromEntries(['video_title', ...FIELDS.map((f) => f.key)].map((k) => [k, lesson[k] || '']));
 
 // Mount with key={lesson.id} so the form resets when the selected lesson changes.
@@ -24,6 +47,7 @@ export default function ContentTab({ lesson }) {
 
   return (
     <div className="space-y-4">
+      <GenerationNotice lesson={lesson} />
       <div className="space-y-1.5">
         <Label htmlFor="video_title">Video title</Label>
         <Input id="video_title" value={form.video_title} onChange={set('video_title')} />

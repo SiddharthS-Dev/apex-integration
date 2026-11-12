@@ -1,5 +1,6 @@
 import { aiEnabled, requireAI } from '../ai/index.js';
 import { config } from '../config.js';
+import { db } from '../db/index.js';
 import { enqueueJob, listJobs, registerJobHandler } from '../jobs/queue.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { log } from '../lib/logger.js';
@@ -17,8 +18,8 @@ import { loadLessonSource } from './source.js';
 // of a course that has none yet, then (optionally) its narrated slides and its MP4 render.
 //
 // Safety rules:
-//   - never overwrites: a lesson that already has a script is skipped (regenerating one is an explicit,
-//     per-lesson action);
+//   - never overwrites a complete lesson (regenerating one is an explicit, per-lesson action); a lesson
+//     with a script but an empty title, summary, key points or examples is generated again;
 //   - resumable: a batch only picks up lessons still without content, so running it again continues
 //     where the last one stopped; failed lessons are retried only when asked (retry_failed / lesson_ids);
 //   - one batch per course at a time (job dedupe) and one generation per lesson (lesson lock);
@@ -28,6 +29,12 @@ import { loadLessonSource } from './source.js';
 // Payload: { course_id, limit?, lesson_ids?, retry_failed?, media?, render? }
 
 const hasContent = (l) => !!String(l.teaching_script || '').trim();
+const filled = (v) => !!String(v || '').trim();
+// The fields the lesson page shows. A lesson with a script but any of these empty (an answer saved
+// before every field was required, or a field cleared by hand) is incomplete and is generated again.
+const LESSON_FIELDS = { video_title: 'video title', teaching_script: 'teaching script', summary: 'summary', key_points: 'key points', examples: 'examples' };
+export const missingFields = (l) => Object.entries(LESSON_FIELDS).filter(([k]) => !filled(l[k])).map(([, label]) => label);
+export const isComplete = (l) => missingFields(l).length === 0;
 const hasMedia = (l) => !!String(l.audio_url || '').trim() && !!String(l.video_scenes || '').trim();
 const hasVideo = (l) => !!String(l.rendered_video_url || '').trim();
 
@@ -55,10 +62,11 @@ export function qualityOf(l) {
 
 /** Per-lesson state for the dashboard. */
 export function lessonState(l) {
-  const content = l.status === 'generating' ? 'processing' : hasContent(l) ? 'completed' : l.content_error ? 'failed' : 'pending';
+  const missing = missingFields(l);
+  const content = l.status === 'generating' ? 'processing' : !missing.length ? 'completed' : l.content_error ? 'failed' : hasContent(l) ? 'incomplete' : 'pending';
   return {
     id: l.id, title: l.title, module_title: l.module_title, status: l.status,
-    content, content_error: l.content_error || null, content_attempts: Number(l.content_attempts) || 0, content_generated_at: l.content_generated_at || null,
+    content, missing_fields: hasContent(l) ? missing : [], content_error: l.content_error || null, content_attempts: Number(l.content_attempts) || 0, content_generated_at: l.content_generated_at || null,
     narration: hasMedia(l) ? 'completed' : l.media_error ? 'failed' : 'pending', media_error: l.media_error || null,
     video: hasVideo(l) ? 'completed' : 'pending', rendered_video_url: l.rendered_video_url || null,
     quality: qualityOf(l),
@@ -97,7 +105,7 @@ export async function courseProgress(courseId) {
     course: { id: course.id, title: course.title, status: course.status, playbook_id: course.playbook_id || null },
     totals: {
       lessons: states.length,
-      content: { completed: count('content', 'completed'), processing: count('content', 'processing'), failed: count('content', 'failed'), pending: count('content', 'pending') },
+      content: { completed: count('content', 'completed'), processing: count('content', 'processing'), failed: count('content', 'failed'), pending: count('content', 'pending') + count('content', 'incomplete'), incomplete: count('content', 'incomplete') },
       narration: { completed: count('narration', 'completed'), failed: count('narration', 'failed') },
       video: { completed: count('video', 'completed') },
       quality: {
@@ -118,8 +126,11 @@ const STALE_GENERATING_MS = 15 * 60_000;
 const busy = (l) => l.status === 'generating' && Date.now() - Date.parse(l.updated_date || 0) < STALE_GENERATING_MS;
 
 export function selectLessons(lessons, { limit, lessonIds, retryFailed } = {}) {
-  let pick = lessons.filter((l) => !hasContent(l) && !busy(l));
-  if (Array.isArray(lessonIds) && lessonIds.length) pick = pick.filter((l) => lessonIds.includes(l.id));
+  // Lessons without content, and lessons whose content is incomplete (a field the page shows is empty).
+  // An approved lesson is a reviewer's decision: it is regenerated only when asked for by id.
+  const explicit = Array.isArray(lessonIds) && lessonIds.length > 0;
+  let pick = lessons.filter((l) => !busy(l) && (!hasContent(l) || (!isComplete(l) && (explicit || l.status !== 'approved'))));
+  if (explicit) pick = pick.filter((l) => lessonIds.includes(l.id));
   // A temporary failure (provider overloaded / rate-limited) is picked up again automatically.
   else if (!retryFailed) pick = pick.filter((l) => !l.content_error || l.content_error_retryable);
   const n = Number(limit);
@@ -170,7 +181,7 @@ export async function runCourseBatch(payload = {}, { progress = async () => {}, 
   const queue = selectLessons(lessons, { limit: payload.limit, lessonIds: payload.lesson_ids, retryFailed: payload.retry_failed === true });
   const withMedia = payload.media === true && mediaEnabled();
   const render = payload.render === true;
-  const summary = { course_id: courseId, selected: queue.length, completed: 0, failed: 0, skipped_existing: lessons.filter(hasContent).length, stopped: null, failures: [], render_jobs: [] };
+  const summary = { course_id: courseId, selected: queue.length, completed: 0, failed: 0, skipped_existing: lessons.filter(isComplete).length, stopped: null, failures: [], render_jobs: [] };
   if (payload.media === true && !withMedia) summary.media = 'skipped: no voice provider is configured (MEDIA_PROVIDER); lesson players read the script with the browser voice';
   if (!queue.length) return summary;
 
@@ -243,4 +254,60 @@ export async function startCourseBatch(payload = {}, ctx = {}) {
     userId: ctx.user?.id || null,
     maxAttempts: 1,
   });
+}
+
+// ---- automatic resume ---------------------------------------------------------------------------
+// A batch stopped by the provider's daily quota is started again by itself once the quota has reset,
+// so a course is filled over the following days without anyone pressing the button again. Gemini's
+// daily quotas reset at midnight Pacific time; 08:00 UTC is after that reset all year round.
+
+const RESET_HOUR_UTC = 8;
+const stoppedByDailyQuota = (job) => /daily quota/i.test(String(job?.result?.stopped || ''));
+
+export function lastQuotaReset(at = new Date()) {
+  const reset = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate(), RESET_HOUR_UTC));
+  if (reset > at) reset.setUTCDate(reset.getUTCDate() - 1);
+  return reset;
+}
+
+/** Restarts every course batch whose latest run stopped on the daily quota before the last reset. */
+export async function resumeStoppedBatches({ now = new Date() } = {}) {
+  if (!aiEnabled()) return [];
+  const reset = lastQuotaReset(now).toISOString();
+  const latest = new Map(); // course id -> its newest batch job
+  for (const job of await listJobs({ refType: 'course', limit: 200 })) {
+    if (job.type !== 'content:course' || !job.ref_id || latest.has(job.ref_id)) continue;
+    latest.set(job.ref_id, job);
+  }
+  const resumed = [];
+  for (const [courseId, job] of latest) {
+    if (job.status !== 'completed' || !stoppedByDailyQuota(job) || String(job.finished_at || '') >= reset) continue;
+    try {
+      const { lessons } = await courseLessons(courseId);
+      if (!selectLessons(lessons, {}).length) continue;
+      const [row] = await db().query('SELECT payload FROM jobs WHERE id = ?', [job.id]);
+      let payload = {};
+      try { payload = JSON.parse(row?.payload || '{}') || {}; } catch { /* keep the defaults */ }
+      delete payload.limit;
+      const started = await startCourseBatch({ ...payload, course_id: courseId }, { user: job.created_by ? { id: job.created_by } : null });
+      resumed.push({ course_id: courseId, job_id: started.id });
+      log.info('pipeline.course_batch.resumed', { course_id: courseId, job_id: started.id });
+    } catch (err) {
+      log.warn('pipeline.course_batch.resume_failed', { course_id: courseId, error: errMsg(err) });
+    }
+  }
+  return resumed;
+}
+
+let resumeTimer = null;
+export function startBatchResumer(intervalMs = 15 * 60_000) {
+  if (resumeTimer) return;
+  const tick = () => resumeStoppedBatches().catch((err) => log.warn('pipeline.course_batch.resume_failed', { error: errMsg(err) }));
+  resumeTimer = setInterval(tick, intervalMs);
+  resumeTimer.unref();
+  setTimeout(tick, 30_000).unref();
+}
+export function stopBatchResumer() {
+  clearInterval(resumeTimer);
+  resumeTimer = null;
 }

@@ -57,7 +57,7 @@ function lessonAnswer(prompt = '') {
     teaching_script: `Welcome. Today we learn the essentials, step by step. ${groundedScript(prompt)}`,
     summary: 'A short summary.',
     examples: ['Example one.', 'Example two.'],
-    key_points: ['- Point one', 'Point two'],
+    key_points: ['- Point one', 'Point two', 'Point three'],
     mcqs: [mcq(1), mcq(2), mcq(3), mcq(4), mcq(5, { difficulty: 'weird', cognitive_level: 'weird' }), mcq(6, { correct_answer: 'Not an option' }), mcq(7)],
     flashcards: [
       ...[1, 2, 3, 4, 5].map((n) => ({ front: `Term ${n}`, back: `Meaning ${n}.`, difficulty: 'basic', source_section: 'first' })),
@@ -302,7 +302,7 @@ test('lesson content: script, takeaways, valid quiz questions and flashcards are
   assert.equal(saved.status, 'pending_review');
   assert.equal(saved.video_title, 'Learning the essentials');
   assert.match(saved.teaching_script, /Welcome/);
-  assert.equal(saved.key_points, '- Point one\n- Point two');
+  assert.equal(saved.key_points, '- Point one\n- Point two\n- Point three');
   assert.equal(saved.examples, '- Example one.\n- Example two.');
 
   const prompt = calls.findLast((p) => p.includes('recording a video lesson'));

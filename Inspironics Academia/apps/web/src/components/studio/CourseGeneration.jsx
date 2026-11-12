@@ -25,6 +25,7 @@ const TONE = {
   processing: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
   failed: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
   pending: 'bg-muted text-muted-foreground',
+  incomplete: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
 };
 const State = ({ value }) => <span className={`rounded-full px-2 py-0.5 text-xs ${TONE[value] || TONE.pending}`}>{value}</span>;
 
@@ -204,6 +205,7 @@ export default function CourseGeneration({ config }) {
                   <TableCell className="min-w-64">
                     <p className="font-medium">{l.title}</p>
                     <p className="text-xs text-muted-foreground">{l.module_title}{l.content_generated_at ? ` · generated ${fmtDate(l.content_generated_at)}` : ''}</p>
+                    {l.content === 'incomplete' && l.missing_fields?.length > 0 && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Empty: {l.missing_fields.join(', ')}</p>}
                     {(l.content_error || l.media_error) && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">{l.content_error || l.media_error}</p>}
                   </TableCell>
                   <TableCell><State value={l.content} /></TableCell>

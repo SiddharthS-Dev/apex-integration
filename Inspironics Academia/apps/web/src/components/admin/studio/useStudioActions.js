@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { approveAll, generateLessons, generateMedia, generateTests, publishCourse, runPlaybookPipeline } from '@/lib/pipeline';
+import { approveAll, generateCourseContent, generateLessons, generateMedia, lessonIncomplete, generateTests, publishCourse, runPlaybookPipeline } from '@/lib/pipeline';
 import { flattenLessons } from '@/lib/progress';
 
 const summarize = (label, r) => {
@@ -42,11 +42,17 @@ export default function useStudioActions(data) {
   };
 
   const ordered = () => flattenLessons(data?.modules, data?.lessons);
+  // No content yet, or incomplete content (an empty title, script, summary, key points or examples).
+  // A complete lesson is never overwritten here; Regenerate on the lesson replaces it.
+  // An approved lesson is a reviewer's decision and is left alone, unless it has no script at all.
+  const needsContent = (l) => l.status !== 'generating' && lessonIncomplete(l) && (l.status !== 'approved' || !String(l.teaching_script || '').trim());
 
   const generatePackage = async () => {
-    const targets = ordered().filter((l) => l.status === 'pending' || l.status === 'rejected');
-    if (!targets.length) return toast.info('All lessons already have content');
-    const r = await track('package', 'Generating learning package', 'lessons', (p) => generateLessons(targets, p));
+    if (!ordered().some(needsContent)) return toast.info('Every lesson already has complete content');
+    const r = await track('package', 'Generating learning package', 'lessons', (p) => generateCourseContent(data.course.id, p)
+      // Demo mode has no server batch: generate lesson by lesson in the browser instead.
+      .catch((err) => (/demo mode/i.test(err?.message || '') ? generateLessons(ordered().filter(needsContent), p) : Promise.reject(err))));
+    if (r?.nothing) return toast.info(r.nothing);
     if (r) summarize('Learning package', r);
   };
 
@@ -87,9 +93,10 @@ export default function useStudioActions(data) {
   const estimate = (kind, { autoAudio = false } = {}) => {
     const lessons = ordered();
     if (kind === 'package') {
-      const n = lessons.filter((l) => l.status === 'pending' || l.status === 'rejected').length;
+      const n = lessons.filter(needsContent).length;
       return { count: n, lines: [
-        `${n} lesson${n === 1 ? '' : 's'} without content`,
+        `${n} lesson${n === 1 ? '' : 's'} without complete content`,
+        'Runs on the server: it keeps going if you leave this page, and resumes by itself after a daily AI quota resets',
         `≈ ${n} AI request${n === 1 ? '' : 's'} (one per lesson: script, quiz and flashcards)`,
         autoAudio ? `plus ≈ ${n} storyboard requests and the voice-over of every lesson (AUTO_GENERATE_AUDIO is on)` : 'No voice-over or video: generate media separately, per lesson or with Regenerate Media',
       ] };

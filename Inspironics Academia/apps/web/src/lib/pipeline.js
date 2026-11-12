@@ -57,6 +57,38 @@ export function generateLessons(lessons = [], onProgress) {
   return runSequential(lessons, 'generateLessonContent', (l) => ({ lesson_id: l.id }), onProgress);
 }
 
+// The fields the lesson page shows; a lesson with any of them empty still needs generating.
+const LESSON_FIELDS = ['video_title', 'teaching_script', 'summary', 'key_points', 'examples'];
+export const lessonIncomplete = (l) => LESSON_FIELDS.some((k) => !String(l?.[k] || '').trim());
+
+const ACTIVE = ['queued', 'processing'];
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Generates every lesson of the course that has no content, or incomplete content, on the server
+// (the content:course batch). The batch keeps running if this page is closed, waits and retries when
+// the AI provider is busy, and — when the provider's daily quota runs out — resumes by itself after the
+// quota resets. Returns the same shape as the per-lesson loop: { total, succeeded, failed, ... }.
+export async function generateCourseContent(courseId, onProgress) {
+  const start = await api.studio.generateCourse(courseId, { confirm: true });
+  if (!start?.started) return { total: 0, succeeded: 0, failed: 0, failures: [], nothing: start?.reason || 'Nothing to generate' };
+  const total = start.selected;
+  onProgress?.({ done: 0, total });
+  for (;;) {
+    await wait(3000);
+    const p = await api.studio.courseProgress(courseId);
+    const job = p?.job;
+    const r = job?.result;
+    onProgress?.({ done: Math.min(total, Math.round(((job?.progress || 0) / 100) * total)), total });
+    if (job && ACTIVE.includes(job.status)) continue;
+    if (!job || job.status !== 'completed' || !r) {
+      return { total, succeeded: 0, failed: total, failures: [], stopped: job?.error || `the batch ${job?.status || 'stopped'}` };
+    }
+    const failures = (r.failures || []).map((f) => ({ item: { id: f.lesson_id, title: f.title }, error: f.error }));
+    const skipped = Math.max(0, r.selected - r.completed - r.failed);
+    return { total, succeeded: r.completed, failed: r.failed, failures, ...(r.stopped ? { stopped: r.stopped, skipped } : {}) };
+  }
+}
+
 export function generateMedia(lessons = [], onProgress) {
   return runSequential(lessons, 'generateLessonMedia', (l) => ({ lesson_id: l.id }), onProgress);
 }

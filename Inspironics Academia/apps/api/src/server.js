@@ -10,6 +10,7 @@ import { setupProcessTemp } from './lib/tempEnv.js';
 import { startScheduler, stopScheduler } from './sync/scheduler.js';
 import { startJobs, stopJobs } from './notify/jobs.js';
 import { startJobWorker, stopJobWorker } from './jobs/queue.js';
+import { startBatchResumer, stopBatchResumer } from './pipeline/courseContent.js';
 import { startStorageMaintenance, stopStorageMaintenance } from './storage/storage.js';
 import { SYNC_LOCK } from './sync/pipeline.js';
 import { closeStaleRuns } from './sync/log.js';
