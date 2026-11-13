@@ -17,3 +17,9 @@ Thumbs.db
 .idea/
 apex/.session-secret
 apex/.revoked-sessions
+
+# Demo video capture intermediate output, scratch frames and large binary models
+demo video/capture/out/
+demo video/capture/work/
+demo video/capture/voice-model/
+*.orig

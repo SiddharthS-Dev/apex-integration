@@ -1,0 +1,135 @@
+1
+00:00:01,300 --> 00:00:03,653
+Meet Apex, the Inspironics home dashboard.
+
+2
+00:00:03,803 --> 00:00:07,725
+One secure front door to three platforms:
+the Innovation Showcase,
+
+3
+00:00:07,875 --> 00:00:09,475
+SlidesVault, and Inspironics Academia.
+
+4
+00:00:08,300 --> 00:00:10,653
+Everything starts at a single sign-in.
+
+5
+00:00:10,803 --> 00:00:13,548
+Users enter their email and password once.
+
+6
+00:00:13,698 --> 00:00:16,051
+Apex checks them against every platform
+
+7
+00:00:16,201 --> 00:00:19,730
+and opens each session, so no app asks
+again.
+
+8
+00:00:30,800 --> 00:00:32,400
+This is the dashboard.
+
+9
+00:00:32,550 --> 00:00:36,079
+One card per platform, each probing its
+application live,
+
+10
+00:00:36,229 --> 00:00:40,935
+so teams can see at a glance that all
+three are ready.
+
+11
+00:00:41,085 --> 00:00:44,223
+Recent activity shows what changed across
+the platforms,
+
+12
+00:00:44,373 --> 00:00:48,294
+and quick search jumps to any project from
+the keyboard.
+
+13
+00:01:02,800 --> 00:01:06,722
+The Innovation Showcase is an immersive
+gallery of intelligent-infrastructure
+blueprints,
+
+14
+00:01:06,872 --> 00:01:11,577
+command decks and architecture systems,
+with an ecosystem explorer and monthly
+reporting.
+
+15
+00:01:11,727 --> 00:01:16,041
+Users browse and open entries right here,
+in the same window.
+
+16
+00:01:40,800 --> 00:01:43,153
+SlidesVault is the presentation knowledge
+hub.
+
+17
+00:01:43,303 --> 00:01:47,225
+Decks are synced from Dropbox through the
+platform's own API,
+
+18
+00:01:47,375 --> 00:01:50,512
+so the browser never talks to Dropbox
+directly.
+
+19
+00:01:50,662 --> 00:01:55,368
+Users search the library, open a deck to
+view it, check analytics,
+
+20
+00:01:55,518 --> 00:01:57,478
+and keep decks available offline.
+
+21
+00:02:15,800 --> 00:02:18,545
+Inspironics Academia turns engineering
+playbooks into learning.
+
+22
+00:02:18,695 --> 00:02:22,225
+Learners follow courses, take tests, and
+earn verifiable certificates.
+
+23
+00:02:22,375 --> 00:02:24,335
+Administrators manage playbooks,
+AI-assisted content,
+
+24
+00:02:24,485 --> 00:02:26,838
+and integrations from the admin area.
+
+25
+00:02:45,800 --> 00:02:50,506
+Back on the dashboard, one sign-in, one
+address, and three working platforms.
+
+26
+00:02:50,656 --> 00:02:53,793
+Apex gives every team a single front door,
+
+27
+00:02:53,943 --> 00:02:57,080
+with security handled once for everything
+behind it.
+
+28
+00:03:00,800 --> 00:03:02,400
+Inspironics Apex.
+
+29
+00:03:02,550 --> 00:03:04,511
+Three platforms, one front door.

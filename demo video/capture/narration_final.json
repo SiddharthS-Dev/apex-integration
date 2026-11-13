@@ -1,0 +1,15 @@
+{
+ "voice": {"engine": "kokoro-onnx (Apache-2.0, local)", "voice": "af_heart", "speed": 0.95},
+ "scenes": [
+  {"id": "open", "text": "Inspironics Apex. One workspace, connecting enterprise applications."},
+  {"id": "intro", "text": "Apex is the shared entry point for the Inspironics products. Instead of separate bookmarks and separate addresses, teams open one workspace and reach the connected applications from there: the Innovation Showcase, SlidesVault, and Inspironics Academia."},
+  {"id": "login", "text": "Access starts at the Apex sign-in page. A user enters an email address and password, and the page shows each application being opened as part of signing in."},
+  {"id": "dashboard", "text": "After signing in, the home dashboard presents each application as a card, with a short description and a live status. A recent activity feed summarizes what has happened across the platforms, and quick search lets users jump to a project from the keyboard."},
+  {"id": "showcase", "text": "The Innovation Showcase is a gallery of intelligent-infrastructure blueprints, command decks, and architecture systems. Users browse the gallery and open the platform directly from the dashboard, in the same window."},
+  {"id": "vault", "text": "SlidesVault is the presentation library for the organization. Users browse the library, search to discover decks, and open a presentation to view it."},
+  {"id": "unified", "text": "Moving between applications does not mean starting over. From any application, a single link returns to the Apex dashboard, so the workspace always has one front door."},
+  {"id": "limits", "text": "One current limitation is visible in the recent activity feed: the latest Academia synchronization reported a failure. Until that integration is resolved, Academia content may not be up to date.", "only_if": "syncFailedVisible"},
+  {"id": "signout", "text": "Signing out ends the session and returns the user to the sign-in page.", "only_if": "signoutOk"},
+  {"id": "close", "text": "Inspironics Apex. One front door, multiple enterprise experiences."}
+ ]
+}
