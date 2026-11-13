@@ -714,6 +714,19 @@ if ((await portInUse(PORT, probeHost)) || (probeHost !== '127.0.0.1' && (await p
   process.exit(1)
 }
 
+/**
+ * Browsers resolve "localhost" to ::1 first. With only 127.0.0.1 listening,
+ * every request waits for the IPv6 attempt to fail (~200 ms on Windows, audit
+ * F-003). On the default loopback host, answer on ::1 as well — same handlers,
+ * still this machine only. If the machine has no IPv6 loopback, this stays quiet.
+ */
+if (HOST === '127.0.0.1') {
+  const v6 = http.createServer()
+  for (const event of ['request', 'upgrade']) for (const fn of server.listeners(event)) v6.on(event, fn)
+  v6.on('error', () => {})
+  v6.listen(PORT, '::1')
+}
+
 server.listen(PORT, HOST, () => {
   const url = localUrl(PORT)
   console.log('')

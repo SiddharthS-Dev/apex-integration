@@ -38,7 +38,8 @@ and password against every app's own accounts and opens every app that accepts
 them at once, so no app asks again. An app that is down, or does not know the
 account, is skipped rather than failing the sign-in; its dashboard card reads
 **Sign in required** and leads back to the form. **Sign out** on the dashboard
-signs out of all of them. When one app's own session ends, it sends you to
+signs out of all of them, and the Apex session is revoked on the spot, even if a
+copy of its cookie survives somewhere (`apex/.revoked-sessions`, gitignored). When one app's own session ends, it sends you to
 `/login?reauth=1`, which shows the form without signing the others out. The
 standard account is `admin@inspironics.net` (`BOOTSTRAP_ADMIN_*` in each
 `apps/api/.env`). See `apex/auth.mjs`.
@@ -57,7 +58,7 @@ All optional, set in the environment before `start.bat`:
 | Variable             | Default                     | What it does |
 | -------------------- | --------------------------- | ------------ |
 | `APEX_HOST`          | `127.0.0.1`                 | The interface the gateway listens on. Loopback means this machine only. `0.0.0.0` opens it to the network — prefer a reverse proxy. The apps' own dev servers and APIs always stay on `127.0.0.1`. |
-| `APEX_PUBLIC_URL`    | `http://localhost:<port>`   | The URL browsers use. Behind an https reverse proxy set it, e.g. `https://apex.example.com`: every origin, OAuth redirect URI and API base handed to the apps is built from it, sign-in accepts it as an origin, and with `https` every app's session cookie becomes `Secure`. Register the redirect URIs `start.bat` prints for it. |
+| `APEX_PUBLIC_URL`    | `http://localhost:<port>`   | The URL browsers use. Behind an https reverse proxy set it, e.g. `https://apex.example.com`: every origin, OAuth redirect URI and API base handed to the apps is built from it, sign-in accepts it as an origin, and with `https` every session cookie — Apex's own and every app's — becomes `Secure`. Register the redirect URIs `start.bat` prints for it. |
 | `APEX_TRUST_PROXY`   | unset                       | Set to `1` when that proxy sets `X-Forwarded-For` (overwriting, not appending), `-Proto` and `-Host`. The gateway then takes the client address for its sign-in rate limit from the left-most `X-Forwarded-For`. Leave unset otherwise — any client could claim any address. |
 | `APEX_SESSION_HOURS` | `12`                        | How long one sign-in lasts. Each app is started with the same `SESSION_TTL_HOURS`, so no app session outlives Apex's. |
 | `APEX_PORT`          | `5173` dev, `4173` prod     | The gateway's port (`start.bat prod 4180` sets it too). |
@@ -238,6 +239,18 @@ reverse proxy in front (see Settings above).
 
 ## Checking it still works
 
+Without anything running, the gateway's own unit tests (sign-in helpers,
+sign-out revocation, cookie flags):
+
+```
+cd apex && npm test
+```
+
+Every push also runs `.github/workflows/ci.yml`: the gateway tests, every
+product's test suite and build, the Showcase's architecture and bundle checks,
+a production dependency audit, the SlidesVault Docker image build, and its
+migrations against Postgres.
+
 With Apex running:
 
 ```
@@ -307,5 +320,3 @@ the error is in there.
 that ignores the mount. Look in the browser's network tab for a request to
 `/something` rather than `/showcase/something`, and route it through
 `import.meta.env.BASE_URL`.
-#   A P E X  
- 

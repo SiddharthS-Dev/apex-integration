@@ -16,3 +16,4 @@ Thumbs.db
 .vscode/
 .idea/
 apex/.session-secret
+apex/.revoked-sessions

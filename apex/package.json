@@ -1,0 +1,11 @@
+{
+  "name": "apex-gateway",
+  "private": true,
+  "description": "The Apex gateway. Dependency-free: Node built-ins only, nothing to install.",
+  "type": "module",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "test": "node --test session.test.mjs auth.test.mjs",
+    "smoke": "node smoke.mjs"
+  }
+}

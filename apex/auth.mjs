@@ -41,6 +41,14 @@ export { SESSION_HOURS }
 
 const APPS = PROJECTS.filter((p) => p.api?.sessionCookie)
 
+/**
+ * Behind an https APEX_PUBLIC_URL the Apex cookie is marked Secure, like every
+ * app's own session cookie (projects.mjs passes them COOKIE_SECURE). Over plain
+ * http://localhost it cannot be, or the browser would drop it.
+ */
+export const COOKIE_SECURE = /^https:/i.test((process.env.APEX_PUBLIC_URL || '').trim())
+const SECURE_ATTR = COOKIE_SECURE ? '; Secure' : ''
+
 /* --------------------------------------------------------------- secret -- */
 
 /**
@@ -90,6 +98,7 @@ export function verifyToken(token) {
   const b = Buffer.from(expected)
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null
   if (!(Number(expiresAt) > Date.now())) return null
+  if (isRevoked(signature)) return null
   return {
     email: Buffer.from(emailB64, 'base64url').toString('utf8'),
     apps: apps === undefined ? APPS.map((p) => p.id) : apps.split('~').filter(Boolean),
@@ -128,7 +137,7 @@ export const sessionOf = (req) => sessionInfo(req)?.email ?? null
 /** The cookie path a project's cookies are scoped to: '/vault' → '/vault/'. */
 export const mountPath = (base) => `${base.replace(/\/+$/, '')}/`
 
-const clearAt = (name, cookiePath) => `${name}=; Path=${cookiePath}; HttpOnly; SameSite=Lax; Max-Age=0`
+const clearAt = (name, cookiePath) => `${name}=; Path=${cookiePath}; HttpOnly; SameSite=Lax; Max-Age=0${SECURE_ATTR}`
 
 /**
  * The Set-Cookie headers that clear `name` — at its mount and at Path=/, where
@@ -288,7 +297,7 @@ export async function signIn(email, password, { req, clientIp }) {
 
   const apps = accepted.map((r) => r.project.id)
   const expiresAt = Date.now() + SESSION_HOURS * 3600_000
-  const apexCookie = `${APEX_COOKIE}=${sign(email.toLowerCase(), expiresAt, apps)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.round(SESSION_HOURS * 3600)}`
+  const apexCookie = `${APEX_COOKIE}=${sign(email.toLowerCase(), expiresAt, apps)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.round(SESSION_HOURS * 3600)}${SECURE_ATTR}`
   return {
     status: 200,
     apps,
@@ -315,6 +324,9 @@ export async function signIn(email, password, { req, clientIp }) {
  */
 export async function signOut(req, clientIp = '') {
   const jar = parseCookies(req.headers.cookie)
+  // The Apex token itself is stateless, so a copy of it would stay valid until
+  // it expires. Remember it as revoked instead.
+  revokeToken(jar[APEX_COOKIE])
   await Promise.all(
     APPS.filter((p) => jar[p.api.sessionCookie]).map((p) =>
       post(p, '/api/auth/logout', { cookie: `${p.api.sessionCookie}=${jar[p.api.sessionCookie]}`, clientIp })
@@ -322,6 +334,61 @@ export async function signOut(req, clientIp = '') {
   )
   return [...clearCookie(APEX_COOKIE), ...APPS.flatMap((p) => clearCookie(p.api.sessionCookie, p.base))]
 }
+
+/* ----------------------------------------------------------- revocation -- */
+
+/**
+ * Signed-out tokens, by signature, until they would have expired anyway. Kept
+ * in a gitignored file beside the secret, so a restart does not bring a
+ * signed-out session back. Small: one line per sign-out within SESSION_HOURS.
+ */
+const REVOKED_FILE = process.env.APEX_REVOKED_FILE || path.join(HERE, '.revoked-sessions')
+const revoked = new Map() // signature -> expiresAt
+
+function loadRevoked() {
+  try {
+    for (const line of fs.readFileSync(REVOKED_FILE, 'utf8').split(/\r?\n/)) {
+      const [sig, exp] = line.trim().split(' ')
+      if (sig && Number(exp) > Date.now()) revoked.set(sig, Number(exp))
+    }
+  } catch {
+    /* none yet */
+  }
+}
+loadRevoked()
+
+function saveRevoked() {
+  const now = Date.now()
+  for (const [sig, exp] of revoked) if (exp <= now) revoked.delete(sig)
+  try {
+    fs.writeFileSync(REVOKED_FILE, [...revoked].map(([s, e]) => `${s} ${e}`).join('\n'), { mode: 0o600 })
+  } catch {
+    /* in memory still holds it for this process */
+  }
+}
+
+function isRevoked(signature) {
+  const exp = revoked.get(signature)
+  if (exp === undefined) return false
+  if (exp <= Date.now()) {
+    revoked.delete(signature)
+    return false
+  }
+  return true
+}
+
+/** Marks a valid Apex token as signed out. Ignores anything that does not verify. */
+export function revokeToken(token) {
+  if (!verifyToken(token)) return false
+  const parts = token.split('.')
+  revoked.set(parts[parts.length - 1], Number(parts[1]))
+  saveRevoked()
+  return true
+}
+
+/** A fresh token for tests: the same shape signIn() hands the browser. */
+export const issueToken = (email, apps = APPS.map((p) => p.id), hours = SESSION_HOURS) =>
+  sign(email.toLowerCase(), Date.now() + hours * 3600_000, apps)
 
 /* ------------------------------------------------------ attempt limiter -- */
 

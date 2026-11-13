@@ -99,6 +99,11 @@ export const PROJECTS = [
     devPort: 5174,
     webDir: 'apps/web',
     webEnv: () => ({ VITE_BACKEND: 'api', VITE_API_BASE_URL: '/showcase' }),
+    // Its production build ships an offline service worker and a web manifest
+    // (scripts/serviceWorker.mjs). The browser refuses a worker whose script is
+    // redirected, so both are served without the sign-in. Neither holds anything
+    // private: a list of the build's own asset URLs, and a name, colours and icons.
+    publicPaths: ['/showcase/manifest.webmanifest', '/showcase/sw.js'],
     api: {
       base: '/showcase/api',
       port: 4176,
