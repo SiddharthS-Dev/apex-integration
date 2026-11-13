@@ -1,7 +1,8 @@
 # Inspironics SlidesVault
 
-**Presentation Knowledge Hub** — an enterprise presentation library that syncs from Dropbox,
-classifies every deck with AI, streams them in a locked-down viewer, and works offline.
+**Presentation Knowledge Hub** — an enterprise presentation library that syncs PowerPoint decks
+from Dropbox, files each one under a business domain (a built-in keyword classifier, or AI when you
+enable it), streams them through the API in a viewer that discourages copying, and works offline.
 
 ---
 
@@ -56,14 +57,15 @@ it (`entities.js`, `functions.js`, `integrations.js`) has an identical API which
 
 | Mode | Selected by | What it is |
 | ---- | ----------- | ---------- |
-| **API server** | `VITE_API_BASE_URL` | The enterprise Dropbox integration layer in [`server/`](server/) |
+| **API server** | `VITE_API_BASE_URL` | The enterprise Dropbox integration layer in [`apps/api/`](apps/api/) |
 | Local | `VITE_DEMO_MODE=true` | The bundled demo backend (opt-in; with nothing configured the app reports an error) |
 
 ### API server (recommended)
 
 A Node backend that owns the Dropbox connection end to end: OAuth with refresh tokens, encrypted
-credential storage, incremental sync, content extraction, AI title resolution with a vision
-fallback, preview generation, audit logging, metrics and a scheduler.
+credential storage, incremental sync, content extraction, keyword classification (with optional
+AI classification and title resolution, including a vision fallback, when `AI_ENABLED=true` and an
+Anthropic key is set), preview generation, audit logging, metrics and a scheduler.
 
 ```bash
 npm install                                  # from the repo root
@@ -106,7 +108,7 @@ apps/
     src/
       config/       one validated config object, built from the environment
       http/         auth + RBAC, rate limiting, security headers, validation
-      routes/       auth, entities, system
+      routes/       auth, entities, system, ai (copilot), users (admin role/password)
       integrations/ dropbox/ — auth, client, request executor, sync, content,
                     folders, thumbnails, rename, health
       domain/       storage/ — StorageProvider port, FileMetadata
@@ -130,27 +132,32 @@ packages/
 
 ```
 Dropbox folder → list_folder (recursive, paginated)
-  → for each .pdf/.pptx/.html:
+  → for each file whose extension is in DROPBOX_SUPPORTED_EXTENSIONS
+    (default .pptx/.ppt — SYNCABLE_EXTENSIONS in packages/shared/src/files.js;
+     the pipeline can also ingest .pdf and .html if you add them):
       → skip if the revision is unchanged and the title is not generic
-      → derive a title for untitled files:
-          PPTX text via JSZip <a:t> runs → LLM
-          no text (image-only deck) → extract slide1 image → vision LLM
-          HTML → <title> or stripped text → LLM
-      → classify into domain / sub-domain / tags / summary / objectives
+      → derive a title: the file's own metadata title → first meaningful line
+        of extracted text → (AI only) LLM over the text → (AI + vision only)
+        vision LLM over the title slide → the tidied filename
+      → classify into domain / sub-domain / tags: the AI when enabled,
+        otherwise (or when the AI names no domain) the keyword classifier;
+        summary / objectives only come from the AI
       → thumbnail via get_thumbnail_v2 (JPEG 640×480)
-      → create or update the Presentation record
+      → create or update the stored_file record
   → archive records whose files are gone from Dropbox
-  → write a SyncLog row and update DropboxConfig
+  → write a sync_log row and update the connection
 ```
 
 ### Viewing pipeline
 
 ```
 open a presentation
-  → IndexedDB has a cached blob?  → blob URL, badge "Offline"
-  → else Presentation.file_url?   → use it
-  → else getPresentationStream    → get_preview (Office) or get_temporary_link (PDF/HTML)
-                                  → upload the PDF once, cache the URL on the entity
+  → IndexedDB has a downloaded copy?  → blob URL, badge "Offline"
+  → else GET /api/dropbox/files/:id/preview (API mode)
+      → cached preview PDF on the server?  → serve it
+      → Office deck?  → Dropbox get_preview renders a PDF, cached by revision
+      → PDF / HTML?   → streamed through the API
+    (the browser never receives a Dropbox URL or token)
   → render in an iframe with #toolbar=0&navpanes=0
 ```
 
@@ -162,14 +169,18 @@ open a presentation
   on the API server. Access tokens are minted per request, held in process memory, auto-refreshed
   on 401, and never written to the database, an API response or a log. The status endpoint returns
   an explicit allow-list that cannot leak the refresh token.
-- **Content** — the PDF viewer hides the browser toolbar (`#toolbar=0&navpanes=0`), disables the
-  context menu and text selection, and `@media print { body { display: none } }` blocks printing
-  the application.
-- **Downloads** — stored as blobs in IndexedDB inside the app sandbox, never as loose files, with
-  LRU eviction when the origin approaches its storage quota.
+- **Content** — decks are proxied through the API, so readers never get a Dropbox link. The viewer
+  hides the browser PDF toolbar (`#toolbar=0&navpanes=0`), disables the context menu and text
+  selection, and `@media print { body { display: none } }` blanks the app when printed. These are
+  deterrents, not DRM: anyone who can view a deck can still capture it.
+- **Downloads** — stored as plain (unencrypted) blobs in a per-user IndexedDB database, never as
+  loose files in the Downloads folder, deleted on sign-out, with eviction of the oldest copies when
+  the origin approaches its storage quota.
 - **RBAC** — every route except the auth screens is behind `ProtectedRoute`; the Admin console and
   Dropbox Settings check `user.role === 'admin'` on the client *and* in every admin backend
-  function (`requireAdmin`).
+  route (`requireAdmin`). Admins change roles with `PATCH /api/users/:id` (the last admin cannot
+  be demoted) and reset forgotten passwords with `POST /api/users/:id/password` — there is no
+  email-based reset. Both are audited and visible in the Admin console's audit log.
 - **OAuth** — `token_access_type=offline`, and exchanged codes are deduped so React StrictMode's
   double mount cannot burn a single-use code.
 

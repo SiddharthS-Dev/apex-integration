@@ -157,6 +157,7 @@ export async function startServer(app) {
     jar,
     get: (url, options) => request('GET', url, options),
     post: (url, body, options) => request('POST', url, { ...options, body: body ?? {} }),
+    patch: (url, body, options) => request('PATCH', url, { ...options, body: body ?? {} }),
     async login(email = ADMIN.email, password = ADMIN.password) {
       return request('POST', '/api/auth/login', { body: { email, password } });
     },

@@ -25,6 +25,8 @@ export const AUDIT = {
   LOGIN: 'auth.login',
   LOGIN_FAILED: 'auth.login_failed',
   LOGOUT: 'auth.logout',
+  USER_ROLE_CHANGED: 'user.role_changed',
+  USER_PASSWORD_SET: 'user.password_set_by_admin',
 };
 
 export class AuditService {

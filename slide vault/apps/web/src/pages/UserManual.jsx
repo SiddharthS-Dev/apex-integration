@@ -11,15 +11,16 @@ const CHAPTERS = [
   {
     title: 'System Overview',
     body: [
-      'Inspironics SlidesVault is the company presentation knowledge hub. Every supported file in the connected Dropbox folder is discovered automatically, classified by AI into one of five business domains, given a thumbnail, and made searchable.',
+      'Inspironics SlidesVault is the company presentation knowledge hub. Every supported file in the connected Dropbox folder (PowerPoint decks by default) is discovered automatically, sorted into one of five business domains, given a thumbnail, and made searchable. Domains come from a built-in keyword classifier; when an administrator has enabled the optional AI integration, AI suggests the domain, title and summary instead, with the keyword classifier as the fallback.',
       'Nothing is uploaded by hand. When someone adds a deck to Dropbox it appears in SlidesVault on the next sync; when they delete one, the record is archived rather than destroyed, so history and analytics survive.',
     ],
   },
   {
     title: 'Signing In and Roles',
     body: [
-      'Sign in with your work email and password, or with Google. Every page except the sign-in screens requires authentication.',
-      'There are two roles. Members can browse, read, download and use the copilot. Admins additionally see the Admin console and Dropbox Settings, and can promote other people to admin.',
+      'Sign in with your work email and password. "Continue with Google" appears only when an administrator has configured Google sign-in for this deployment. Every page except the sign-in screens requires authentication.',
+      'Forgotten your password? SlidesVault does not send reset emails. Ask a SlidesVault administrator: they can set a temporary password for you from the Admin console, which also signs you out of every other device.',
+      'There are two roles. Members can browse, read, download and use the copilot. Admins additionally see the Admin console and Dropbox Settings, can promote other people to admin (or remove admin rights, as long as at least one admin remains), and can set a temporary password for anyone who is locked out.',
     ],
   },
   {
@@ -61,7 +62,7 @@ const CHAPTERS = [
     title: 'Offline Reading',
     body: [
       'Tap Download in the viewer to keep a presentation for offline reading. The file is stored inside the app sandbox — it never lands in your Downloads folder — and it opens instantly the next time, with or without a connection.',
-      'The Downloads page shows everything you have saved, how much storage it uses, and lets you remove copies you no longer need. When the device runs low on space the oldest downloads are evicted first.',
+      'The Downloads page shows everything you have saved, how much storage it uses, and lets you remove copies you no longer need. When the browser is close to its storage quota, the oldest downloads are removed first to make room.',
     ],
   },
   {
@@ -74,22 +75,22 @@ const CHAPTERS = [
   {
     title: 'The AI Copilot',
     body: [
-      'The floating button in the bottom-right corner opens the copilot. It knows the whole catalog, so you can ask for a topic, a team, a product or a problem and get a short answer with tappable recommendation cards.',
+      'The floating button in the bottom-right corner opens the copilot. It is available only when an administrator has enabled the AI integration. It sees the titles, domains, tags and short summaries of up to 300 of the most-viewed decks (not the full text, and not the rest of a larger library), so you can ask for a topic, a team, a product or a problem and get a short answer with tappable recommendation cards.',
       'Each card opens the presentation directly; the "See all matches in Library" link runs the same question as a search. The copilot can be wrong — check the deck before relying on it.',
     ],
   },
   {
     title: 'Content Security',
     body: [
-      'Presentations are streamed, not handed over. The viewer hides the browser PDF toolbar, disables the right-click menu and blocks text selection, and printing the application is disabled entirely.',
-      'Offline copies are stored as encrypted browser blobs inside the app, so they cannot be forwarded as loose files.',
+      'Presentations are streamed through SlidesVault rather than linked from Dropbox. The viewer hides the browser PDF toolbar, disables the right-click menu and blocks text selection, and a print stylesheet blanks the page if you print the app. These are deterrents, not protection: anyone who can view a deck can still capture it (a screenshot, the browser\'s developer tools, or printing an embedded document directly).',
+      'Offline copies are kept in the browser\'s own storage (IndexedDB) for your account on this device, not in your Downloads folder, and are deleted when you sign out. They are not separately encrypted by SlidesVault; they are protected only as well as the device and browser profile are.',
     ],
   },
   {
     title: 'Admin Console',
     body: [
       'Admins get usage at a glance: total users, active users in the last 24 hours, who is online now, views today and this week, catalog size, storage used and cached files.',
-      'Charts cover 14 days of activity and cumulative user growth. Below them sit the most and least viewed decks, the domain distribution, the sync status, user management and the recent sync logs.',
+      'Charts cover 14 days of activity and cumulative user growth. Days are your own local calendar days. Below them sit the most and least viewed decks, the domain distribution, the sync status, user management (promote or demote admins, set a temporary password), a read-only audit log of administrative actions and sign-ins, and the recent sync logs.',
     ],
   },
   {

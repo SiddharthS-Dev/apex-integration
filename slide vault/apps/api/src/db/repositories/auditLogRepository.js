@@ -36,7 +36,7 @@ export class AuditLogRepository {
     const where = action ? 'WHERE action = ?' : '';
     const params = action ? [action] : [];
     const rows = await this.db.query(
-      `SELECT * FROM audit_log ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      `SELECT * FROM audit_log ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
       [...params, Math.min(Number(limit) || 50, 500), Math.max(Number(offset) || 0, 0)]
     );
     return rows.map((row) => {

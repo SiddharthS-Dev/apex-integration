@@ -19,6 +19,7 @@ import { createAuthRouter } from './routes/auth.js';
 import { createEntityRouter } from './routes/entities.js';
 import { createSystemRouter } from './routes/system.js';
 import { createAiRouter } from './routes/ai.js';
+import { createUsersRouter } from './routes/users.js';
 
 /**
  * The Dropbox routes an ordinary user calls while reading — the file record,
@@ -108,6 +109,7 @@ export function createApp(container) {
 
   app.use('/api/ai', createAiRouter(container));
   app.use('/api/dropbox', adminOnlyLimiter, createDropboxRouter(container));
+  app.use('/api/users', adminLimiter, createUsersRouter(container));
   app.use('/api', createEntityRouter(container));
 
   app.use(notFoundHandler);

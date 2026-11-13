@@ -24,3 +24,4 @@ export const recordLogin = fn('recordLogin');
 export const renameUntitledPresentations = fn('renameUntitledPresentations');
 export const getDownloadLinks = fn('getDownloadLinks');
 export const askCopilot = fn('askCopilot');
+export const setUserPassword = fn('setUserPassword');

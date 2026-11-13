@@ -8,6 +8,7 @@
  */
 import { buildSeedPresentations, buildSeedAnalytics, buildSeedUsers } from './seed';
 import { DOMAIN_NAMES, DOMAINS } from '@/lib/domains';
+import { localDateKey } from '@/lib/utils';
 
 const NS = 'slidesvault';
 const DEMO_PASSWORD = 'slidesvault';
@@ -306,8 +307,9 @@ async function requireAdmin() {
   return user;
 }
 
+// The demo backend runs in the browser, so "today" is the viewer's local day.
 function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey();
 }
 
 function viewsInLastDays(breakdown = [], days) {
@@ -551,6 +553,9 @@ const functions = {
       case 'revoke':
         if (config) await DropboxConfig.update(config.id, { connection_status: 'disconnected', refresh_token: '' });
         return { data: { ok: true } };
+      case 'audit':
+        // The demo keeps no audit trail; the API server does.
+        return { data: { events: [], limit: payload.limit ?? 50, offset: payload.offset ?? 0 } };
       default:
         return { data: sanitized(config) };
     }
@@ -595,6 +600,16 @@ const functions = {
         log_id: log.id,
       },
     };
+  },
+
+  /** Demo counterpart of the admin "Set temporary password" action. */
+  async setUserPassword({ user_id, id, password } = {}) {
+    await requireAdmin();
+    const target = table('User', buildSeedUsers).find((u) => u.id === (user_id ?? id));
+    if (!target) throw new Error('No such user.');
+    if (String(password ?? '').length < 10) throw new Error('A temporary password needs at least 10 characters.');
+    setCredential(target.email, password);
+    return { data: { ok: true, sessions_revoked: true } };
   },
 
   async renameUntitledPresentations() {

@@ -9,7 +9,10 @@
 #       share the connection, the catalog and the advisory locks, so exactly
 #       one of them syncs at a time and exactly one refreshes the token.
 #
-# Secrets come from apps/api/.env, or from the orchestrator.
+# Secrets come from a .env file beside this one (compose reads it for the
+# ${...} values below), or from the orchestrator. The postgres profile also
+# needs POSTGRES_PASSWORD; there is deliberately no default, and the postgres
+# image refuses to initialise without one.
 # None of them belong in this file.
 
 services:
@@ -78,7 +81,7 @@ services:
       TRUST_PROXY: '1'
 
       DB_DRIVER: postgres
-      DATABASE_URL: postgres://slidesvault:${POSTGRES_PASSWORD:-slidesvault}@postgres:5432/slidesvault
+      DATABASE_URL: postgres://slidesvault:${POSTGRES_PASSWORD:-}@postgres:5432/slidesvault
       OBJECT_STORE_DIR: /data/objects
 
       DROPBOX_APP_KEY: ${DROPBOX_APP_KEY:?set DROPBOX_APP_KEY}
@@ -101,7 +104,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: slidesvault
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slidesvault}
+      # No default: a well-known database password is not a safe fallback.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: slidesvault
     volumes:
       - slidesvault-pg:/var/lib/postgresql/data

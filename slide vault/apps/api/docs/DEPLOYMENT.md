@@ -181,7 +181,7 @@ At <https://console.cloud.google.com/apis/credentials>:
    exactly:
    - local: `http://localhost:4000/api/auth/google/callback`
    - production: `https://api.example.com/api/auth/google/callback`
-3. Copy the client ID and client secret into `server/.env`:
+3. Copy the client ID and client secret into `apps/api/.env`:
 
 ```ini
 GOOGLE_OAUTH_ENABLED=true
@@ -224,13 +224,33 @@ address.
 
 ## 5. Docker
 
+`docker-compose.yml` is at the repository root (the image is built from the
+workspace root so it can include `packages/shared`):
+
 ```bash
-cd apps/api
-docker compose up -d api
+# from the repository root
+docker compose up -d api                                   # SQLite, one instance
+docker compose --profile postgres up -d api-pg postgres    # PostgreSQL, several instances
 ```
 
 Secrets come from a `.env` beside `docker-compose.yml`, or from the
-orchestrator. The image contains none. `/data` holds the database and the
+orchestrator. The image contains none.
+
+**`POSTGRES_PASSWORD` is required** for the `postgres` profile and has no
+default — it used to fall back to `slidesvault`, a password anyone reading this
+repository knows. Without it the `postgres` container refuses to initialise
+("superuser password is not specified") and `api-pg` cannot connect. The SQLite
+`api` service does not need it.
+Generate one and put it in that `.env`:
+
+```bash
+echo "POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=')" >> .env
+```
+
+The same value is used for the `postgres` container and in the `DATABASE_URL`
+of `api-pg`, so set it before the database volume is first created; changing it
+afterwards also requires `ALTER USER slidesvault PASSWORD …` inside Postgres.
+`/data` holds the database and the
 preview cache and must be a volume — the connection survives a restart because
 the encrypted refresh token is in there, not in memory.
 

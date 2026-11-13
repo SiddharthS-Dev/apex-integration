@@ -1,5 +1,5 @@
 import { DOMAINS, DOMAIN_NAMES } from '@/lib/domains';
-import { hashSeed } from '@/lib/utils';
+import { hashSeed, localDateKey } from '@/lib/utils';
 
 /**
  * Catalog used by the local backend so the app is fully explorable without a
@@ -113,7 +113,7 @@ export function buildSeedAnalytics(presentations) {
 
     for (let d = 59; d >= 0; d -= 1) {
       if (remaining <= 0) break;
-      const date = new Date(now - d * 86400000).toISOString().slice(0, 10);
+      const date = localDateKey(new Date(now - d * 86400000));
       // Recent days carry more weight so the trending sections look alive.
       const weight = 1 + (60 - d) / 40;
       const count = Math.round(((seed >> (d % 12)) % 4) * weight) % 9;

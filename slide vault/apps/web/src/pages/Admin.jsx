@@ -5,17 +5,145 @@ import {
 } from 'recharts';
 import {
   Users, Activity, Radio, Eye, Library as LibraryIcon, HardDrive, Download, TrendingUp,
-  ShieldAlert, ShieldCheck, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Cloud,
+  ShieldAlert, ShieldCheck, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Cloud, KeyRound,
+  ScrollText, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
   Presentation, PresentationAnalytics, SyncLog, LoginHistory, User, DropboxConfig, listAll,
 } from '@/api/entities';
-import { syncDropbox } from '@/api/functions';
+import { dropboxAuth, setUserPassword, syncDropbox } from '@/api/functions';
 import { getAllCachedIds } from '@/lib/offline-db';
 import { useAuth } from '@/lib/AuthContext';
-import { Button } from '@/components/ui';
+import { Badge, Button, Input } from '@/components/ui';
 import { DOMAINS, DOMAIN_NAMES } from '@/lib/domains';
-import { cn, formatBytes, formatDate, timeAgo } from '@/lib/utils';
+import { cn, formatBytes, formatDate, localDateKey, localDaysAgo, timeAgo } from '@/lib/utils';
+
+const AUDIT_PAGE_SIZE = 20;
+const TEMP_PASSWORD_MIN = 10;
+
+/** A short, readable summary of an audit row's details object. */
+function describeDetails(details) {
+  if (!details || typeof details !== 'object') return '';
+  return Object.entries(details)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+    .join(' · ');
+}
+
+/**
+ * Read-only view of the server's audit trail (GET /api/dropbox/audit), newest
+ * first, a page at a time.
+ */
+function AuditLogSection() {
+  const [page, setPage] = useState(0);
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async (pageIndex) => {
+    setLoading(true);
+    setError('');
+    try {
+      // One extra row tells us whether there is a next page without a count query.
+      const { data } = await dropboxAuth({
+        action: 'audit',
+        limit: AUDIT_PAGE_SIZE + 1,
+        offset: pageIndex * AUDIT_PAGE_SIZE,
+      });
+      setEvents(Array.isArray(data?.events) ? data.events : []);
+    } catch (err) {
+      setError(err.message || 'Could not load the audit log.');
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load(page);
+  }, [load, page]);
+
+  const rows = events.slice(0, AUDIT_PAGE_SIZE);
+  const hasNext = events.length > AUDIT_PAGE_SIZE;
+
+  return (
+    <section className="space-y-3 rounded-2xl glass p-4" aria-labelledby="audit-log-heading">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="audit-log-heading" className="inline-flex items-center gap-2 text-sm font-semibold">
+          <ScrollText className="h-4 w-4" /> Audit log
+        </h2>
+        <div className="flex items-center gap-2">
+          <Button variant="glass" size="sm" onClick={() => load(page)} disabled={loading} aria-label="Reload audit log">
+            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={loading || page === 0}
+            aria-label="Newer entries"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Button>
+          <span className="text-xs text-muted-foreground">Page {page + 1}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={loading || !hasNext}
+            aria-label="Older entries"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+      {error ? (
+        <p className="py-4 text-center text-xs text-red-400">{error}</p>
+      ) : rows.length === 0 ? (
+        <p className="py-6 text-center text-xs text-muted-foreground">
+          {loading ? 'Loading…' : 'No audit entries recorded.'}
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-xs">
+            <thead className="text-muted-foreground">
+              <tr className="border-b border-border">
+                <th className="py-2 pr-3 font-medium">Time</th>
+                <th className="py-2 pr-3 font-medium">Action</th>
+                <th className="py-2 pr-3 font-medium">Actor</th>
+                <th className="py-2 pr-3 font-medium">Target</th>
+                <th className="py-2 pr-3 font-medium">Outcome</th>
+                <th className="py-2 font-medium">Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((event) => (
+                <tr key={event.id} className="align-top">
+                  <td className="whitespace-nowrap py-2 pr-3">
+                    {formatDate(event.created_at, { dateStyle: 'medium', timeStyle: 'short' })}
+                  </td>
+                  <td className="py-2 pr-3 font-mono">{event.action}</td>
+                  <td className="py-2 pr-3">{event.actor_email || '—'}</td>
+                  <td className="max-w-[200px] truncate py-2 pr-3" title={event.target}>{event.target || '—'}</td>
+                  <td className="py-2 pr-3">
+                    <Badge
+                      variant={event.outcome === 'failure' ? 'danger' : event.outcome === 'partial' ? 'warning' : 'success'}
+                    >
+                      {event.outcome || 'success'}
+                    </Badge>
+                  </td>
+                  <td className="max-w-[320px] break-words py-2 text-muted-foreground">
+                    {describeDetails(event.details) || '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
 
 function StatCard({ icon: Icon, label, value, tint, hint }) {
   return (
@@ -58,6 +186,10 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState(null);
+  // The user whose temporary password is being set, and the value being typed.
+  const [passwordTarget, setPasswordTarget] = useState(null);
+  const [tempPassword, setTempPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
 
   const isAdmin = user?.role === 'admin';
 
@@ -99,7 +231,8 @@ export default function Admin() {
     const dayAgo = now - 86400000;
     const fifteenMin = now - 15 * 60000;
     const weekAgo = now - 7 * 86400000;
-    const todayKey = new Date().toISOString().slice(0, 10);
+    // The viewer's own calendar day, not the UTC one.
+    const todayKey = localDateKey();
 
     // last_active_at is written by the API on authenticated requests (at most
     // every few minutes per user), so "online now" is "used the app in the
@@ -139,15 +272,18 @@ export default function Admin() {
 
   const dailyActivity = useMemo(() => {
     const days = [];
+    // Days are the browser's local calendar days. Sign-ins are bucketed from
+    // their exact timestamps; view counts arrive already grouped per day by the
+    // backend and are matched to the day with the same date.
     for (let i = 13; i >= 0; i -= 1) {
-      const date = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+      const date = localDateKey(localDaysAgo(i));
       const views = analytics.reduce(
         (sum, a) => sum + ((a.daily_breakdown || []).find((d) => d.date === date)?.count || 0),
         0
       );
       // Successful sign-ins only: login_history also records failed attempts.
       const sessions = logins.filter(
-        (l) => (l.status ?? 'success') === 'success' && String(l.login_at).slice(0, 10) === date
+        (l) => (l.status ?? 'success') === 'success' && localDateKey(l.login_at) === date
       ).length;
       days.push({ date: date.slice(5), views, sessions });
     }
@@ -224,13 +360,47 @@ export default function Admin() {
     }
   };
 
-  const promote = async (target) => {
+  const changeRole = async (target, role) => {
     try {
-      await User.update(target.id, { role: 'admin' });
-      setNotice({ tone: 'success', message: `${target.full_name || target.email} is now an admin.` });
+      await User.update(target.id, { role });
+      setNotice({
+        tone: 'success',
+        message:
+          role === 'admin'
+            ? `${target.full_name || target.email} is now an admin.`
+            : `${target.full_name || target.email} is no longer an admin.`,
+      });
       await load();
     } catch (err) {
       setNotice({ tone: 'danger', message: err.message || 'Could not update that user.' });
+    }
+  };
+
+  const openPasswordForm = (target) => {
+    setPasswordTarget(target);
+    setTempPassword('');
+  };
+
+  const savePassword = async (e) => {
+    e.preventDefault();
+    if (!passwordTarget) return;
+    if (tempPassword.length < TEMP_PASSWORD_MIN) {
+      setNotice({ tone: 'danger', message: `Use at least ${TEMP_PASSWORD_MIN} characters for a temporary password.` });
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await setUserPassword({ user_id: passwordTarget.id, password: tempPassword });
+      setNotice({
+        tone: 'success',
+        message: `Temporary password set for ${passwordTarget.full_name || passwordTarget.email}. They have been signed out everywhere; share the new password with them directly.`,
+      });
+      setPasswordTarget(null);
+      setTempPassword('');
+    } catch (err) {
+      setNotice({ tone: 'danger', message: err.message || 'Could not set that password.' });
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -467,19 +637,59 @@ export default function Admin() {
                     ? `Signed in ${timeAgo(u.last_login_at || u.last_login)}`
                     : 'Never signed in'}
               </span>
+              <Button variant="ghost" size="sm" onClick={() => openPasswordForm(u)}>
+                <KeyRound className="h-3.5 w-3.5" /> Set temporary password
+              </Button>
               {u.role === 'admin' ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-400">
-                  <ShieldCheck className="h-3 w-3" /> Admin
-                </span>
+                <>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-400">
+                    <ShieldCheck className="h-3 w-3" /> Admin
+                  </span>
+                  {u.id !== user?.id && (
+                    <Button variant="outline" size="sm" onClick={() => changeRole(u, 'user')}>
+                      Remove admin
+                    </Button>
+                  )}
+                </>
               ) : (
-                <Button variant="outline" size="sm" onClick={() => promote(u)}>
+                <Button variant="outline" size="sm" onClick={() => changeRole(u, 'admin')}>
                   Promote to admin
                 </Button>
+              )}
+              {passwordTarget?.id === u.id && (
+                <form onSubmit={savePassword} className="flex w-full flex-wrap items-center gap-2 pl-11">
+                  <label htmlFor={`temp-password-${u.id}`} className="sr-only">
+                    Temporary password for {u.full_name || u.email}
+                  </label>
+                  <Input
+                    id={`temp-password-${u.id}`}
+                    type="text"
+                    autoComplete="off"
+                    minLength={TEMP_PASSWORD_MIN}
+                    value={tempPassword}
+                    onChange={(e) => setTempPassword(e.target.value)}
+                    placeholder={`Temporary password (${TEMP_PASSWORD_MIN}+ characters)`}
+                    className="h-8 max-w-xs text-xs"
+                  />
+                  <Button type="submit" variant="gradient" size="sm" disabled={savingPassword}>
+                    {savingPassword && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Save
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setPasswordTarget(null)}>
+                    Cancel
+                  </Button>
+                  <span className="w-full text-[11px] text-muted-foreground">
+                    Saving signs this person out of every device. Give them the password directly.
+                  </span>
+                </form>
               )}
             </div>
           ))}
         </div>
       </section>
+
+      {/* ----------------------------------------------------- audit log */}
+      <AuditLogSection />
 
       {/* ----------------------------------------------------- sync logs */}
       <section className="space-y-3 rounded-2xl glass p-4">

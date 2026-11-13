@@ -70,3 +70,24 @@ export function hashSeed(str = '') {
 export function truncate(str = '', max = 120) {
   return str.length > max ? `${str.slice(0, max - 1).trimEnd()}…` : str;
 }
+
+/**
+ * YYYY-MM-DD for the browser's own calendar day.
+ *
+ * `toISOString().slice(0, 10)` is the UTC day, which for anyone east or west of
+ * Greenwich puts late-evening (or early-morning) activity on the wrong day.
+ */
+export function localDateKey(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** The local calendar day `days` before today, at local midnight. */
+export function localDaysAgo(days) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - days);
+  return d;
+}

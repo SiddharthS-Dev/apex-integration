@@ -53,6 +53,71 @@ The signed-in user, or 401.
 ### `GET /api/auth/users` — admin
 Every account, without password hashes.
 
+### `GET /api/auth/config` — public
+Which sign-in methods and features this deployment offers, so the sign-in
+screen never shows a button that cannot work:
+```json
+{ "password": true, "google": false, "ai": false }
+```
+`google` is true only when Google sign-in is enabled and configured; `ai` only
+when `AI_ENABLED=true` and an Anthropic key is set (it gates the Copilot).
+
+### `GET /api/auth/google/start?next=/library` — public
+A redirect (302) to Google's consent screen, not JSON — the browser navigates
+here. Issues a single-use OAuth `state`. `next` (≤300 chars) is where to land
+after sign-in; only an in-app path is honoured. Fails when Google sign-in is
+not enabled (404) or not configured.
+
+### `GET /api/auth/google/callback` — public (Google calls it)
+Google's redirect target. Validates the `state`, exchanges the `code`, applies
+`GOOGLE_ALLOWED_DOMAINS` / `GOOGLE_AUTO_CREATE_USERS` and refuses unverified
+addresses. On success it sets the session cookie and redirects to
+`APP_BASE_URL` + `next`; on any failure (including the visitor pressing
+Cancel) it redirects to `APP_BASE_URL/login?error=<message>`. It never returns
+JSON. See DEPLOYMENT.md §4a.
+
+### Forgotten passwords
+There is no emailed reset link and no reset endpoint for the person
+themselves. An administrator sets a temporary password with
+`POST /api/users/:id/password` (below) and hands it over directly.
+
+---
+
+## Users
+
+Administrator-only. Both endpoints write an audit record
+(`user.role_changed`, `user.password_set_by_admin`) and share the admin rate
+limit.
+
+### `PATCH /api/users/:id` — admin
+```json
+{ "role": "admin" }
+```
+Changes a user's role. `role` must be one of the shared roles
+(`packages/shared/src/roles.js`: `admin`, `user`); it is the only field
+accepted. Returns `{ "user": {…}, "changed": true }` (`changed: false` if the
+user already had that role).
+
+| Status | When |
+|---|---|
+| 400 | `role` missing or not a known role; `:id` not a UUID |
+| 403 | the caller is not an admin |
+| 404 | no such user |
+| 409 | `code: "last_admin"` — the change would leave no active administrator (including an admin demoting themselves when they are the last one). The refusal is audited with `outcome: "failure"`. |
+
+The last-admin check is part of the `UPDATE` statement, so two admins demoting
+each other concurrently cannot both succeed.
+
+### `POST /api/users/:id/password` — admin
+```json
+{ "password": "a-temporary-password" }
+```
+Sets a temporary password (at least 10 characters, the same floor as
+registration) and **revokes every session** that user has, so they are signed
+out everywhere. Returns `{ "ok": true, "sessions_revoked": true }`. The
+password is never written to the audit log. 400 for a short or missing
+password, 403 for a non-admin, 404 for an unknown user.
+
 ---
 
 ## Connection
@@ -234,13 +299,33 @@ Drops the cached preview and thumbnail. They regenerate on the next request.
 
 ---
 
+## AI
+
+### `POST /api/ai/copilot` — auth
+```json
+{ "question": "Which decks cover onboarding?", "history": [{ "role": "user", "content": "…" }] }
+```
+The library Copilot. The browser sends only the question (≤1000 chars) and up
+to the last 6 history turns; the server builds the prompt from its own catalog
+— the 300 most-viewed active decks (title, domain, tags, a short summary), not
+the whole library and not the deck text. Returns
+`{ "reply": "markdown text", "picks": [presentation, …] }` with at most 5
+picks. Rate limited per user (`AI_COPILOT_MAX_PER_MINUTE`, default 10).
+503 `AiUnavailable` when AI is disabled or no key is set; 502 (retryable) when
+the model call fails or returns nothing usable.
+
+---
+
 ## Observability
 
 ### `GET /api/metrics` — admin
 Prometheus text by default; `?format=json` for the admin UI.
 
-### `GET /api/dropbox/audit?limit=50&action=dropbox.connected` — admin
-The administrative audit trail. Contains no credentials.
+### `GET /api/dropbox/audit?limit=50&offset=0&action=dropbox.connected` — admin
+The administrative audit trail, newest first: `{ "events": [...], "limit", "offset" }`.
+`limit` is 1–500 (default 50), `offset` pages through older entries, `action`
+filters to one action. Contains no credentials. The Admin console's "Audit log"
+section reads this endpoint.
 
 ### `GET /api/assets/:key` — auth
 Cached thumbnails and rendered previews. Keys are hashes of

@@ -146,6 +146,18 @@ One row per presentation, created on first view. `presentation_id` is
 weights recent views so a deck read this week outranks one read heavily two
 years ago.
 
+## `presentation_view`
+
+`presentation_id`, `viewer_id`, `viewed_at`; primary key
+(`presentation_id`, `viewer_id`).
+
+The last *counted* view per presentation and viewer — the de-duplication
+behind `POST /api/analytics/view`. A view is counted only if this viewer's
+previous counted view of the deck is older than `VIEW_DEDUPE_MINUTES`
+(default 10); the check and the upsert run in one transaction, so a viewer
+re-opening a deck (or a viewer firing several requests per open) is one view.
+One row per pair, overwritten in place, so it does not grow with traffic.
+
 ---
 
 ## Entity relationships
@@ -156,6 +168,7 @@ storage_connection ──< sync_log
                     connection cannot take the history with it)
 
 stored_file ──1:1── presentation_analytics   (presentation_id)
+            ──<  presentation_view           (presentation_id, viewer_id → app_user.id)
 
 app_user ──< user_session
          ──< login_history

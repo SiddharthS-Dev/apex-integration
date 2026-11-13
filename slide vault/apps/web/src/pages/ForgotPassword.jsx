@@ -1,11 +1,50 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Mail, MailCheck } from 'lucide-react';
-import { getClient } from '@/api/backendClient';
+import { KeyRound, Loader2, Mail, MailCheck } from 'lucide-react';
+import { getClient, isApiMode } from '@/api/backendClient';
 import { Button, Input, Label } from '@/components/ui';
 import { AuthShell, FormError } from '@/pages/Login';
 
+/**
+ * What a person who has forgotten their password is told when the app runs on
+ * the SlidesVault API.
+ *
+ * The API sends no email, so there is no reset link to promise. An
+ * administrator sets a temporary password from the Admin console (which signs
+ * the person out everywhere) and hands it over directly.
+ */
+export function AdminResetNotice() {
+  return (
+    <AuthShell
+      title="Forgot your password?"
+      subtitle="Ask a SlidesVault administrator to reset your password"
+      footer={
+        <Link to="/login" className="text-primary hover:underline">
+          Back to sign in
+        </Link>
+      }
+    >
+      <div className="flex flex-col items-center gap-3 py-4 text-center">
+        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/15 text-primary">
+          <KeyRound className="h-5 w-5" />
+        </span>
+        <p className="text-sm text-muted-foreground">
+          This SlidesVault does not send password-reset emails. An administrator can set a temporary
+          password for your account from the Admin console and give it to you directly. Sign in with it,
+          and you will be signed out of any other devices.
+        </p>
+      </div>
+    </AuthShell>
+  );
+}
+
 export default function ForgotPassword() {
+  if (isApiMode) return <AdminResetNotice />;
+  return <DemoForgotPassword />;
+}
+
+/** The local demo backend simulates an emailed reset link (token: demo-reset-token). */
+function DemoForgotPassword() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
@@ -30,8 +69,8 @@ export default function ForgotPassword() {
   if (sent) {
     return (
       <AuthShell
-        title="Check your inbox"
-        subtitle="If an account exists for that address, a reset link is on its way."
+        title="Reset link created"
+        subtitle="Demo mode: no email is sent."
         footer={
           <Link to="/login" className="text-primary hover:underline">
             Back to sign in
@@ -43,7 +82,11 @@ export default function ForgotPassword() {
             <MailCheck className="h-5 w-5" />
           </span>
           <p className="text-sm text-muted-foreground">
-            The link expires in 30 minutes. Check your spam folder if it does not arrive.
+            If an account exists for that address, open{' '}
+            <Link to="/reset-password?token=demo-reset-token" className="text-primary hover:underline">
+              the demo reset page
+            </Link>{' '}
+            to choose a new password.
           </p>
           <Button variant="outline" size="sm" onClick={() => setSent(false)}>
             Use a different email
@@ -56,7 +99,7 @@ export default function ForgotPassword() {
   return (
     <AuthShell
       title="Reset your password"
-      subtitle="We will email you a link to set a new one"
+      subtitle="Demo mode: this simulates a reset link"
       footer={
         <Link to="/login" className="text-primary hover:underline">
           Back to sign in

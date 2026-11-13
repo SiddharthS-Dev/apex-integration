@@ -1,11 +1,18 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, Lock } from 'lucide-react';
-import { getClient, isLocalMode } from '@/api/backendClient';
+import { getClient, isApiMode, isLocalMode } from '@/api/backendClient';
 import { Button, Input, Label } from '@/components/ui';
 import { AuthShell, FormError } from '@/pages/Login';
+import { AdminResetNotice } from '@/pages/ForgotPassword';
 
 export default function ResetPassword() {
+  // The API issues no reset links; an administrator resets passwords instead.
+  if (isApiMode) return <AdminResetNotice />;
+  return <DemoResetPassword />;
+}
+
+function DemoResetPassword() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const token = params.get('token') || '';

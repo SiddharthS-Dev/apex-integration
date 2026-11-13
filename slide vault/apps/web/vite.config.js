@@ -21,7 +21,14 @@ const BASE = '/vault/';
  */
 function precacheManifest() {
   // Public files are copied, not bundled, so they are listed by hand.
-  const publicFiles = ['logo.svg', 'manifest.webmanifest'];
+  const publicFiles = [
+    'logo.svg',
+    'manifest.webmanifest',
+    'icon-192.png',
+    'icon-512.png',
+    'icon-maskable-512.png',
+    'apple-touch-icon.png',
+  ];
   return {
     name: 'slidesvault-precache-manifest',
     apply: 'build',

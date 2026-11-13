@@ -11,12 +11,15 @@
  */
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
+import { ROLES } from '@slidesvault/shared';
 
 const scrypt = promisify(crypto.scrypt);
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 const now = () => new Date().toISOString();
 
-export const ROLES = { ADMIN: 'admin', USER: 'user' };
+// One definition of the roles, shared with the web app, so the value the API
+// validates against is the value the client renders against.
+export { ROLES };
 
 /** `scrypt$N$r$p$salt$hash`, so the parameters travel with the hash. */
 export async function hashPassword(password) {
@@ -114,6 +117,29 @@ export class UserRepository {
   async setRole(id, role) {
     await this.db.execute('UPDATE app_user SET role = ?, updated_at = ? WHERE id = ?', [role, now(), id]);
     return this.findById(id);
+  }
+
+  /**
+   * Changes a role without ever leaving the deployment with no active
+   * administrator.
+   *
+   * The check is part of the UPDATE itself rather than a read followed by a
+   * write, so two administrators demoting each other at the same moment cannot
+   * both succeed and lock everyone out. Returns false when the change was
+   * refused for that reason.
+   */
+  async changeRoleKeepingAnAdmin(id, role) {
+    if (role === ROLES.ADMIN) {
+      await this.setRole(id, role);
+      return true;
+    }
+    const result = await this.db.execute(
+      `UPDATE app_user SET role = ?, updated_at = ?
+        WHERE id = ?
+          AND (SELECT COUNT(*) FROM app_user WHERE role = ? AND status = 'active' AND id <> ?) > 0`,
+      [role, now(), id, ROLES.ADMIN, id]
+    );
+    return result.changes > 0;
   }
 
   async touchLogin(id) {

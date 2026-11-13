@@ -368,8 +368,9 @@ export function createDropboxRouter(container) {
     requireAdmin,
     asyncHandler(async (req, res) => {
       const limit = requireInt(req.query.limit, 'limit', { min: 1, max: 500, fallback: 50 });
+      const offset = requireInt(req.query.offset, 'offset', { min: 0, max: 100_000, fallback: 0 });
       const action = optionalString(req.query.action, 'action', { maxLength: 60 });
-      res.json({ events: await audit.list({ limit, action: action || null }) });
+      res.json({ events: await audit.list({ limit, offset, action: action || null }), limit, offset });
     })
   );
 
