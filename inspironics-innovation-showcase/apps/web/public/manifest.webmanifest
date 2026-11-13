@@ -1,0 +1,11 @@
+{
+  "name": "Inspironics Innovation Showcase",
+  "short_name": "Showcase",
+  "description": "An immersive gallery of intelligent-infrastructure blueprints, command decks and architecture systems.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0A0A0C",
+  "theme_color": "#0A0A0C",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

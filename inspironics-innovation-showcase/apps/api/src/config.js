@@ -108,7 +108,11 @@ export function loadConfig(env = process.env) {
       /** COOKIE_SECURE=false said out loud — the only way production runs on plain http. */
       cookieInsecureExplicit: bool(env.COOKIE_SECURE, null) === false,
       allowRegistration: bool(env.ALLOW_REGISTRATION, true),
-      guestEnabled: bool(env.GUEST_ENABLED, true),
+      /** The shared, anonymous guest identity. Off unless GUEST_ENABLED=true. */
+      guestEnabled: bool(env.GUEST_ENABLED, false),
+      /** Consecutive failed sign-ins (within the lockout window) before an account is locked for that window. */
+      loginMaxFailures: int(env.LOGIN_MAX_FAILURES, 10, { min: 1, max: 1000 }),
+      loginLockoutMinutes: 15,
       /**
        * Registration/reset codes are returned in the response instead of mailed.
        * Off unless EXPOSE_DEV_CODES=true, never in production, never for an admin's reset.
@@ -142,6 +146,9 @@ export function loadConfig(env = process.env) {
       onStartup: bool(env.SYNC_ON_STARTUP, false),
       concurrency: int(env.SYNC_CONCURRENCY, 8, { min: 1, max: 32 }),
       maxExtractMb: int(env.MAX_EXTRACT_MB, 150, { min: 1 }),
+      /** Zip-bomb guard: decompressed bytes read from one archive (.pptx) and its entry count. */
+      maxUnzipMb: int(env.MAX_UNZIP_MB, 50, { min: 1 }),
+      maxZipEntries: int(env.MAX_ZIP_ENTRIES, 5000, { min: 1 }),
       /** Lock lease; renewed by a heartbeat while a run is alive. */
       lockTtlSeconds: int(env.SYNC_LOCK_TTL_SECONDS, 120, { min: 30 }),
       seedPath: fromRoot(str(env.SEED_PATH, '../web/public/data/showcase.json')),

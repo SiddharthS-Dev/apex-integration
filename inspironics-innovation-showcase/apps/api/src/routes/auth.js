@@ -30,6 +30,47 @@ export function passwordIssues(pw) {
   return issues
 }
 
+/**
+ * Per-account lockout after repeated failed sign-ins.
+ *
+ * In memory, per process: a restart clears it and several API processes would
+ * each keep their own count. That is acceptable here (one process, and the IP
+ * rate limiter still applies); a multi-instance deployment would move this to
+ * the database. Unknown emails are counted too, so a lockout reveals nothing.
+ */
+export function createLoginLockout({ maxFailures = 10, windowMs = 15 * 60_000, now = () => Date.now() } = {}) {
+  const entries = new Map() // email -> { failures, firstAt, lockedUntil }
+  const prune = () => {
+    if (entries.size < 10_000) return
+    const t = now()
+    for (const [k, e] of entries) if (e.lockedUntil <= t && t - e.firstAt > windowMs) entries.delete(k)
+  }
+  return {
+    /** ms until the account unlocks, or 0. */
+    lockedFor(email) {
+      const e = entries.get(email)
+      return e && e.lockedUntil > now() ? e.lockedUntil - now() : 0
+    },
+    fail(email) {
+      prune()
+      const t = now()
+      let e = entries.get(email)
+      // a run of failures starts afresh once its window has passed or its lock has ended
+      if (!e || (e.lockedUntil ? e.lockedUntil <= t : t - e.firstAt > windowMs)) e = { failures: 0, firstAt: t, lockedUntil: 0 }
+      e.failures++
+      if (e.failures >= maxFailures) e.lockedUntil = t + windowMs
+      entries.set(email, e)
+    },
+    succeed(email) {
+      entries.delete(email)
+    },
+  }
+}
+
+/** A real scrypt hash to compare against when the email has no password, so the response takes as long. */
+let dummyHash
+const dummyPasswordHash = () => (dummyHash ??= hashPassword('dummy-password-for-timing'))
+
 const CODE_ERRORS = {
   missing: 'No code is pending for that email — request a new one.',
   expired: 'That code has expired — request a new one.',
@@ -40,6 +81,7 @@ export function authRoutes({ config, repos, metrics, log }) {
   const r = express.Router()
   const limiter = rateLimit({ windowMs: 15 * 60_000, max: config.isProd ? 30 : 300, bucket: 'auth', metrics })
   const client = (req) => ({ ip: req.ip, userAgent: req.get('user-agent') || '' })
+  const lockout = createLoginLockout({ maxFailures: config.auth.loginMaxFailures, windowMs: config.auth.loginLockoutMinutes * 60_000 })
 
   /**
    * Development only: an install with no administrator hands the role to the
@@ -173,12 +215,23 @@ export function authRoutes({ config, repos, metrics, log }) {
     route(async (req, res) => {
       const email = normaliseEmail(field(req.body, 'email', { max: 254 }))
       const password = field(req.body, 'password', { max: 200 })
+      const lockedMs = lockout.lockedFor(email)
+      if (lockedMs) {
+        await failed(req, email, 'password', 'locked')
+        res.setHeader('Retry-After', String(Math.ceil(lockedMs / 1000)))
+        throw new HttpError(429, 'Too many failed sign-in attempts — try again in 15 minutes.')
+      }
       const user = await repos.users.findByEmail(email)
-      const ok = user?.password_hash && (await verifyPassword(password, user.password_hash))
+      // always run scrypt, so an unknown email answers no faster than a wrong password
+      const stored = user?.password_hash || (await dummyPasswordHash())
+      const matches = await verifyPassword(password, stored)
+      const ok = matches && !!user?.password_hash
       if (!ok || user.disabled) {
+        lockout.fail(email)
         await failed(req, email, 'password', user?.disabled ? 'disabled' : 'bad_credentials')
         throw new HttpError(401, 'Email or password is incorrect.')
       }
+      lockout.succeed(email)
       if (needsRehash(user.password_hash)) await repos.users.update(user.id, { password_hash: await hashPassword(password) })
       if (!user.verified) {
         await failed(req, email, 'password', 'unverified')

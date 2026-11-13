@@ -151,7 +151,7 @@ export function answerQuestion(knowledge, query) {
   if (/^(hi|hello|hey|yo)\b/.test(lower) || lower.length < 3) {
     return {
       text: [
-        `I have all **${totalCount}** plates indexed — titles, objectives, architectures, components and the product names baked into the artwork.`,
+        `I search the **${totalCount}** plates in this library's catalogue — titles, objectives, architectures, components and the product names recorded for each plate.`,
         '',
         'Ask about a product, a technology, a category, or just describe what you are trying to build.',
       ].join('\n'),

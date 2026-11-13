@@ -46,6 +46,19 @@ export function createHttpAuthService({ request = apiRequest } = {}) {
     getSession: () => read(storageKeys.apiSession),
 
     /**
+     * What this server allows: { allowRegistration, guestEnabled, devCodes, … }.
+     * Unreachable, it answers null and the pages offer only what always works
+     * (no guest button), since the server is the one that would refuse it.
+     */
+    async getConfig() {
+      try {
+        return await request('/api/auth/config')
+      } catch {
+        return null
+      }
+    },
+
+    /**
      * Ask the server whether the cookie is still a live session; updates the mirror.
      * Only the server saying so — `{ session: null }` or a 401 — signs anyone out.
      * Offline, a gateway still starting the API (503), a 502, 429 or 500 say

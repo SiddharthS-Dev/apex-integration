@@ -207,6 +207,8 @@ export async function createHarness({ env = {}, enricher, seeds, port = 0, fake,
     SYNC_CONCURRENCY: '3',
     // every file a test syncs is "new"; tests that want the collection turn it on
     CLAUDE_SKILLS_SINCE: 'off',
+    // guest access is off by default in config; the suite exercises it, so it is on here
+    GUEST_ENABLED: 'true',
     ...env,
   })
   const dropbox = createFakeDropbox(fake)

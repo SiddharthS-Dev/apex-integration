@@ -25,7 +25,7 @@ export default function CopilotPanel({ onOpenItem }) {
     () => ({
       role: 'assistant',
       text:
-        'I am the **Showcase Copilot**. I have every plate in the estate indexed — including the product names printed inside the artwork.\n\nAsk me what you are looking for.',
+        "I am the **Showcase Copilot**. I answer from this library's own catalogue — plate titles, descriptions and the product names recorded for each plate — by matching your words against it. I am a keyword search, not a language model.\n\nAsk me what you are looking for.",
     }),
     []
   )
@@ -34,7 +34,7 @@ export default function CopilotPanel({ onOpenItem }) {
     if (!open || knowledge) return
     getShowcaseKnowledge()
       .then(setKnowledge)
-      .catch(() => setMessages((m) => [...m, { role: 'assistant', text: 'I could not load the corpus. Reload the page and try again.' }]))
+      .catch(() => setMessages((m) => [...m, { role: 'assistant', text: 'I could not load the catalogue. Reload the page and try again.' }]))
   }, [open, knowledge])
 
   // restore this session's persisted transcript
@@ -57,8 +57,8 @@ export default function CopilotPanel({ onOpenItem }) {
       if (user) CopilotNote.create(user, { sessionId, role: 'user', text: q })
       setThinking(true)
 
+      // the indicator shows only while the catalogue loads; answers are computed locally, at once
       const k = knowledge || (await getShowcaseKnowledge().then((v) => (setKnowledge(v), v)))
-      await new Promise((r) => setTimeout(r, 340))
 
       const { text, items } = answerQuestion(k, q)
       const body = items.length ? `${text}\n\n${renderCards(items)}` : text
@@ -106,7 +106,7 @@ export default function CopilotPanel({ onOpenItem }) {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-chalk">Showcase Copilot</p>
                 <p className="label-mono">
-                  {knowledge ? `${knowledge.totalCount} plates indexed` : 'Loading corpus…'}
+                  {knowledge ? `Answers from the catalogue · ${knowledge.totalCount} plates` : 'Loading catalogue…'}
                 </p>
               </div>
               <button
@@ -175,7 +175,7 @@ export default function CopilotPanel({ onOpenItem }) {
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about the estate…"
+                placeholder="Ask about the library…"
                 className="field !py-2.5 text-[13px]"
               />
               <button type="submit" disabled={!input.trim() || thinking} className="btn-primary !px-4 !py-2.5">

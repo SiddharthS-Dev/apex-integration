@@ -39,7 +39,7 @@ export default function ResetPassword() {
     <AuthShell
       eyebrow="Password reset"
       title={done ? 'Password updated' : 'Choose a new password'}
-      sub={done ? 'You can sign in with your new password now.' : 'Enter the code we sent you, then pick a new password.'}
+      sub={done ? 'You can sign in with your new password now.' : 'Enter your reset code (no email is sent yet — an administrator gives it to you), then pick a new password.'}
       footer={
         <Link to="/login" className="text-cyan-glow underline underline-offset-4">
           Back to sign in

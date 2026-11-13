@@ -20,3 +20,16 @@ test('CopilotNote ignores malformed persisted entries', () => {
 
   assert.deepEqual(CopilotNote.list({ id: 'user-1' }, 'session-1').map((note) => note.text), ['Keep this'])
 })
+
+test('the copilot describes itself honestly: a catalogue search, no fake thinking delay', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { answerQuestion } = await import('../src/features/copilot/model/copilotKnowledge.js')
+  const hi = answerQuestion({ items: [], cats: [], techs: [], totalCount: 7, stats: {}, productCounts: {} }, 'hello')
+  assert.match(hi.text, /\*\*7\*\* plates in this library's catalogue/)
+  assert.doesNotMatch(hi.text, /indexed|baked into the artwork/)
+
+  const panel = readFileSync(new URL('../src/features/copilot/components/CopilotPanel.jsx', import.meta.url), 'utf8')
+  assert.match(panel, /keyword search, not a language model/)
+  assert.doesNotMatch(panel, /every plate in the estate indexed/)
+  assert.doesNotMatch(panel, /setTimeout/, 'answers are not delayed to look like thinking')
+})

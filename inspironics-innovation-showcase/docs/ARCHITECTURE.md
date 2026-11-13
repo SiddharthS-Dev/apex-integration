@@ -171,7 +171,7 @@ boundary: losing the city should still leave you a gallery.
 | --- | --- |
 | `npm run lint:arch` | layer and boundary rules |
 | `npm run typecheck` | `checkJs` over all of `src` — the JSDoc contracts, enforced |
-| `npm test` | 53 tests on `node:test`: domain units plus jsdom component tests |
+| `npm test` | 86 tests on `node:test`: domain units plus jsdom component tests |
 | `npm run check:routes` | asserts every ecosystem node resolves to a non-empty gallery |
 | `npm run check:bundle` | initial payload against a 90 KB gz budget |
 | `npm run build` | all of the above, around `vite build` |
@@ -197,9 +197,8 @@ the auth routes never fetch it at all.
   `strict: false`, so the JSDoc contracts fail the build — but a wrong
   repository implementation is caught by the seam test, not the compiler. A
   `.ts` migration is cheaper now that the errors are fixed (ADR 6).
-- **Dependency advisories.** `npm audit` reports a critical ReDoS in jsPDF and
-  an open-redirect in react-router. Both need major-version upgrades and
-  deserve their own pass.
+- **Dependency advisories.** Resolved: jsPDF is on 4.2.1 and react-router on
+  7.18.5 (commit da776b6); `npm audit --omit=dev` reports 0 vulnerabilities.
 - **jsdom is not a browser.** Layout, compositing and focus visibility still
   need the smoke script.
 - **`inspironics/`** at the repo root is the legacy image tree plus an unused

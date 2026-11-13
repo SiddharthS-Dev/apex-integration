@@ -72,6 +72,8 @@ export const env = {
   googleClientId: asOptionalString(raw.VITE_GOOGLE_CLIENT_ID),
   mode: raw.MODE || 'production',
   isDev: !!raw.DEV,
+  /** A production build (vite build): the service worker registers only then. */
+  isProd: !!raw.PROD,
   /** POST target for `shared/lib/reporter`. Unset means log-only. */
   errorEndpoint: asOptionalUrl(raw.VITE_ERROR_ENDPOINT),
 }
