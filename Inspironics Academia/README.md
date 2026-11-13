@@ -2,7 +2,7 @@
 
 ## What it is
 
-A learning platform built from engineering playbooks. Playbooks (PDF/DOCX) come from a Dropbox folder or a manual upload. The Academy indexes them, extracts their chapters, designs a course (modules → lessons) with traceability back to the source, generates teaching content, quizzes, flashcards and exams with Claude, and serves everything through a review-then-publish workflow, a learner catalog, tests and verifiable certificates.
+A learning platform built from engineering playbooks. Playbooks (PDF/DOCX) come from a Dropbox folder or a manual upload. The Academy indexes them, extracts their chapters, designs a course (modules → lessons) with traceability back to the source, generates teaching content, quizzes, flashcards and exams with an AI model (Google Gemini by default, or a self-hosted Ollama model), and serves everything through a review-then-publish workflow, a learner catalog, tests and verifiable certificates.
 
 **The governing rule: the browser never talks to Dropbox (or any storage).** Every Dropbox operation goes through the API, and file bytes are proxied through it. No Dropbox URL, access token or share link ever reaches a user.
 
@@ -18,13 +18,13 @@ npm-workspaces monorepo:
 
 ## Tech stack
 
-**Backend** — Node ≥ 22.5, ESM, Express 4 on port 4000. Dependencies: `express`, `cookie-parser`, `jszip` (DOCX), `pdf-parse` (PDF), `@anthropic-ai/sdk`, optional `pg`. No ORM, no Passport, no Dropbox SDK — auth, RBAC, rate limiting, security headers, validation, logging, metrics and the scheduler are hand-rolled on the standard library.
+**Backend** — Node ≥ 22.5, ESM, Express 4 on port 4000. Dependencies: `express`, `cookie-parser`, `jszip` (DOCX), `pdf-parse` (PDF), `@resvg/resvg-js` + `ffmpeg-static` (slide videos), `nodemailer` (SMTP email), optional `pg`. No ORM, no Passport, no Dropbox SDK, no AI SDK (Gemini and Ollama are called over plain HTTP) — auth, RBAC, rate limiting, security headers, validation, logging, metrics and the scheduler are hand-rolled on the standard library.
 
 **Storage** is dual-driver behind one interface: SQLite via `node:sqlite` for development (no native module to compile; Node prints an experimental warning) and Postgres for production (`DATABASE_URL`). Raw SQL through a repository layer with its own migration runner. Each entity gets its own table, generated from the shared schema; new schema properties are added as columns automatically.
 
-**Auth** is a session cookie (`iea_session`, HttpOnly, SameSite=Lax, 12 h). Passwords are hashed with scrypt. Roles `admin` / `user` are enforced server-side, as are the per-entity row-level security rules from `packages/shared`. The first registered account becomes admin.
+**Auth** is a session cookie (`iea_session`, HttpOnly, SameSite=Lax, 12 h). Passwords are hashed with scrypt. Roles `admin` / `user` are enforced server-side, as are the per-entity row-level security rules from `packages/shared`. The first registered account becomes admin in development; with `NODE_ENV=production` it does not (unless `ALLOW_FIRST_USER_ADMIN=true`) — create the admin with `BOOTSTRAP_ADMIN_EMAIL` + `BOOTSTRAP_ADMIN_PASSWORD` instead. Sign-in runs the same password-hash work for unknown emails, and an email with `LOGIN_MAX_FAILURES` (default 10) consecutive failures is locked for 15 minutes (in memory, per process).
 
-**Frontend** — React 18 + Vite 5, React Router 6, TanStack Query 5, Tailwind 3 + shadcn/ui, Recharts, react-markdown, jsPDF.
+**Frontend** — React 18 + Vite 5, React Router 7, TanStack Query 5, Tailwind 3 + shadcn/ui, Recharts, react-markdown, jsPDF, qrcode-generator (certificate QR codes are drawn in the browser; no third-party QR service).
 
 ## Content pipeline
 
@@ -35,7 +35,7 @@ Manual upload ─────────┴─► Playbook
   processPlaybookStructure  course design → Course + Modules + Lessons (pending); old courses archived, never deleted
 Content Studio (/admin/studio/:playbookId)
   generateLessonContent     teaching script, summary, key points, examples, 6 MCQs, 5 flashcards
-  generateLessonMedia       narrated video: slides designed from the playbook chapter (pluggable provider, off by default)
+  generateLessonMedia       slide video rendered with FFmpeg from the playbook chapter; voice-over optional (MEDIA_PROVIDER, off by default)
   generateAssessment        module test (15) · course assessment (50) · certification (60)
   processMeeting            meeting transcript → notes, decisions, requirements, action items (see Meetings)
   Approve All → Publish     learners see it at /courses
@@ -44,11 +44,11 @@ Learners → lessons → chapter tests → final test → certificate (/verify/:
 
 All AI-generated content starts as `pending_review` and is invisible to learners until an admin approves it.
 
-**AI** — Claude through `@anthropic-ai/sdk` (`ANTHROPIC_MODEL`, default `claude-opus-5`) with structured JSON outputs, adaptive thinking, streaming, and server-side refusal fallbacks enabled. With `AI_ENABLED=false`, extraction and course structure still work (heuristic chapter/section detection). Lesson content and test generation need the model.
+**AI** — `AI_PROVIDER=gemini` (default; Google Gemini over its REST API, `GEMINI_API_KEY`, `GEMINI_MODEL` defaulting to `gemini-3.8-flash` from `apps/api/src/config.js`) or `ollama` (`OLLAMA_BASE_URL` + `OLLAMA_MODEL`), with an optional `AI_FALLBACK_PROVIDER`. Responses are requested as structured JSON and validated. There is no Anthropic/Claude adapter: `AI_PROVIDER=anthropic` is not implemented. A course batch stopped by Gemini's daily quota is resumed automatically after the quota resets (the batch resumer runs with the other background jobs; `JOBS_ENABLED=false` turns them off). With `AI_ENABLED=false`, extraction and course structure still work (heuristic chapter/section detection). Lesson content and test generation need the model.
 
 **Lesson videos** follow a teaching order per lesson type (concept, deep dive, example, architecture, demonstration, revision). Each scene's slide is designed from the playbook chapter in the layout that suits it — points, steps, checklist, a quoted rule, definition, do/don't, decision, table, timeline or code — and names its playbook section. Rules and code shown as the playbook's own words are checked against the chapter text; anything not found there is shown as plain points instead (`apps/api/src/pipeline/videoPlan.js`). **Rebuild slides** in the review screen redesigns the slides of an existing video without recording new narration.
 
-**Media** — `MEDIA_PROVIDER=none` by default: lessons show a gradient placeholder and learners can listen to the script via browser text-to-speech. Providers plug in under `apps/api/src/media/`.
+**Media** — `MEDIA_PROVIDER=none` by default: no recorded narration, and learners can listen to the script via browser text-to-speech. `gemini`, `google`, `elevenlabs` or `piper` record a voice-over; providers live under `apps/api/src/media/`.
 
 ## Retention: review, notifications, recertification
 
@@ -64,7 +64,7 @@ The logic lives in `packages/shared` (`review.js`, `recert.js`, `notifications.j
 
 Teams meeting transcripts become meeting notes. Admins choose a **Meetings folder** in Dropbox (`/admin/integrations`); every sync turns the transcripts in it — the Word (`.docx`) download Teams offers, `.vtt` or `.txt` — into Meetings, never playbooks, even when the folder sits inside the playbook folder. Admins can also upload a transcript on the Meetings page (`POST /api/meetings/upload`).
 
-`processMeeting` parses the transcript into speakers and timestamps (`packages/shared/src/meetings.js` reads the Teams Word layout, WebVTT and plain "Name: text" notes) and analyses it. With AI on, Claude writes the purpose, summary, key ideas, decisions, requirements, action items (owner, due date resolved against the meeting date, priority, the exact quote and its time), open questions and risks; a long meeting is analysed in parts and merged. With AI off, keyword rules find likely action items and decisions (`Meeting.analysis_method` says which). Participation (turns, words, talk time) is computed from the transcript.
+`processMeeting` parses the transcript into speakers and timestamps (`packages/shared/src/meetings.js` reads the Teams Word layout, WebVTT and plain "Name: text" notes) and analyses it. With AI on, the configured model writes the purpose, summary, key ideas, decisions, requirements, action items (owner, due date resolved against the meeting date, priority, the exact quote and its time), open questions and risks; a long meeting is analysed in parts and merged. With AI off, keyword rules find likely action items and decisions (`Meeting.analysis_method` says which). Participation (turns, words, talk time) is computed from the transcript.
 
 Action items are `ActionItem` rows matched to accounts by the owner's name. Notes start in review; `publishMeeting` shows them to every signed-in user, notifies them, and tells each owner what is theirs. Owners can change only the status of their own items; admins edit everything, and reprocessing keeps items a person edited or added. The daily job reminds owners the day before an item is due and once it is overdue. Deleting a meeting deletes its transcript and action items. A transcript changed in Dropbox is reprocessed and goes back to review.
 
@@ -105,12 +105,12 @@ cp apps/api/.env.example apps/api/.env     # fill in what you need (all optional
 npm run dev                                 # API :4000 + web :5173
 ```
 
-Open http://localhost:5173 and register — the first account is admin.
+Open http://localhost:5173 and register — in development the first account is admin.
 
-- **AI:** set `AI_ENABLED=true` and `ANTHROPIC_API_KEY`.
+- **AI:** set `AI_ENABLED=true` and `GEMINI_API_KEY` (or `AI_PROVIDER=ollama` with `OLLAMA_BASE_URL` and `OLLAMA_MODEL`).
 - **Dropbox:** create an app in the Dropbox App Console. Register the redirect URI, then set `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET` and `TOKEN_ENCRYPTION_KEY`. Connect from `/admin/integrations`.
-- **Production:** set `DATABASE_URL` (Postgres), `NODE_ENV=production`, `COOKIE_SECURE=true` and `APP_ORIGIN`. Serve `apps/web/dist` and the API behind one domain.
+- **Production:** set `DATABASE_URL` (Postgres), `NODE_ENV=production`, `COOKIE_SECURE=true`, `APP_ORIGIN` and `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD`. Serve `apps/web/dist` and the API behind one domain.
 - **UI without a server:** `VITE_BACKEND=demo npm run dev:web`.
-- **Tests:** `npm test -w @academy/api`.
+- **Tests:** `npm test -w @academy/api` (246 tests; nothing calls a paid API or sends mail).
 
 Email: with the default `EMAIL_PROVIDER=log` nothing leaves the server — reset links appear in the API log for an operator to hand over, and admin invites return a one-time temporary password. Set `EMAIL_PROVIDER=resend` or `smtp` to deliver them (and notifications) by email.

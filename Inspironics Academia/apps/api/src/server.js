@@ -87,6 +87,7 @@ startScheduler();
 startJobs();
 startJobWorker().catch((err) => log.error('jobs.worker_start_failed', { error: err.message }));
 startStorageMaintenance();
+startBatchResumer(); // restarts course batches stopped by the AI provider's daily quota
 
 const sessionSweep = setInterval(() => purgeExpiredSessions().catch(() => {}), 3600_000);
 sessionSweep.unref();
@@ -100,6 +101,7 @@ async function shutdown(signal) {
   stopJobs();
   stopJobWorker();
   stopStorageMaintenance();
+  stopBatchResumer();
   server.close();
   await closeDb();
   process.exit(0);

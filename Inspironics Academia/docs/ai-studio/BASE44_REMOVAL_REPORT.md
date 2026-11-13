@@ -1,5 +1,7 @@
 # Base44 removal report
 
+> **Historical note (2026-11-13):** this document describes the state at the time it was written. Academia's AI providers in the current code are **Google Gemini (default) and Ollama only**; there is no Anthropic/Claude adapter. See `AI_PROVIDER_SETUP.md` for the current setup.
+
 Status on 2026-11-10: **Base44 is no longer used anywhere in the Apex code.** No code, configuration, package or test references it. The only mentions left are in documentation: `BASE44_DEPENDENCY_AUDIT.md` (this migration's audit) and `docs/BUILD_SPEC.md` (the original spec, marked historical).
 
 ## Summary

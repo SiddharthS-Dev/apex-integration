@@ -300,14 +300,21 @@ export async function resumeStoppedBatches({ now = new Date() } = {}) {
 }
 
 let resumeTimer = null;
-export function startBatchResumer(intervalMs = 15 * 60_000) {
-  if (resumeTimer) return;
+let resumeFirstTick = null;
+/** Started by server.js with the other background jobs; JOBS_ENABLED=false keeps it off. */
+export function startBatchResumer(intervalMs = 15 * 60_000, { enabled = config.jobsEnabled } = {}) {
+  if (resumeTimer || !enabled) return false;
   const tick = () => resumeStoppedBatches().catch((err) => log.warn('pipeline.course_batch.resume_failed', { error: errMsg(err) }));
   resumeTimer = setInterval(tick, intervalMs);
   resumeTimer.unref();
-  setTimeout(tick, 30_000).unref();
+  resumeFirstTick = setTimeout(tick, 30_000);
+  resumeFirstTick.unref();
+  return true;
 }
 export function stopBatchResumer() {
   clearInterval(resumeTimer);
+  clearTimeout(resumeFirstTick);
   resumeTimer = null;
+  resumeFirstTick = null;
 }
+export const batchResumerRunning = () => resumeTimer !== null;

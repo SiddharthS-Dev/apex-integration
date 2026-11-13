@@ -2,7 +2,7 @@
 
 Reference specification for the platform. Sections are numbered as in the original master build prompt.
 
-> **Runtime note (historical document):** the platform no longer runs on Base44. The data model, RLS rules and pipeline behaviour below still hold. They are now served by our own API (`apps/api`) and shared contracts (`packages/shared`), and playbooks can also come from Dropbox sync — see the top-level README. Base44 references below describe the original design only; the retired Base44 code was removed and remains available in git history.
+> **Runtime note (historical document):** the platform no longer runs on Base44. The data model, RLS rules and pipeline behaviour below still hold. They are now served by our own API (`apps/api`) and shared contracts (`packages/shared`), and playbooks can also come from Dropbox sync — see the top-level README. Base44 references below describe the original design only; the retired Base44 code was removed and remains available in git history. Package and service choices listed here (the npm allow-list, the api.qrserver.com QR code) are no longer current: unused packages were removed and certificate QR codes are now generated in the browser.
 
 ## 1. Mission
 

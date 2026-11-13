@@ -12,10 +12,10 @@ Academia API (Express)
   ├─ functions/routes.js   POST /api/functions/:name   (pipeline functions; sets the generation context)
   ├─ studio/routes.js      /api/studio/*               (admin: generate, voice, projects, jobs, usage, limits)
   │
-  ├─ ai/index.js           AI provider router ──► providers/anthropic.js  (Claude, official SDK)
-  │                                           ├► providers/gemini.js     (Gemini REST)
+  ├─ ai/index.js           AI provider router ──► providers/gemini.js     (Gemini REST, default)
   │                                           └► providers/ollama.js     (optional, self-hosted)
-  ├─ media/index.js        Voice provider router ─► providers/google-tts.js · elevenlabs.js · piper.js
+  │                        (no Anthropic/Claude adapter: not implemented)
+  ├─ media/index.js        Voice provider router ─► providers/gemini-tts.js · google-tts.js · elevenlabs.js · piper.js
   ├─ media/video/          Video engine: slides.js (SVG templates) → resvg (PNG) → ffmpeg.js (MP4)
   │                        renderer.js (scene cache, subtitles, thumbnail) · subtitleGenerator.js (SRT/VTT)
   ├─ jobs/queue.js         Background job queue (database-backed) for renders

@@ -182,11 +182,13 @@ test('a disabled account can neither sign in nor get a reset link', async () => 
 test('rate limits: repeated sign-in attempts and sensitive requests are throttled per client', async () => {
   const attacker = client('10.9.9.9');
   let last;
-  for (let i = 0; i < 11; i++) last = await attacker.req('POST', '/auth/login', { email: 'learner@example.com', password: `guess-${i}-xxxx` });
+  // Targets an address other tests don't sign in with: ten failures also lock that email for 15 minutes
+  // whatever the IP (per-account lockout, covered in authHardening.test.js).
+  for (let i = 0; i < 11; i++) last = await attacker.req('POST', '/auth/login', { email: 'target@example.com', password: `guess-${i}-xxxx` });
   assert.equal(last.status, 429);
   assert.match(last.data.error, /Too many sign-in attempts/);
   assert.ok(Number(last.headers.get('retry-after')) > 0);
-  assert.equal((await client().req('POST', '/auth/login', { email: 'learner@example.com', password: 'Learner-pass-123' })).status, 200, 'other clients are unaffected');
+  assert.equal((await client().req('POST', '/auth/login', { email: 'learner@example.com', password: 'Learner-pass-123' })).status, 200, 'other clients and accounts are unaffected');
 
   const spammer = client('10.9.9.10');
   const codes = [];

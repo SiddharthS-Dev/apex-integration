@@ -3,7 +3,7 @@ import { log } from '../lib/logger.js';
 
 // Email transports. `log` writes the message to the server log (development, and the fallback that
 // keeps password-reset links reachable by an operator); `resend` posts to the Resend HTTP API;
-// `smtp` sends through nodemailer, an optional dependency loaded only when selected.
+// `smtp` sends through nodemailer (an API dependency, imported only when that transport is selected).
 
 const PROVIDERS = ['log', 'resend', 'smtp'];
 
@@ -33,18 +33,20 @@ async function sendResend(msg) {
   return { id: data.id || '' };
 }
 
+/** The nodemailer module (loaded lazily so the log and Resend transports never touch it). */
+export async function loadNodemailer() {
+  try {
+    const mod = await import('nodemailer');
+    return mod.default || mod;
+  } catch {
+    throw new Error('EMAIL_PROVIDER=smtp needs the nodemailer package: npm install nodemailer -w @academy/api');
+  }
+}
+
 let smtpTransport;
 async function sendSmtp(msg) {
   if (!config.email.smtpUrl) throw new Error('SMTP_URL is not set');
-  if (!smtpTransport) {
-    let nodemailer;
-    try {
-      nodemailer = (await import('nodemailer')).default;
-    } catch {
-      throw new Error('EMAIL_PROVIDER=smtp needs the nodemailer package: npm install nodemailer -w @academy/api');
-    }
-    smtpTransport = nodemailer.createTransport(config.email.smtpUrl);
-  }
+  if (!smtpTransport) smtpTransport = (await loadNodemailer()).createTransport(config.email.smtpUrl);
   const info = await smtpTransport.sendMail({ from: config.email.from, to: msg.to, subject: msg.subject, text: msg.text, html: msg.html || undefined });
   return { id: info.messageId || '' };
 }

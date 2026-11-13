@@ -4,44 +4,31 @@ AI text generation (playbook extraction, course design, lessons, assessments, me
 
 ## Choose a provider
 
+The router (`apps/api/src/ai/index.js`) has two adapters: `PROVIDERS = { gemini, ollama }`.
+
 | `AI_PROVIDER` | Needs | Cost estimate in the dashboard |
 |---|---|---|
-| `anthropic` (recommended) | `ANTHROPIC_API_KEY` | Built in (Anthropic list prices) |
-| `gemini` | `GEMINI_API_KEY`, `GEMINI_MODEL` | Set `AI_PRICE_INPUT_PER_MTOK` / `AI_PRICE_OUTPUT_PER_MTOK` |
+| `gemini` (default) | `GEMINI_API_KEY` (`GEMINI_MODEL` optional) | Built in (Gemini list prices, `usage/pricing.js`) |
 | `ollama` | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | $0 (self-hosted) |
 | `none` | — | AI features are off |
 
-Also set `AI_ENABLED=true`. Optionally set `AI_FALLBACK_PROVIDER` to a second configured provider: it takes over when the primary is rate-limited, unavailable or its credentials are rejected (never for a bad request, a refusal or malformed output). Every fallback is logged (`ai.fallback`) and appears in the generation history.
+**Anthropic / Claude is not implemented.** There is no Anthropic adapter and no `@anthropic-ai/sdk` dependency; `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` are ignored, and any `AI_PROVIDER` value other than `gemini` or `ollama` is treated as `none`. (Earlier versions of these docs described a Claude adapter; the current code has none.)
 
-## Anthropic (Claude)
+Also set `AI_ENABLED=true`. Optionally set `AI_FALLBACK_PROVIDER` to the other configured provider: it takes over when the primary is rate-limited, unavailable or its credentials are rejected (never for a bad request, a refusal or malformed output). Every fallback is logged (`ai.fallback`) and appears in the generation history.
 
-1. Create an API key in the Claude Console (Settings → API keys) for your organisation.
+## Google Gemini (default)
+
+1. Create a key in Google AI Studio (https://aistudio.google.com/apikey), or a Google Cloud project with the Generative Language API.
 2. In `apps/api/.env`:
    ```
    AI_ENABLED=true
-   AI_PROVIDER=anthropic
-   ANTHROPIC_API_KEY=sk-ant-...
-   ANTHROPIC_MODEL=claude-opus-5-5
-   ```
-   `claude-opus-5-5` is the default (current Opus). Any current model ID works, e.g. `claude-sonnet-5-5` or `claude-haiku-5-5` for lower cost; the choice is yours.
-3. Restart the API. The startup log line `api.listening` shows `ai_config: { provider: 'anthropic', ready: true, model: ... }`.
-
-How calls are made: the official `@anthropic-ai/sdk`, streamed (`finalMessage()`), structured JSON via `output_config.format`, adaptive thinking, and server-side refusal fallbacks (`fallbacks: "default"`), so a policy decline is re-run on a suitable model inside the same call. The SDK retries 408/409/429/5xx and connection errors. Prices used for estimates (USD per million tokens, checked 2026-11-03): Opus 5.5 $4 / $20, Sonnet 5.5 $2 / $10, Haiku 5.5 $0.10 / $0.50 (see `usage/pricing.js`).
-
-## Google Gemini
-
-1. Create a key in Google AI Studio (or a Google Cloud project with the Generative Language API).
-2. In `apps/api/.env`:
-   ```
-   AI_PROVIDER=gemini            # or keep anthropic and use AI_FALLBACK_PROVIDER=gemini
+   AI_PROVIDER=gemini
    GEMINI_API_KEY=...
-   GEMINI_MODEL=<the Gemini model id your account uses>
-   AI_PRICE_INPUT_PER_MTOK=<your price>
-   AI_PRICE_OUTPUT_PER_MTOK=<your price>
+   GEMINI_MODEL=gemini-3.8-flash   # optional; this is the default (DEFAULT_GEMINI_MODEL in src/config.js)
    ```
-3. Restart the API.
+3. Restart the API. The startup log line `api.listening` shows `ai_config: { provider: 'gemini', ready: true, model: ... }`.
 
-Structured output uses `responseMimeType: application/json` with `responseSchema`. If Gemini rejects a schema, the request is repeated with the schema stated in the prompt, and the router validates the result either way.
+Calls go to the Gemini REST API (`GEMINI_BASE_URL`, default `https://generativelanguage.googleapis.com/v1beta`) with plain `fetch`, no SDK. Rate limits and overload (429/503) are retried with exponential backoff (`GEMINI_MAX_ATTEMPTS`, `GEMINI_TIMEOUT_SECONDS`). Structured output uses `responseMimeType: application/json` with `responseSchema`. If Gemini rejects a schema, the request is repeated with the schema stated in the prompt, and the router validates the result either way. A course batch stopped by the daily quota is resumed automatically after the quota resets (08:00 UTC).
 
 ## Ollama (optional)
 
@@ -59,7 +46,7 @@ Structured output uses Ollama's `format` (JSON schema).
 
 ## Checking it works
 
-- AI Studio → the header chip shows "AI text: anthropic · claude-opus-5-5".
+- AI Studio → the header chip shows "AI text: gemini · gemini-3.8-flash" (or your `GEMINI_MODEL`).
 - AI Studio → Content → generate a short summary from pasted text.
 - AI Studio → History shows the request with its tokens and estimated cost.
 

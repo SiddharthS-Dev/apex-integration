@@ -9,8 +9,8 @@ All endpoints are under the Academia API (`/api`, or `/academia/api` through the
 `GET /api/studio/config`:
 ```json
 {
-  "ai": { "provider": "anthropic", "enabled": true, "ready": true, "model": "claude-opus-5-5", "fallback": null, "fallbackReady": null,
-          "providers": [{ "name": "anthropic", "model": "claude-opus-5-5" }] },
+  "ai": { "provider": "gemini", "enabled": true, "ready": true, "model": "gemini-3.8-flash", "fallback": null, "fallbackReady": null,
+          "providers": [{ "name": "gemini", "model": "gemini-3.8-flash" }] },
   "voice": { "enabled": true, "default_provider": "google", "providers": ["google"], "defaults": { "provider": "google", "voice": "", "language": "en-IN", "rate": 1, "pitch": 0 } },
   "video": { "enabled": true, "provider": "ffmpeg", "width": 1280, "height": 720 },
   "content_types": [{ "key": "lesson_summary", "label": "Lesson summary", "format": "markdown" }],
@@ -27,7 +27,7 @@ All endpoints are under the Academia API (`/api`, or `/academia/api` through the
 ```
 - `content_type`: `lesson_content`, `course_description`, `learning_objectives`, `lesson_summary`, `assessment`, `question_bank`, `meeting_summary`, `playbook_extraction`, `playbook_structure` or `custom` (custom requires `instructions`).
 - Source: `source_text`, or `source` = lesson (its playbook chapter), meeting (notes and action items) or playbook (its chapters). Without either, the request has no source.
-- `provider`: optional, must be a configured provider. `fresh: true` bypasses the content cache.
+- `provider`: optional, must be a configured provider (`gemini` or `ollama`; there is no Anthropic adapter). `fresh: true` bypasses the content cache.
 - Returns `{ content_type, format: "markdown" | "json", output, provider, ms }`. JSON types return `{ questions: [...] }`, `{ chapters: [...] }` or `{ modules: [...] }`.
 
 ## Voice

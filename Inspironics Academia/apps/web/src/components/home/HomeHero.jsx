@@ -24,7 +24,7 @@ export default function HomeHero({ user }) {
         </h1>
         <p className="mt-4 text-muted-foreground text-base sm:text-lg">
           Inspironics Engineering Academy transforms our engineering playbooks into structured learning paths,
-          AI-narrated video lessons and assessments — so every engineer can learn the way we build.
+          narrated slide videos and assessments — so every engineer can learn the way we build.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Button asChild size="lg">

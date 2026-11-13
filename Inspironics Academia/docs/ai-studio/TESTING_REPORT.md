@@ -1,5 +1,7 @@
 # Testing report: Base44 removal and AI Studio
 
+> **Historical note (2026-11-13):** this document describes the state at the time it was written. Academia's AI providers in the current code are **Google Gemini (default) and Ollama only**; there is no Anthropic/Claude adapter. See `AI_PROVIDER_SETUP.md` for the current setup.
+
 Run on 2026-11-10 on the development laptop (Windows 11, Node 22.23, 8 logical CPUs, 7.8 GB RAM). Automated tests use **mocked provider APIs**: no paid API was called. Everything below was executed; nothing is reported as passed without having run.
 
 ## Automated tests

@@ -23,7 +23,7 @@ The Base44 audit (November 2026) traced almost all integration-credit use to:
 | **Stop on limits** | always | A usage limit or exhausted credits (402/429) is not retried; the batch stops instead of failing every remaining lesson. |
 | **Usage limits** | none set | Daily AI requests, monthly AI budget (USD, estimated), monthly voice-over characters, monthly render minutes. When reached, new paid requests are refused with a clear message; existing content is unaffected. Admins edit them in AI Studio. |
 | **Usage dashboard and history** | always | Real totals by kind and provider, cached and failed counts, budget remaining, and every request with its tokens, characters, render seconds and estimated cost. |
-| **Provider choice** | — | Use a lower-cost model or provider for routine work (`ANTHROPIC_MODEL`, per-request provider in AI Studio, `AI_FALLBACK_PROVIDER`). |
+| **Provider choice** | — | Use a lower-cost model or provider for routine work (`GEMINI_MODEL`, e.g. a Flash-Lite model, per-request provider in AI Studio, `AI_FALLBACK_PROVIDER`). |
 
 ## Expected effect (estimates, not measurements)
 
@@ -36,7 +36,7 @@ The Base44 audit (November 2026) traced almost all integration-credit use to:
 | Sync adding N new playbooks | N × 1–3 AI requests | 0 AI requests (AI on demand) |
 | A batch hitting a credit/usage limit | Every remaining lesson attempted | Stops at the first refusal |
 
-AI text billing on Anthropic is per token, so prompt size matters too. The pipelines send only what each step needs (chapter text capped at 40,000 characters; course design batches six chapters at a time), and the prices used for estimates are in `apps/api/src/usage/pricing.js`.
+AI text billing on Gemini is per token, so prompt size matters too. The pipelines send only what each step needs (chapter text capped at 40,000 characters; course design batches six chapters at a time), and the prices used for estimates are in `apps/api/src/usage/pricing.js`.
 
 ## Recommended settings
 

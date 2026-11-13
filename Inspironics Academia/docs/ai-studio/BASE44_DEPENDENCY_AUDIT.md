@@ -1,5 +1,7 @@
 # Base44 Dependency Audit
 
+> **Historical note (2026-11-13):** this document describes the state at the time it was written. Academia's AI providers in the current code are **Google Gemini (default) and Ollama only**; there is no Anthropic/Claude adapter. See `AI_PROVIDER_SETUP.md` for the current setup.
+
 Phase A of the Base44 removal: audit of the whole `E:\apex` monorepo (Inspironics Academia, SlidesVault, Innovation Showcase, the Apex gateway). Audit run 2026-11-10, before any Base44 code was changed.
 
 ## 1. Summary

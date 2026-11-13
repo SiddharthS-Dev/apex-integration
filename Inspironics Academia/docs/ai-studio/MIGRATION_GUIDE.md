@@ -1,5 +1,7 @@
 # Migration guide: from Base44 to the independent AI Studio
 
+> **Historical note (2026-11-13):** this document describes the state at the time it was written. Academia's AI providers in the current code are **Google Gemini (default) and Ollama only**; there is no Anthropic/Claude adapter. See `AI_PROVIDER_SETUP.md` for the current setup.
+
 For whoever deploys or runs Inspironics Academia after the Base44 removal.
 
 ## What changes for users
