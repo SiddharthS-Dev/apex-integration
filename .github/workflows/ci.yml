@@ -1,0 +1,135 @@
+# Apex CI: the gateway and all three products, on every push and pull request.
+#
+# GitHub only runs workflows from the repository root, so this replaces the
+# per-product workflow that used to live in inspironics-innovation-showcase/.github
+# (which never ran here — audit F-002).
+name: CI
+
+on:
+  push:
+    branches: [main, 'Feature-**', 'feature-**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  gateway:
+    name: Apex gateway
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apex } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}' }
+      - name: Syntax
+        run: for f in *.mjs; do node --check "$f"; done
+      - name: Unit tests
+        run: npm test
+
+  academia:
+    name: Inspironics Academia
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: 'Inspironics Academia' } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: npm
+          cache-dependency-path: 'Inspironics Academia/package-lock.json'
+      - run: npm ci
+      - name: API tests
+        run: npm test -w @academy/api
+      - name: Web build
+        run: npm run build -w @academy/web
+      - name: Dependency advisories (production, high and above)
+        run: npm audit --omit=dev --audit-level=high
+
+  showcase:
+    name: Innovation Showcase
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: inspironics-innovation-showcase } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: npm
+          cache-dependency-path: inspironics-innovation-showcase/package-lock.json
+      - run: npm ci
+      - name: Shared contracts
+        run: npm test -w @inspironics/shared
+      - name: API tests
+        run: npm test -w @inspironics/api
+      - name: Web architecture boundaries
+        run: npm run lint:arch -w @inspironics/web
+      - name: Web types
+        run: npm run typecheck -w @inspironics/web
+      - name: Web tests
+        run: npm test -w @inspironics/web
+      - name: Ecosystem routes resolve
+        run: npm run check:routes -w @inspironics/web
+      - name: Environment contract
+        run: npm run check:env -w @inspironics/web
+      - name: Production build and payload budget
+        run: npm run build -w @inspironics/web
+      - name: Dependency advisories (production, high and above)
+        run: npm audit --omit=dev --audit-level=high
+
+  slidesvault:
+    name: SlidesVault
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: 'slide vault' } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: npm
+          cache-dependency-path: 'slide vault/package-lock.json'
+      - run: npm ci
+      - name: API tests (unit, integration, end-to-end)
+        run: npm test
+      - name: Web build
+        run: npm run build
+      - name: Dependency advisories (production, high and above)
+        run: npm audit --omit=dev --audit-level=high
+
+  slidesvault-image:
+    name: SlidesVault API image
+    runs-on: ubuntu-latest
+    needs: slidesvault
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker build
+        working-directory: 'slide vault'
+        run: docker build -f apps/api/Dockerfile -t slidesvault-api:ci .
+
+  postgres:
+    name: Postgres mode (SlidesVault migrations)
+    runs-on: ubuntu-latest
+    continue-on-error: true  # first runs against Postgres; promote to required once green
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: ci, POSTGRES_DB: apex }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DB_DRIVER: postgres
+      DATABASE_URL: postgres://postgres:ci@localhost:5432/apex
+      # A throwaway 32-byte key: the config refuses to start without one.
+      DROPBOX_TOKEN_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}' }
+      - name: SlidesVault migrations on Postgres
+        working-directory: 'slide vault'
+        run: npm ci && npm run migrate

@@ -1,5 +1,11 @@
 # Final production-readiness report
 
+> **Correction (13 November 2026).** Item 5 below describes Anthropic support as if it applied to the
+> Academia. It does not: the Academia's AI router implements **Gemini and Ollama only**
+> (`Inspironics Academia/apps/api/src/ai/index.js`, `PROVIDERS = { gemini, ollama }`). Anthropic is used by
+> the Innovation Showcase and SlidesVault. The jsPDF and dependency items in §4 were fixed in `da776b6`.
+> See `docs/architecture/APEX_FULL_AUDIT_REPORT.md` for the current state.
+
 **Scope:** Base44 removal (Academia and SlidesVault), the independent AI Content & Video Studio
 (Academia), and the Dropbox storage optimisation (Academia, SlidesVault, Showcase).
 **Branch:** `feature-classification-personas` @ `ce2366e`, with all work uncommitted.
