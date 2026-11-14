@@ -30,7 +30,7 @@ export function createApp(deps) {
   app.use(cookieParser())
   app.use('/api', originGuard(config))
   app.use('/api', rateLimit({ windowMs: 60_000, max: config.isProd ? 1200 : 20_000, bucket: 'api', metrics }))
-  app.use('/api', loadSession({ config, repos }))
+  app.use('/api', loadSession({ config, repos, log }))
 
   app.get('/api/health', async (req, res) => {
     let db = 'ok'

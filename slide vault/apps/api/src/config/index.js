@@ -8,6 +8,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ISSUER, parseIdentityMode, parseKeys, parseTrustedSources } from '../http/apexIdentity.js';
+
+/**
+ * This application's audience in Apex identity assertions. Fixed, not
+ * configurable: any other value would accept assertions meant for another app.
+ */
+export const IDENTITY_AUDIENCE = 'slidesvault';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const SERVER_ROOT = path.resolve(HERE, '..', '..');
@@ -202,6 +209,14 @@ export function buildConfig(env = process.env) {
       auditLogDays: int(env.RETENTION_AUDIT_LOG_DAYS, 365),
     },
 
+    /**
+     * Apex identity assertion (X-Apex-Identity from the gateway; R1 identity
+     * contract §4.4). 'off' unless APEX_IDENTITY_MODE says optional|required.
+     * Any other value is a startup error and runs as 'required', so a typo can
+     * never switch the check off.
+     */
+    identity: identityConfig(env),
+
     metricsEnabled: bool(env.METRICS_ENABLED, true),
     rateLimit: {
       windowMs: int(env.RATE_LIMIT_WINDOW_SECONDS, 60) * 1000,
@@ -220,6 +235,20 @@ export function buildConfig(env = process.env) {
     : path.join(SERVER_ROOT, cfg.objectStore.dir);
 
   return Object.freeze(cfg);
+}
+
+function identityConfig(env) {
+  const parsed = parseIdentityMode(env.APEX_IDENTITY_MODE, 'off');
+  const audience = String(env.APEX_IDENTITY_AUDIENCE ?? '').trim();
+  return {
+    mode: parsed ?? 'required',
+    modeInvalid: parsed === null,
+    issuer: String(env.APEX_IDENTITY_ISSUER ?? '').trim() || ISSUER,
+    audience: IDENTITY_AUDIENCE,
+    audienceMismatch: Boolean(audience) && audience !== IDENTITY_AUDIENCE,
+    keys: parseKeys(String(env.APEX_IDENTITY_KEYS ?? '')),
+    trustedSources: parseTrustedSources(String(env.APEX_IDENTITY_TRUSTED_SOURCES ?? '').trim() || 'loopback'),
+  };
 }
 
 /** Decodes an encryption key from hex or base64, or returns null if malformed. */
@@ -309,6 +338,26 @@ export function validateConfig(cfg) {
       'AI_ENABLED is true but ANTHROPIC_API_KEY is missing — title resolution falls back to ' +
         'deterministic extraction only.'
     );
+  }
+
+  const identity = cfg.identity;
+  if (identity) {
+    if (identity.modeInvalid) {
+      errors.push('APEX_IDENTITY_MODE must be off, optional or required.');
+    }
+    if (identity.mode !== 'off' && identity.keys.size === 0) {
+      errors.push(
+        'APEX_IDENTITY_MODE is on but APEX_IDENTITY_KEYS holds no usable key — every assertion would be refused.'
+      );
+    }
+    if (identity.audienceMismatch) {
+      errors.push(`APEX_IDENTITY_AUDIENCE must be "${IDENTITY_AUDIENCE}" for SlidesVault.`);
+    }
+    if (identity.trustedSources.invalid.length) {
+      errors.push(
+        `APEX_IDENTITY_TRUSTED_SOURCES has entries that are not an IP, a CIDR or "loopback": ${identity.trustedSources.invalid.join(', ')}`
+      );
+    }
   }
 
   return { errors, warnings };

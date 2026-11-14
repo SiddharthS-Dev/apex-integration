@@ -95,6 +95,45 @@ export class UserRepository {
     return this.findById(id);
   }
 
+  /** The local user an Apex (Core) user id was created for. Never looked up by email. */
+  async findByCoreUserId(coreUserId) {
+    return this.db.queryOne('SELECT * FROM app_user WHERE core_user_id = ?', [String(coreUserId)]);
+  }
+
+  /**
+   * A passwordless local user for a Core user seen for the first time
+   * (identity assertion). Always a new row: an existing account with the same
+   * email is never reused — that would hand it to whoever controls the Core
+   * account. The asserted email is kept when no local account has it;
+   * otherwise a placeholder that cannot receive mail stands in. The role column
+   * is the base role and is never changed from the assertion: asserted roles
+   * apply per request only.
+   */
+  async createFromCore({ coreUserId, email, fullName = '' }) {
+    const wanted =
+      typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim()) ? email.trim().toLowerCase() : '';
+    const placeholder = `core-${String(coreUserId).toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 80)}@apex.invalid`;
+    const candidates = wanted && !(await this.findByEmail(wanted)) ? [wanted, placeholder] : [placeholder];
+    for (const address of candidates) {
+      const timestamp = now();
+      const id = crypto.randomUUID();
+      try {
+        await this.db.execute(
+          `INSERT INTO app_user (id, email, full_name, role, password_hash, status, created_at, updated_at, core_user_id)
+           VALUES (?, ?, ?, ?, '', 'active', ?, ?, ?)`,
+          [id, address, String(fullName || '').slice(0, 120), ROLES.USER, timestamp, timestamp, String(coreUserId)]
+        );
+        return this.findById(id);
+      } catch (error) {
+        // A parallel request created it first, or the email was taken meanwhile.
+        const existing = await this.findByCoreUserId(coreUserId);
+        if (existing) return existing;
+        if (address === candidates[candidates.length - 1]) throw error;
+      }
+    }
+    return null;
+  }
+
   async setPassword(id, password) {
     await this.db.execute('UPDATE app_user SET password_hash = ?, updated_at = ? WHERE id = ?', [
       await hashPassword(password),

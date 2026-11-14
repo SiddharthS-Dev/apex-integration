@@ -7,6 +7,7 @@
  * server check is policy (spec §47).
  */
 import { UserRepository } from '../db/repositories/userRepository.js';
+import { IdentityError } from './identity.js';
 
 export const ROLE = { ADMIN: 'admin', USER: 'user' };
 
@@ -26,8 +27,15 @@ export function clientIp(req) {
 /**
  * Resolves the session cookie into req.user. Never rejects — routes decide
  * whether anonymous is acceptable.
+ *
+ * With Apex identity assertion on (`identity`, from ./identity.js; mode
+ * optional|required), a verified X-Apex-Identity header decides req.user and
+ * req.identity instead, and that does reject: a present-but-invalid header is
+ * 401, no role is 403, and in required mode a non-public /api request without
+ * one is 401. The cookie is consulted only in optional mode, and only when no
+ * header is present. Off (the default) changes nothing.
  */
-export function attachUser({ sessions, users, cookieName, activityTouchMs = 5 * 60_000 }) {
+export function attachUser({ sessions, users, cookieName, activityTouchMs = 5 * 60_000, identity = null }) {
   // Users whose last_active_at write is in flight, so a burst of parallel
   // requests from one page load does not become a burst of UPDATEs.
   const touching = new Set();
@@ -42,10 +50,40 @@ export function attachUser({ sessions, users, cookieName, activityTouchMs = 5 * 
       .finally(() => touching.delete(user.id));
   };
 
-  return async (req, _res, next) => {
+  const gate = identity && identity.mode !== 'off' ? identity : null;
+
+  return async (req, res, next) => {
     req.user = null;
     req.sessionToken = null;
+    req.identity = null;
     try {
+      if (gate && gate.isApi(req.path)) {
+        let asserted;
+        try {
+          asserted = await gate.authenticate(req);
+        } catch (error) {
+          if (!(error instanceof IdentityError)) throw error;
+          res.status(error.status).json({ error: error.message, code: error.code });
+          return;
+        }
+        if (asserted) {
+          touchActivity(asserted.row);
+          // The role is this request's only; app_user.role is never touched.
+          req.user = { ...UserRepository.sanitize(asserted.row), role: asserted.role };
+          req.identity = asserted.claims;
+          return next();
+        }
+        if (gate.mode === 'required') {
+          if (gate.isPublic(req.path)) return next();
+          res.status(401).json({ error: 'Sign in through Apex to continue.', code: 'APEX_IDENTITY_REQUIRED' });
+          return;
+        }
+      }
+
+      // In required mode the legacy cookie session is never consulted, on any path or spelling:
+      // only a verified assertion identifies anyone.
+      if (gate && gate.mode === 'required') return next();
+
       const token = req.cookies?.[cookieName];
       if (!token) return next();
 

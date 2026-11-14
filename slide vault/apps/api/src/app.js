@@ -10,6 +10,7 @@ import cookieParser from 'cookie-parser';
 
 import { securityHeaders, cors } from './http/security.js';
 import { attachUser } from './http/auth.js';
+import { createIdentityGate } from './http/identity.js';
 import { errorHandler, notFoundHandler } from './http/errors.js';
 import { createRateLimiter, byUserOrIp } from './http/rateLimit.js';
 import { M } from './services/metrics/metrics.js';
@@ -80,6 +81,8 @@ export function createApp(container) {
       users: container.users,
       cookieName: config.session.cookieName,
       activityTouchMs: config.analytics.activityTouchMinutes * 60_000,
+      // Apex identity assertion; inert while APEX_IDENTITY_MODE is off (the default).
+      identity: createIdentityGate({ config, users: container.users, logger }),
     })
   );
 

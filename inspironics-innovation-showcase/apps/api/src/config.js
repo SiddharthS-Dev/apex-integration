@@ -9,6 +9,10 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ISSUER, parseIdentityMode, parseKeys, parseTrustedSources } from './lib/apexIdentity.js'
+
+/** This application's audience in Apex identity assertions. Fixed: a different value would accept another app's assertions. */
+export const IDENTITY_AUDIENCE = 'showcase'
 
 const API_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -160,6 +164,13 @@ export function loadConfig(env = process.env) {
       claudeSkillsSince: since(env.CLAUDE_SKILLS_SINCE, '2026-10-07T00:00:00.000Z'),
     },
 
+    /**
+     * Apex identity assertion (X-Apex-Identity from the gateway). 'off' unless
+     * APEX_IDENTITY_MODE says optional|required; anything else is a startup
+     * error and runs as 'required', so a typo never switches the check off.
+     */
+    identity: identityConfig(env),
+
     ai: {
       enabled: bool(env.AI_ENABLED, false) && !!str(env.ANTHROPIC_API_KEY),
       requested: bool(env.AI_ENABLED, false),
@@ -170,6 +181,20 @@ export function loadConfig(env = process.env) {
 
   config.problems = validate(config)
   return config
+}
+
+function identityConfig(env) {
+  const parsed = parseIdentityMode(env.APEX_IDENTITY_MODE, 'off')
+  const sources = parseTrustedSources(str(env.APEX_IDENTITY_TRUSTED_SOURCES, 'loopback'))
+  return {
+    mode: parsed ?? 'required',
+    modeInvalid: parsed === null,
+    issuer: str(env.APEX_IDENTITY_ISSUER, ISSUER),
+    audience: IDENTITY_AUDIENCE,
+    audienceMismatch: !!str(env.APEX_IDENTITY_AUDIENCE) && str(env.APEX_IDENTITY_AUDIENCE) !== IDENTITY_AUDIENCE,
+    keys: parseKeys(str(env.APEX_IDENTITY_KEYS)),
+    trustedSources: sources,
+  }
 }
 
 /** Dropbox paths are '' for the root, otherwise '/lower/or/Mixed' with no trailing slash. */
@@ -193,5 +218,10 @@ function validate(c) {
   need(c.dropbox.appKey && c.dropbox.appSecret, 'warn', 'DROPBOX_APP_KEY / DROPBOX_APP_SECRET are not set — Dropbox cannot be connected.')
   need(!c.ai.requested || c.ai.apiKey, 'warn', 'AI_ENABLED is true but ANTHROPIC_API_KEY is empty — AI stays off.')
   need(!c.isProd || c.publicUrl.startsWith('https://') || c.publicUrl.includes('localhost'), 'warn', 'PUBLIC_API_URL is not https.')
+  const id = c.identity
+  need(!id.modeInvalid, 'error', 'APEX_IDENTITY_MODE must be off, optional or required — running as required until it is fixed.')
+  need(id.mode === 'off' || id.keys.size > 0, 'error', 'APEX_IDENTITY_MODE is on but APEX_IDENTITY_KEYS holds no usable key — every assertion will be refused.')
+  need(!id.audienceMismatch, 'error', `APEX_IDENTITY_AUDIENCE must be "${IDENTITY_AUDIENCE}" for this app.`)
+  need(!id.trustedSources.invalid.length, 'error', `APEX_IDENTITY_TRUSTED_SOURCES has entries that are not an IP, a CIDR or "loopback": ${id.trustedSources.invalid.join(', ')}`)
   return problems
 }

@@ -135,6 +135,12 @@ The backend's own identity, so RBAC is enforced server-side.
 
 - `app_user` — `email` is **unique**; `password_hash` is scrypt with its
   parameters embedded (`scrypt$N$r$p$salt$hash`); `role` is `admin` or `user`.
+  `core_user_id` (migration 005, nullable, **unique** where set) is the Apex
+  Core user an account was created for by identity assertion; such accounts
+  have an empty `password_hash` and cannot sign in with a password. Asserted
+  roles are never written to `role`. Rollback:
+  `npm run migrate -- --rollback 005_core_user_id` drops the index and the
+  column and removes the `schema_migrations` row; no other data is touched.
 - `user_session` — `token_hash` is **unique** and holds a SHA-256; the cookie
   carries the raw value. `expires_at` and `revoked_at` are both honoured.
 - `login_history` — one row per sign-in attempt, successful or not.

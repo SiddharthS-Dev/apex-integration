@@ -53,6 +53,41 @@ export function createUsersRepo(db) {
       await db.run(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, [...keys.map((k) => patch[k]), id])
     },
 
+    /** The local user an Apex (Core) user id was created for — never found by email. */
+    findByCoreUserId: (coreUserId) => db.get(`SELECT ${USER_COLS}, core_user_id FROM users WHERE core_user_id = ?`, [coreUserId]),
+
+    /**
+     * A passwordless local user for a Core user seen for the first time
+     * (identity assertion). It is always a new row: an existing account with
+     * the same email is never reused — that would hand it to whoever controls
+     * the Core account. The asserted email is kept when no local account has it;
+     * otherwise a placeholder that cannot receive mail stands in. The role
+     * column is the base role and is never changed from the assertion: asserted
+     * roles apply per request only.
+     */
+    async createFromCore({ coreUserId, email, name }) {
+      const wanted = typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) ? email.trim().toLowerCase() : ''
+      const placeholder = `core-${String(coreUserId).toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 80)}@apex.invalid`
+      const candidates = wanted && !(await db.get('SELECT id FROM users WHERE email = ?', [wanted])) ? [wanted, placeholder] : [placeholder]
+      for (const address of candidates) {
+        const id = randomId()
+        try {
+          await db.run(
+            `INSERT INTO users (id, email, name, password_hash, role, verified, provider, created_at, core_user_id)
+             VALUES (?, ?, ?, NULL, ?, 1, 'apex', ?, ?)`,
+            [id, address, (name || address.split('@')[0]).slice(0, 120), ROLES.VIEWER, nowIso(), coreUserId]
+          )
+          return db.get(`SELECT ${USER_COLS}, core_user_id FROM users WHERE id = ?`, [id])
+        } catch (error) {
+          // A parallel request created it first, or the email was taken meanwhile.
+          const existing = await db.get(`SELECT ${USER_COLS}, core_user_id FROM users WHERE core_user_id = ?`, [coreUserId])
+          if (existing) return existing
+          if (address === candidates[candidates.length - 1]) throw error
+        }
+      }
+      return null
+    },
+
     list: () => db.all(`SELECT ${USER_COLS} FROM users WHERE role <> ? ORDER BY created_at`, [ROLES.GUEST]),
 
     async countAdmins() {

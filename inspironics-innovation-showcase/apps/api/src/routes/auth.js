@@ -130,6 +130,15 @@ export function authRoutes({ config, repos, metrics, log }) {
     return expose ? code : null
   }
 
+  /**
+   * In Apex identity 'required' mode the Core is the only sign-in: every way of
+   * signing in, registering or resetting a password here answers 403.
+   */
+  const legacyOnly = (req, res, next) =>
+    config.identity?.mode === 'required'
+      ? next(new HttpError(403, 'Sign in through Apex — this app no longer has its own sign-in.', 'APEX_SIGNIN_ONLY'))
+      : next()
+
   /* ------------------------------------------------------------ public -- */
 
   r.get('/config', (req, res) => {
@@ -146,7 +155,8 @@ export function authRoutes({ config, repos, metrics, log }) {
     route(async (req, res) => {
       if (!req.user) return res.json({ session: null })
       // an already signed-in viewer on an admin-less dev install claims it too
-      if (await claimsFirstAdmin(req.user)) {
+      // never for an asserted identity: its role comes from the Core, per request, and is not stored
+      if (!req.identity && (await claimsFirstAdmin(req.user))) {
         await repos.users.update(req.user.id, { role: ROLES.ADMIN })
         req.user = { ...req.user, role: ROLES.ADMIN }
         log.info('No administrator yet: promoted the signed-in account (development)', { email: req.user.email })
@@ -157,6 +167,7 @@ export function authRoutes({ config, repos, metrics, log }) {
 
   r.post(
     '/register',
+    legacyOnly,
     limiter,
     route(async (req, res) => {
       if (!config.auth.allowRegistration) throw new HttpError(403, 'Registration is closed — ask an administrator for an account.')
@@ -185,6 +196,7 @@ export function authRoutes({ config, repos, metrics, log }) {
 
   r.post(
     '/resend',
+    legacyOnly,
     limiter,
     route(async (req, res) => {
       const email = normaliseEmail(field(req.body, 'email', { max: 254 }))
@@ -196,6 +208,7 @@ export function authRoutes({ config, repos, metrics, log }) {
 
   r.post(
     '/verify',
+    legacyOnly,
     limiter,
     route(async (req, res) => {
       const email = normaliseEmail(field(req.body, 'email', { max: 254 }))
@@ -211,6 +224,7 @@ export function authRoutes({ config, repos, metrics, log }) {
 
   r.post(
     '/login',
+    legacyOnly,
     limiter,
     route(async (req, res) => {
       const email = normaliseEmail(field(req.body, 'email', { max: 254 }))
@@ -247,6 +261,7 @@ export function authRoutes({ config, repos, metrics, log }) {
 
   r.post(
     '/google',
+    legacyOnly,
     limiter,
     route(async (req, res) => {
       let profile
@@ -284,6 +299,7 @@ export function authRoutes({ config, repos, metrics, log }) {
 
   r.post(
     '/guest',
+    legacyOnly,
     limiter,
     route(async (req, res) => {
       if (!config.auth.guestEnabled) throw new HttpError(403, 'Guest access is disabled.')
@@ -293,6 +309,7 @@ export function authRoutes({ config, repos, metrics, log }) {
 
   r.post(
     '/forgot',
+    legacyOnly,
     limiter,
     route(async (req, res) => {
       const email = normaliseEmail(field(req.body, 'email', { max: 254 }))
@@ -307,6 +324,7 @@ export function authRoutes({ config, repos, metrics, log }) {
 
   r.post(
     '/reset',
+    legacyOnly,
     limiter,
     route(async (req, res) => {
       const email = normaliseEmail(field(req.body, 'email', { max: 254 }))

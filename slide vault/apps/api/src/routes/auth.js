@@ -48,8 +48,21 @@ export function createAuthRouter({ config, users, sessions, loginHistory, audit,
     message: 'Too many sign-in attempts. Try again in a few minutes.',
   });
 
+  /**
+   * In Apex identity 'required' mode the Core is the only sign-in: this app's
+   * own password, Google and registration routes answer 403.
+   */
+  const legacyOnly = (req, res, next) => {
+    if (config.identity?.mode === 'required') {
+      res.status(403).json({ error: 'Sign in through Apex — SlidesVault no longer has its own sign-in.', code: 'APEX_SIGNIN_ONLY' });
+      return;
+    }
+    next();
+  };
+
   router.post(
     '/login',
+    legacyOnly,
     sourceLimiter,
     accountLimiter,
     loginLimiter,
@@ -125,6 +138,7 @@ export function createAuthRouter({ config, users, sessions, loginHistory, audit,
   /** Sends the browser to Google. A redirect, not JSON, so it is a plain link. */
   router.get(
     '/google/start',
+    legacyOnly,
     asyncHandler(async (req, res) => {
       const { url } = await googleAuth.buildAuthUrl({
         redirectAfter: optionalString(req.query.next, 'next', { maxLength: 300 }) || '',
@@ -142,6 +156,7 @@ export function createAuthRouter({ config, users, sessions, loginHistory, audit,
    */
   router.get(
     '/google/callback',
+    legacyOnly,
     asyncHandler(async (req, res) => {
       const backToLogin = (message) =>
         res.redirect(`${config.appBaseUrl}/login?error=${encodeURIComponent(message)}`);
@@ -223,6 +238,7 @@ export function createAuthRouter({ config, users, sessions, loginHistory, audit,
    */
   router.post(
     '/register',
+    legacyOnly,
     asyncHandler(async (req, res) => {
       const email = requireEmail(req.body?.email);
       const password = requireString(req.body?.password, 'password', { minLength: 10, maxLength: 200 });

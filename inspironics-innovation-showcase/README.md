@@ -212,6 +212,30 @@ explicit `COOKIE_SECURE=false`, is allowed with a warning), never returns dev co
   `VITE_GOOGLE_CLIENT_ID` enables real Google sign-in; set the same value as `GOOGLE_CLIENT_ID` on
   the API, which verifies the credential server-side.
 
+### Apex identity assertion (R1)
+
+Behind the Apex gateway the API can take its user from the gateway's signed `X-Apex-Identity`
+header instead of its own sign-in (`APEX_IDENTITY_MODE`, set by `apex/run.mjs`; default `off`):
+
+- `off` — the header is ignored; everything above works exactly as before.
+- `optional` — a valid assertion is that user; a present-but-invalid one is `401`; no header falls
+  back to the session cookie.
+- `required` — every `/api` route except `/api/health` and the routes that are public today
+  (`/api/auth/config`, `/api/auth/session`, `/api/auth/logout`, `/api/entities/plates/count`,
+  `/api/dropbox/oauth/callback`) needs a valid assertion; register, verify, resend, login, Google,
+  guest, forgot and reset all answer `403`.
+
+The verifier (`apps/api/src/lib/apexIdentity.js`) is a byte-for-byte copy of the gateway's
+`apex/identity.mjs` — a test fails if they drift. It checks format, key id, signature (constant
+time), issuer, audience `showcase`, expiry (`iat` at most 30 s ahead, at most 120 s of life) and that
+the request's TCP peer is in `APEX_IDENTITY_TRUSTED_SOURCES` (default `loopback`). The local account
+is the linked one (`app_user_id`), else the one with that `core_user_id`, else a new passwordless one
+— never an existing account found by email. The role applies to that request only and is never
+stored: `platform_admin` or `app_admin` for `showcase` is admin, any other role is viewer, no role is
+`403`. Migration `002_core_user_id` adds the nullable unique `users.core_user_id`; roll it back with
+`node apps/api/src/db/migrate.js --rollback 002_core_user_id`. Operations: `docs/operations/IDENTITY_ASSERTION.md`
+in the Apex repository.
+
 No mail is sent. With `EXPOSE_DEV_CODES=true` (development only) verification and reset codes are
 returned to the client and shown on screen — never an administrator's reset code. Otherwise the
 screen tells the user to ask their administrator, and (outside production) the code is written to

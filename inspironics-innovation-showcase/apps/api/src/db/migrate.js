@@ -41,6 +41,29 @@ export async function migrate(db, log) {
   }
 }
 
+/**
+ * Reverts one migration: runs its `down` SQL and forgets it in
+ * schema_migrations, in one transaction. Only the most recently applied
+ * migration can be reverted, and only one that ships a `down`.
+ *
+ *   node src/db/migrate.js --rollback 002_core_user_id
+ */
+export async function rollbackMigration(db, id, log) {
+  const m = MIGRATIONS.find((x) => x.id === id)
+  if (!m?.down) throw new Error(`Migration ${id} has no rollback.`)
+  const applied = (await db.all('SELECT id FROM schema_migrations')).map((r) => r.id)
+  if (!applied.includes(id)) return false
+  const later = MIGRATIONS.slice(MIGRATIONS.indexOf(m) + 1).filter((x) => applied.includes(x.id))
+  if (later.length) throw new Error(`Roll back ${later.map((x) => x.id).join(', ')} first.`)
+  const sql = typeof m.down === 'string' ? m.down : m.down[db.dialect]
+  await db.transaction(async (tx) => {
+    for (const st of statements(sql)) await tx.run(st)
+    await tx.run('DELETE FROM schema_migrations WHERE id = ?', [id])
+  })
+  log?.info('Rolled back migration', { id })
+  return true
+}
+
 async function waitForLock(db) {
   for (let i = 0; i < 60; i++) {
     const lock = await db.tryLock('schema-migrations', 60_000)
@@ -55,7 +78,14 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const config = loadConfig()
   const log = createLogger({ level: 'info' })
   const db = await openDatabase(config, log)
-  const applied = await migrate(db, log)
-  log.info(applied.length ? `Applied ${applied.length} migration(s)` : 'Schema is up to date')
+  const at = process.argv.indexOf('--rollback')
+  if (at > 0) {
+    const id = process.argv[at + 1]
+    const done = await rollbackMigration(db, id, log)
+    log.info(done ? `Rolled back ${id}` : `${id} is not applied; nothing to roll back`)
+  } else {
+    const applied = await migrate(db, log)
+    log.info(applied.length ? `Applied ${applied.length} migration(s)` : 'Schema is up to date')
+  }
   await db.close()
 }

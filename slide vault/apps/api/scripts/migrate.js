@@ -8,6 +8,7 @@
  */
 import { config, validateConfig } from '../src/config/index.js';
 import { createDatabase } from '../src/db/index.js';
+import { rollbackMigration } from '../src/db/migrations.js';
 import { createLogger } from '../src/util/logger.js';
 
 const cfg = config();
@@ -21,4 +22,12 @@ if (errors.length) {
 
 const db = await createDatabase(cfg, logger);
 logger.info('Migrations applied', { driver: cfg.db.driver });
+
+// npm run migrate -- --rollback 005_core_user_id   reverts the latest migration (see docs/SCHEMA.md)
+const at = process.argv.indexOf('--rollback');
+if (at > 0) {
+  const id = process.argv[at + 1];
+  const done = await rollbackMigration(db, id, logger);
+  logger.info(done ? 'Migration rolled back' : 'Migration was not applied; nothing to roll back', { migration: id });
+}
 await db.close();
