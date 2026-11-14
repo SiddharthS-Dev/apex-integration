@@ -10,7 +10,9 @@
     "dev": "node --watch --env-file-if-exists=.env src/server.js",
     "start": "node --env-file-if-exists=.env src/server.js",
     "migrate": "node --env-file-if-exists=.env src/db/migrate-cli.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "core:grant-admin": "node --env-file-if-exists=.env src/core/cli/grant-admin.js",
+    "core:rollback-identity": "node --env-file-if-exists=.env src/core/cli/rollback-identity.js"
   },
   "dependencies": {
     "@academy/shared": "*",

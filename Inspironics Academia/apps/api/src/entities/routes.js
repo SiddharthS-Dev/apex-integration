@@ -10,6 +10,7 @@ import { store } from '../repo/store.js';
 import { ignoreDropboxIds, removePlaybooks } from '../pipeline/deletePlaybooks.js';
 import { classificationPatch, propagateCategory } from '../pipeline/classifyPlaybooks.js';
 import { createScope } from './categoryScope.js';
+import { auditUserAdmin, setUserRole } from '../core/index.js';
 
 // Generic entity REST API with row-level security enforced server-side from the shared RLS rules.
 //   GET    /api/entities/:name?q=<json>&sort=&limit=&skip=
@@ -85,16 +86,25 @@ userRouter.patch('/:id', asyncHandler(async (req, res) => {
     if (!AUDIENCE_KEYS.includes(req.body.audience)) throw badRequest(`audience must be one of: ${AUDIENCE_KEYS.join(', ')}`);
     patch.audience = req.body.audience;
   }
-  const user = await updateUser(req.params.id, patch);
+  if (!(await findUserById(req.params.id))) throw notFound();
+  // users.role and the Core platform_admin assignment change together, in one transaction (R1 §1).
+  if (patch.role !== undefined) await setUserRole(req.params.id, patch.role, { actorUserId: req.user.id, ip: req.ip });
+  const { role: _role, ...rest } = patch;
+  const user = await updateUser(req.params.id, rest);
   if (!user) throw notFound();
   if (patch.disabled) await destroyUserSessions(user.id);
+  if (patch.disabled !== undefined) {
+    await auditUserAdmin(patch.disabled ? 'user.disabled' : 'user.enabled', { actorUserId: req.user.id, targetId: user.id, ip: req.ip });
+  }
   res.json(publicUser(user));
 }));
 
 userRouter.delete('/:id', asyncHandler(async (req, res) => {
   if (req.user?.role !== 'admin') throw forbidden();
   if (req.params.id === req.user.id) throw badRequest('You cannot delete your own account');
-  await deleteUser(req.params.id);
+  const existed = await findUserById(req.params.id);
+  await deleteUser(req.params.id); // Core rows owned by the user go with it (ON DELETE CASCADE)
+  if (existed) await auditUserAdmin('user.deleted', { actorUserId: req.user.id, targetId: req.params.id, ip: req.ip });
   res.json({ success: true });
 }));
 

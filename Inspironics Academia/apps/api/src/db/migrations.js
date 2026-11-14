@@ -172,6 +172,118 @@ const CORE_MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_jobs_ref ON jobs(ref_type, ref_id)
     `,
   },
+  {
+    // APEX Core identity (R1 contract §1, ADR 0001/0003/0004): organisations, memberships, scoped and
+    // dated role assignments, reviewed identity links, external sign-in identities and an append-only
+    // audit log. Real constraints, not generic entities. No existing table is altered, so dropping these
+    // six tables (src/core/cli/rollback-identity.js) restores the pre-R1 schema exactly.
+    // Statements are split on ';' — none may appear inside a statement. Valid on SQLite and Postgres.
+    id: '008_core_identity',
+    sql: () => `
+      CREATE TABLE IF NOT EXISTS organizations (
+        id TEXT PRIMARY KEY,
+        slug TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('internal', 'partner', 'institution')),
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS organization_memberships (
+        id TEXT PRIMARY KEY,
+        organization_id TEXT NOT NULL REFERENCES organizations(id),
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title TEXT,
+        valid_from TEXT NOT NULL,
+        valid_to TEXT,
+        created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        CHECK (valid_to IS NULL OR valid_to >= valid_from)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_org_memberships_active ON organization_memberships(organization_id, user_id) WHERE valid_to IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_org_memberships_user ON organization_memberships(user_id);
+      CREATE TABLE IF NOT EXISTS role_assignments (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK (role IN ('platform_admin', 'org_admin', 'staff', 'assessor', 'app_admin', 'learner', 'mentor', 'student', 'intern', 'alumni')),
+        scope_type TEXT NOT NULL CHECK (scope_type IN ('platform', 'organization', 'app')),
+        scope_id TEXT NOT NULL DEFAULT '',
+        valid_from TEXT NOT NULL,
+        valid_to TEXT,
+        granted_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        granted_via TEXT NOT NULL CHECK (granted_via IN ('api', 'migration', 'cli')),
+        revoked_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL,
+        CHECK ((scope_type = 'platform' AND scope_id = '') OR (scope_type <> 'platform' AND scope_id <> '')),
+        CHECK (scope_type <> 'app' OR scope_id IN ('showcase', 'slidesvault')),
+        CHECK (
+          (role = 'platform_admin' AND scope_type = 'platform')
+          OR (role IN ('org_admin', 'staff') AND scope_type = 'organization')
+          OR (role = 'app_admin' AND scope_type = 'app')
+          OR (role IN ('assessor', 'learner', 'mentor', 'student', 'intern', 'alumni') AND scope_type IN ('platform', 'organization'))
+        ),
+        CHECK (valid_to IS NULL OR valid_to >= valid_from)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_role_assignments_active ON role_assignments(user_id, role, scope_type, scope_id) WHERE valid_to IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_role_assignments_user ON role_assignments(user_id);
+      CREATE INDEX IF NOT EXISTS idx_role_assignments_scope ON role_assignments(scope_type, scope_id);
+      CREATE TABLE IF NOT EXISTS identity_links (
+        id TEXT PRIMARY KEY,
+        core_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        app TEXT NOT NULL CHECK (app IN ('showcase', 'slidesvault')),
+        app_user_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('proposed', 'confirmed', 'rejected')),
+        evidence TEXT NOT NULL CHECK (evidence IN ('admin_review', 'import_consistent', 'possession')),
+        proposed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        proposed_at TEXT NOT NULL,
+        reviewed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        reviewed_at TEXT,
+        note TEXT,
+        CHECK (status = 'proposed' OR reviewed_at IS NOT NULL)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_identity_links_app_user ON identity_links(app, app_user_id) WHERE status <> 'rejected';
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_identity_links_confirmed ON identity_links(core_user_id, app) WHERE status = 'confirmed';
+      CREATE INDEX IF NOT EXISTS idx_identity_links_status ON identity_links(status);
+      CREATE TABLE IF NOT EXISTS external_identities (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK (provider IN ('google')),
+        subject TEXT NOT NULL,
+        verified_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (provider, subject)
+      );
+      CREATE INDEX IF NOT EXISTS idx_external_identities_user ON external_identities(user_id);
+      CREATE TABLE IF NOT EXISTS audit_events (
+        id TEXT PRIMARY KEY,
+        at TEXT NOT NULL,
+        actor_user_id TEXT,
+        actor_kind TEXT NOT NULL CHECK (actor_kind IN ('user', 'gateway', 'system', 'cli')),
+        action TEXT NOT NULL,
+        target_type TEXT,
+        target_id TEXT,
+        organization_id TEXT,
+        detail TEXT,
+        ip TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_audit_events_at ON audit_events(at);
+      CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events(action, at);
+      CREATE INDEX IF NOT EXISTS idx_audit_events_target ON audit_events(target_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_events_org ON audit_events(organization_id)
+    `,
+  },
+  {
+    // Security review L1: when the Core ends a user's sessions (password change or reset, disable), the
+    // gateway must end the Apex session too. resolve returns valid_after; older Apex sessions are revoked.
+    id: '009_user_session_epochs',
+    sql: () => `
+      CREATE TABLE IF NOT EXISTS user_session_epochs (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        valid_after TEXT NOT NULL
+      )
+    `,
+  },
 ];
 
 async function existingColumns(db, table) {
@@ -205,11 +317,13 @@ async function reconcileEntityTables(db) {
   }
 }
 
-export async function migrate(db) {
+// `exclude` (tests only) skips the named core/data migrations, e.g. to build a pre-R1 database.
+export async function migrate(db, { exclude = [] } = {}) {
+  const skip = new Set(exclude);
   await db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)');
   const applied = new Set((await db.query('SELECT id FROM schema_migrations')).map((r) => r.id));
   for (const m of CORE_MIGRATIONS) {
-    if (applied.has(m.id)) continue;
+    if (applied.has(m.id) || skip.has(m.id)) continue;
     await db.transaction(async (tx) => {
       for (const stmt of m.sql(db.dialect).split(';').map((s) => s.trim()).filter(Boolean)) await tx.exec(stmt);
       await tx.run('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)', [m.id, new Date().toISOString()]);
@@ -217,5 +331,5 @@ export async function migrate(db) {
     log.info('db.migration_applied', { id: m.id });
   }
   await reconcileEntityTables(db);
-  await runDataMigrations(db);
+  await runDataMigrations(db, { exclude: skip });
 }

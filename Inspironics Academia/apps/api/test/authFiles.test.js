@@ -71,7 +71,7 @@ after(async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('registration validates input and only the first or bootstrap account is admin', async () => {
+test('registration validates input and only the first account is admin (never by email)', async () => {
   const c = client();
   assert.equal((await c.req('POST', '/auth/register', { email: 'not-an-email', password: 'Valid-pass-123' })).status, 400);
   assert.equal((await c.req('POST', '/auth/register', { email: 'weak@example.com', password: 'short' })).status, 400);
@@ -81,7 +81,7 @@ test('registration validates input and only the first or bootstrap account is ad
   assert.equal(user.data.user.role, 'user');
   assert.equal(user.data.user.password_hash, undefined, 'never returned');
   const boss = await client().req('POST', '/auth/register', { email: 'boss@example.com', password: 'Boss-pass-1234' });
-  assert.equal(boss.data.user.role, 'admin', 'BOOTSTRAP_ADMIN_EMAIL is admin');
+  assert.equal(boss.data.user.role, 'user', 'registering with BOOTSTRAP_ADMIN_EMAIL does not grant admin (security review L3)');
 });
 
 test('sign in, who-am-I, sign out — and wrong passwords are refused and recorded', async () => {

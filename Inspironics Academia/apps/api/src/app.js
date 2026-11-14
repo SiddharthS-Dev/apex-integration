@@ -13,6 +13,7 @@ import syncRoutes from './sync/routes.js';
 import notifyRoutes from './notify/routes.js';
 import meetingRoutes from './meetings/routes.js';
 import studioRoutes from './studio/routes.js';
+import { coreRoutes } from './core/index.js';
 import { renderingAvailable } from './media/video/renderer.js';
 import { emailConfigured, emailProvider } from './notify/mailer.js';
 import { metrics } from './http/metrics.js';
@@ -21,7 +22,9 @@ import { cors, errorHandler, notFoundHandler, originCheck, requestLog, securityH
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 'loopback');
+  // Which proxy may report the browser's address in X-Forwarded-For. Loopback (the gateway on this host)
+  // by default; in containers the gateway's fixed internal IP (TRUST_PROXY, set by apex/run.mjs or compose).
+  app.set('trust proxy', (process.env.TRUST_PROXY || '').trim() || 'loopback');
 
   app.use(securityHeaders);
   app.use(cors);
@@ -62,6 +65,7 @@ export function createApp() {
   app.use('/api/sync', syncRoutes);
   app.use('/api/notifications', notifyRoutes);
   app.use('/api/studio', studioRoutes);
+  app.use('/api/core', coreRoutes); // APEX Core identity (R1)
 
   app.use('/api', notFoundHandler);
   app.use(errorHandler);

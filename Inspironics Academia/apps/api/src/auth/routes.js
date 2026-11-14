@@ -12,6 +12,7 @@ import { hashPassword, randomToken, sha256, validatePassword, verifyPassword } f
 import { createSession, destroySession, destroyUserSessions, requireAdmin, requireUser } from './sessions.js';
 import { emailConfigured } from '../notify/mailer.js';
 import { sendAccountEmail } from '../notify/index.js';
+import { onUserCreated } from '../core/index.js';
 
 const router = express.Router();
 
@@ -34,8 +35,12 @@ router.post('/register', sensitiveLimiter, asyncHandler(async (req, res) => {
   const firstAdmin = config.allowFirstUserAdmin && (await countUsers()) === 0;
   if (!config.allowRegistration && !firstAdmin) throw forbidden('Registration is closed. Ask an administrator for an invite.');
   if (await findUserByEmail(email)) throw badRequest('An account with this email already exists');
-  const role = firstAdmin || (config.bootstrapAdminEmail && email === config.bootstrapAdminEmail) ? 'admin' : 'user';
+  // Registration never grants admin by email (security review L3: the address is unverified, so whoever
+  // registered it first would own the platform). The bootstrap admin is created at startup from
+  // BOOTSTRAP_ADMIN_EMAIL + BOOTSTRAP_ADMIN_PASSWORD, or with the break-glass CLI.
+  const role = firstAdmin ? 'admin' : 'user';
   const user = await createUser({ email, fullName, role, passwordHash: await hashPassword(password) });
+  await onUserCreated(user, { ip: req.ip });
   await createSession(res, user, req);
   await recordLogin({ userId: user.id, email, success: true, reason: 'register', ip: req.ip, userAgent: req.get('user-agent') });
   log.info('auth.registered', { userId: user.id, role });
@@ -173,6 +178,7 @@ router.post('/invite', requireAdmin, asyncHandler(async (req, res) => {
   if (await findUserByEmail(email)) throw badRequest('A user with this email already exists');
   const temporaryPassword = randomToken(9);
   const user = await createUser({ email, role, audience, fullName: req.body?.full_name, passwordHash: await hashPassword(temporaryPassword) });
+  await onUserCreated(user, { actorUserId: req.user.id, ip: req.ip });
   let emailSent = false;
   if (emailConfigured()) {
     const link = await passwordLink(user.id, 7 * 24 * 3600_000);

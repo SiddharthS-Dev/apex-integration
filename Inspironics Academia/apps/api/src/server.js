@@ -19,6 +19,7 @@ import { get as getEntity, list as listEntities, update as updateEntity } from '
 import { lessonLockName } from './pipeline/util.js';
 import { createUser, findUserByEmail } from './repo/users.js';
 import { hashPassword, validatePassword } from './auth/passwords.js';
+import { onUserCreated } from './core/index.js';
 
 // Temp files of this process and its children (FFmpeg, SQLite) go to TEMP_PROCESSING_DIR when set.
 const tempInfo = setupProcessTemp();
@@ -37,7 +38,8 @@ async function bootstrapAdmin() {
   if (!email || !password || (await findUserByEmail(email))) return;
   const problem = validatePassword(password);
   if (problem) return log.warn('auth.bootstrap_admin_refused', { reason: problem });
-  await createUser({ email, fullName: config.bootstrapAdminName, role: 'admin', passwordHash: await hashPassword(password) });
+  const user = await createUser({ email, fullName: config.bootstrapAdminName, role: 'admin', passwordHash: await hashPassword(password) });
+  await onUserCreated(user); // Inspironics membership + staff + platform_admin (R1, ADR 0004)
   log.info('auth.bootstrap_admin_created', { email });
 }
 // A sync killed by a restart stays 'running' in sync_log; close it out unless a live run (possibly on

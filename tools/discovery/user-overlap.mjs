@@ -24,6 +24,9 @@
  *      and only to a folder outside this repository.
  *   5. Deletes the snapshot folder.
  *
+ * R1: each account also carries its app user id (appUserId) so tools/identity/propose-links.mjs can
+ * propose reviewed links; the printed summary never contains ids, emails or names.
+ *
  * Node 22.5+ (node:sqlite), no dependencies.
  */
 import { DatabaseSync } from 'node:sqlite'
@@ -43,7 +46,7 @@ export const APPS = [
     id: 'academia',
     db: 'Inspironics Academia/apps/api/data/academy.db',
     table: 'users',
-    cols: { email: 'email', name: 'full_name', role: 'role', created: 'created_date', lastLogin: 'last_login_at' },
+    cols: { id: 'id', email: 'email', name: 'full_name', role: 'role', created: 'created_date', lastLogin: 'last_login_at' },
     extra: ['disabled', 'password_hash', 'audience'],
     active: (r) => !Number(r.disabled),
     admin: (r) => r.role === 'admin',
@@ -53,7 +56,7 @@ export const APPS = [
     id: 'showcase',
     db: 'inspironics-innovation-showcase/apps/api/data/app.db',
     table: 'users',
-    cols: { email: 'email', name: 'name', role: 'role', created: 'created_at', lastLogin: 'last_login_at' },
+    cols: { id: 'id', email: 'email', name: 'name', role: 'role', created: 'created_at', lastLogin: 'last_login_at' },
     extra: ['disabled', 'password_hash', 'provider', 'verified'],
     active: (r) => !Number(r.disabled),
     admin: (r) => r.role === 'admin',
@@ -63,7 +66,7 @@ export const APPS = [
     id: 'slidesvault',
     db: 'slide vault/apps/api/data/slidesvault.db',
     table: 'app_user',
-    cols: { email: 'email', name: 'full_name', role: 'role', created: 'created_at', lastLogin: 'last_login_at' },
+    cols: { id: 'id', email: 'email', name: 'full_name', role: 'role', created: 'created_at', lastLogin: 'last_login_at' },
     extra: ['status', 'password_hash'],
     active: (r) => String(r.status || 'active') === 'active',
     admin: (r) => r.role === 'admin',
@@ -104,6 +107,7 @@ export function readAccounts(app, dbFile) {
       missingColumns: missing,
       accounts: rows.map((r) => ({
         app: app.id,
+        appUserId: r[app.cols.id] == null ? null : String(r[app.cols.id]),
         email: r[app.cols.email] ?? '',
         name: r[app.cols.name] ?? '',
         role: r[app.cols.role] ?? '',
@@ -222,7 +226,7 @@ export function run({ root = REPO_ROOT, apps = APPS, workDir, detailDir, summary
   const sources = {}
   try {
     for (const app of apps) {
-      const copy = snapshot(path.join(root, app.db), work, app.id)
+      const copy = snapshot(path.resolve(root, app.db), work, app.id) // app.db may be absolute (R1 propose-links)
       if (!copy) {
         sources[app.id] = { status: 'database not found', path: app.db }
         accountsByApp[app.id] = []

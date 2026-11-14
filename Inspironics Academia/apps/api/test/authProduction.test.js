@@ -54,10 +54,10 @@ test('the first self-registered account in production is an ordinary user', asyn
   assert.equal(r.data.user.role, 'user');
 });
 
-test('the bootstrap admin email still becomes admin', async () => {
+test('registering with the bootstrap admin email does not grant admin (security review L3)', async () => {
   const r = await register({ email: 'boss@example.com', password: 'Boss-pass-1234' });
   assert.equal(r.status, 201);
-  assert.equal(r.data.user.role, 'admin');
+  assert.equal(r.data.user.role, 'user');
 });
 
 test('ALLOW_FIRST_USER_ADMIN=true restores first-user-admin in production', () => {
