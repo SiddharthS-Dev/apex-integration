@@ -33,6 +33,11 @@ jobs:
       - name: Discovery tools (R0 user overlap report, fixture data only)
         working-directory: tools/discovery
         run: node --test user-overlap.test.mjs
+      - name: Staging tooling (secret generation, smoke helpers, compose consistency)
+        working-directory: deploy/staging
+        run: |
+          for f in *.mjs; do node --check "$f"; done
+          node --test staging.test.mjs
 
   academia:
     name: Inspironics Academia
@@ -136,3 +141,100 @@ jobs:
       - name: SlidesVault migrations on Postgres
         working-directory: 'slide vault'
         run: npm ci && npm run migrate
+
+  core-postgres:
+    name: Postgres mode (Core migrations incl. 008, identity rollback drill; Showcase migrations)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: ci, POSTGRES_DB: postgres }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Throwaway databases on a throwaway server; nothing here is a real credential.
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: ci
+      CORE_DB: postgres://postgres:ci@localhost:5432/core_ci
+      SHOWCASE_DB: postgres://postgres:ci@localhost:5432/showcase_ci
+      CORE_TABLES: "'organizations','organization_memberships','role_assignments','identity_links','external_identities','audit_events','user_session_epochs'"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}' }
+      - name: Create the throwaway databases
+        run: psql -v ON_ERROR_STOP=1 -d postgres -c 'CREATE DATABASE core_ci' -c 'CREATE DATABASE showcase_ci'
+      - name: Install (Academia)
+        working-directory: 'Inspironics Academia'
+        run: npm ci
+      - name: Core migrations on Postgres 16, twice (the second run must be a no-op)
+        working-directory: 'Inspironics Academia/apps/api'
+        env: { DATABASE_URL: '${{ env.CORE_DB }}' }
+        run: |
+          node --disable-warning=ExperimentalWarning src/db/migrate-cli.js
+          node --disable-warning=ExperimentalWarning src/db/migrate-cli.js
+      - name: R1 migrations (008, 009) and core_identity_backfill recorded, seven Core tables, Inspironics organisation
+        run: |
+          test "$(psql -d core_ci -tAc "SELECT count(*) FROM schema_migrations WHERE id IN ('008_core_identity','009_user_session_epochs','core_identity_backfill')")" = 3
+          test "$(psql -d core_ci -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ($CORE_TABLES)")" = 7
+          test "$(psql -d core_ci -tAc "SELECT count(*) FROM organizations WHERE slug='inspironics' AND kind='internal'")" = 1
+      - name: Identity rollback drill (core:rollback-identity on this throwaway database), then re-apply
+        working-directory: 'Inspironics Academia/apps/api'
+        env: { DATABASE_URL: '${{ env.CORE_DB }}' }
+        run: |
+          users_before="$(psql -d core_ci -tAc 'SELECT count(*) FROM users')"
+          node src/core/cli/rollback-identity.js --yes
+          test "$(psql -d core_ci -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ($CORE_TABLES)")" = 0
+          test "$(psql -d core_ci -tAc "SELECT count(*) FROM schema_migrations WHERE id IN ('008_core_identity','009_user_session_epochs','core_identity_backfill')")" = 0
+          test "$(psql -d core_ci -tAc 'SELECT count(*) FROM users')" = "$users_before"
+          node --disable-warning=ExperimentalWarning src/db/migrate-cli.js
+          test "$(psql -d core_ci -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ($CORE_TABLES)")" = 7
+      - name: Install (Showcase)
+        working-directory: inspironics-innovation-showcase
+        run: npm ci
+      - name: Showcase migrations on Postgres 16 (incl. 002_core_user_id), its rollback, re-apply
+        working-directory: inspironics-innovation-showcase/apps/api
+        env: { DATABASE_URL: '${{ env.SHOWCASE_DB }}' }
+        run: |
+          node --disable-warning=ExperimentalWarning src/db/migrate.js
+          node --disable-warning=ExperimentalWarning src/db/migrate.js --rollback 002_core_user_id
+          test "$(psql -d showcase_ci -tAc "SELECT count(*) FROM information_schema.columns WHERE table_name='users' AND column_name='core_user_id'")" = 0
+          node --disable-warning=ExperimentalWarning src/db/migrate.js
+          test "$(psql -d showcase_ci -tAc "SELECT count(*) FROM information_schema.columns WHERE table_name='users' AND column_name='core_user_id'")" = 1
+
+  staging-smoke:
+    name: Private staging stack (images, compose, end-to-end smoke)
+    runs-on: ubuntu-latest
+    needs: [gateway, academia, showcase, slidesvault, core-postgres]
+    timeout-minutes: 45
+    env:
+      COMPOSE: docker compose -f deploy/staging/compose.yml --env-file deploy/staging/.env.staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}' }
+      - name: Generate throwaway secrets (this run only; never uploaded)
+        run: node deploy/staging/generate-secrets.mjs --admin-email staging-admin@apex-ci.invalid
+      - name: Compose file resolves
+        run: $COMPOSE config --quiet
+      - name: Build the four images and start the stack (waits for every healthcheck)
+        run: $COMPOSE up -d --build --wait --wait-timeout 600
+      - name: Smoke test through the gateway (health, sign-in, assertions, forged headers, sign-out)
+        run: node deploy/staging/smoke.mjs gateway
+      - name: Direct backend bypass attempts from a throwaway container on the backend network
+        run: |
+          TAG="$(grep '^APEX_IMAGE_TAG=' deploy/staging/.env.staging | cut -d= -f2)"
+          KID="$(grep '^APEX_IDENTITY_KID=' deploy/staging/.env.staging | cut -d= -f2)"
+          docker run --rm --network apex-staging-backend --read-only -e SMOKE_KID="$KID" \
+            -v "$PWD/deploy/staging/smoke.mjs:/smoke/smoke.mjs:ro" --entrypoint node \
+            "apex-staging/showcase-api:$TAG" /smoke/smoke.mjs bypass
+      - name: Stack status and logs
+        if: failure()
+        run: |
+          $COMPOSE ps -a
+          $COMPOSE logs --no-color --timestamps
+      - name: Tear down, volumes included
+        if: always()
+        run: if [ -f deploy/staging/.env.staging ]; then $COMPOSE down -v --remove-orphans; fi

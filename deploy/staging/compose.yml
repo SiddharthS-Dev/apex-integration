@@ -1,0 +1,278 @@
+# APEX private staging stack (R1 identity contract §5). Readiness, not a deployment: it publishes
+# one port, on 127.0.0.1 only, and takes no real external input.
+#
+#   node deploy/staging/generate-secrets.mjs
+#   docker compose -f deploy/staging/compose.yml --env-file deploy/staging/.env.staging up -d --build --wait
+#   node deploy/staging/smoke.mjs
+#   docker compose -f deploy/staging/compose.yml --env-file deploy/staging/.env.staging down        (-v drops data)
+#
+# Runbook: docs/operations/STAGING_RUNBOOK.md. Every variable: .env.staging.example.
+#
+# Layout
+#   edge     the gateway only; the one published port (127.0.0.1:${APEX_STAGING_PORT}).
+#   backend  internal (no route out): postgres, core, showcase-api, slidesvault-api, and the gateway
+#            at a fixed address. Every app trusts identity assertions (and the Core trusts service
+#            assertions) only from that address.
+#
+# Identity: Showcase and SlidesVault run APEX_IDENTITY_MODE=required. Each service gets only its own
+# audience's keys; only the gateway holds the whole store. Keys are read at start-up: after rotating,
+# recreate every service (runbook).
+#
+# The environment of each API mirrors what apex/run.mjs gives it in `start.bat prod` (apex/projects.mjs
+# `api.env`, plus HOST/TRUST_PROXY/NODE_ENV and identityEnv); keep them in step.
+
+name: apex-staging
+
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      # No default: a well-known database password is not a safe fallback.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run node deploy/staging/generate-secrets.mjs}
+      # Read once by init-databases.sh, on the first start of an empty volume.
+      CORE_DB_PASSWORD: ${CORE_DB_PASSWORD:?run generate-secrets.mjs}
+      SHOWCASE_DB_PASSWORD: ${SHOWCASE_DB_PASSWORD:?run generate-secrets.mjs}
+      SLIDESVAULT_DB_PASSWORD: ${SLIDESVAULT_DB_PASSWORD:?run generate-secrets.mjs}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    networks: [backend]
+    healthcheck:
+      # Over TCP and against the last database init creates: the entrypoint's temporary init server
+      # listens on the socket only, so this cannot pass before initialisation has finished.
+      test: ['CMD-SHELL', 'PGPASSWORD="$$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U postgres -d slidesvault -tAc "SELECT 1" >/dev/null']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # APEX Core = the Inspironics Academia API.
+  core:
+    <<: *hardening
+    build:
+      context: ../../Inspironics Academia
+      dockerfile: apps/api/Dockerfile
+    image: apex-staging/core:${APEX_IMAGE_TAG:-local}
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      PORT: '4177'
+      APP_ORIGIN: ${APEX_PUBLIC_URL:?run generate-secrets.mjs}
+      APP_BASE_URL: ${APEX_PUBLIC_URL}/academia
+      API_ORIGIN: ${APEX_PUBLIC_URL}
+      SESSION_TTL_HOURS: '12'
+      # Plain http on 127.0.0.1 only. Behind TLS this must be true.
+      COOKIE_SECURE: 'false'
+      # The browser's address comes from X-Forwarded-For only when the gateway sent it.
+      TRUST_PROXY: ${APEX_STAGING_GATEWAY_IP:-10.213.47.10}
+      DATABASE_URL: postgres://core:${CORE_DB_PASSWORD}@postgres:5432/core
+      DATA_DIR: /data
+      TEMP_PROCESSING_DIR: /work
+      # Invitation only: registration closed, no first-user admin, one bootstrapped adult test admin.
+      ALLOW_REGISTRATION: 'false'
+      ALLOW_FIRST_USER_ADMIN: 'false'
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?run generate-secrets.mjs}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?run generate-secrets.mjs}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Staging Test Admin}
+      CORE_EXTERNAL_ORGS_ENABLED: 'false'
+      GOOGLE_CLIENT_ID: ''
+      # Service assertions from the gateway (resolve): the core keys only, from the gateway only.
+      APEX_IDENTITY_MODE: required
+      APEX_IDENTITY_ISSUER: apex-gateway
+      APEX_IDENTITY_AUDIENCE: core
+      APEX_IDENTITY_KEYS: ${APEX_IDENTITY_KEYS_CORE:?run generate-secrets.mjs}
+      APEX_IDENTITY_TRUSTED_SOURCES: ${APEX_STAGING_GATEWAY_IP:-10.213.47.10}
+      TOKEN_ENCRYPTION_KEY: ${CORE_TOKEN_ENCRYPTION_KEY:?run generate-secrets.mjs}
+      # External inputs isolated: no AI, no speech, no Dropbox, mail to the log only.
+      AI_ENABLED: 'false'
+      AI_PROVIDER: none
+      GEMINI_API_KEY: ''
+      MEDIA_PROVIDER: none
+      DROPBOX_APP_KEY: ''
+      DROPBOX_APP_SECRET: ''
+      DROPBOX_REDIRECT_URI: ${APEX_PUBLIC_URL}/academia/api/dropbox/oauth/callback
+      SYNC_ON_STARTUP: 'false'
+      AUTO_GENERATE_AUDIO: 'false'
+      EMAIL_PROVIDER: log
+      RESEND_API_KEY: ''
+      SMTP_URL: ''
+    volumes:
+      - core-data:/data
+      - core-work:/work
+    networks: [backend]
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4177/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  showcase-api:
+    <<: *hardening
+    build:
+      context: ../../inspironics-innovation-showcase
+      dockerfile: apps/api/Dockerfile
+    image: apex-staging/showcase-api:${APEX_IMAGE_TAG:-local}
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      PORT: '4176'
+      HOST: 0.0.0.0
+      # The gateway's X-Forwarded-For names the browser; nobody else's is believed.
+      TRUST_PROXY: ${APEX_STAGING_GATEWAY_IP:-10.213.47.10}
+      PUBLIC_API_URL: ${APEX_PUBLIC_URL:?run generate-secrets.mjs}/showcase
+      WEB_ORIGIN: ${APEX_PUBLIC_URL}/showcase
+      EXTRA_ORIGINS: ${APEX_PUBLIC_URL}
+      SESSION_TTL_HOURS: '12'
+      EXPOSE_DEV_CODES: 'false'
+      SERVE_WEB: 'false'
+      COOKIE_SECURE: 'false'
+      DATABASE_URL: postgres://showcase:${SHOWCASE_DB_PASSWORD}@postgres:5432/showcase
+      OBJECT_STORE_DIR: /data/objects
+      ENCRYPTION_KEY: ${SHOWCASE_ENCRYPTION_KEY:?run generate-secrets.mjs}
+      ALLOW_REGISTRATION: 'false'
+      GUEST_ENABLED: 'false'
+      GOOGLE_CLIENT_ID: ''
+      APEX_IDENTITY_MODE: required
+      APEX_IDENTITY_ISSUER: apex-gateway
+      APEX_IDENTITY_AUDIENCE: showcase
+      APEX_IDENTITY_KEYS: ${APEX_IDENTITY_KEYS_SHOWCASE:?run generate-secrets.mjs}
+      APEX_IDENTITY_TRUSTED_SOURCES: ${APEX_STAGING_GATEWAY_IP:-10.213.47.10}
+      # External inputs isolated.
+      SYNC_ENABLED: 'false'
+      SYNC_ON_STARTUP: 'false'
+      DROPBOX_APP_KEY: ''
+      DROPBOX_APP_SECRET: ''
+      DROPBOX_REDIRECT_URI: ${APEX_PUBLIC_URL}/showcase/api/dropbox/oauth/callback
+      AI_ENABLED: 'false'
+      ANTHROPIC_API_KEY: ''
+    volumes:
+      - showcase-data:/data
+    networks: [backend]
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4176/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  slidesvault-api:
+    <<: *hardening
+    build:
+      context: ../../slide vault
+      dockerfile: apps/api/Dockerfile
+    image: apex-staging/slidesvault-api:${APEX_IMAGE_TAG:-local}
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      PORT: '4175'
+      HOST: 0.0.0.0
+      TRUST_PROXY: ${APEX_STAGING_GATEWAY_IP:-10.213.47.10}
+      APP_BASE_URL: ${APEX_PUBLIC_URL:?run generate-secrets.mjs}/vault
+      API_BASE_URL: ${APEX_PUBLIC_URL}/vault
+      CORS_ORIGINS: ${APEX_PUBLIC_URL}
+      SESSION_TTL_HOURS: '12'
+      SESSION_COOKIE_SECURE: 'false'
+      DB_DRIVER: postgres
+      DATABASE_URL: postgres://slidesvault:${SLIDESVAULT_DB_PASSWORD}@postgres:5432/slidesvault
+      OBJECT_STORE_DIR: /data/objects
+      # Required at start-up even with Dropbox unset (refresh tokens are encrypted at rest).
+      DROPBOX_TOKEN_ENCRYPTION_KEY: ${SLIDESVAULT_TOKEN_ENCRYPTION_KEY:?run generate-secrets.mjs}
+      APEX_IDENTITY_MODE: required
+      APEX_IDENTITY_ISSUER: apex-gateway
+      APEX_IDENTITY_AUDIENCE: slidesvault
+      APEX_IDENTITY_KEYS: ${APEX_IDENTITY_KEYS_SLIDESVAULT:?run generate-secrets.mjs}
+      APEX_IDENTITY_TRUSTED_SOURCES: ${APEX_STAGING_GATEWAY_IP:-10.213.47.10}
+      # External inputs isolated.
+      DROPBOX_APP_KEY: ''
+      DROPBOX_APP_SECRET: ''
+      DROPBOX_REDIRECT_URI: ${APEX_PUBLIC_URL}/vault/api/dropbox/oauth/callback
+      DROPBOX_SYNC_ENABLED: 'false'
+      DROPBOX_SYNC_ON_STARTUP: 'false'
+      GOOGLE_OAUTH_ENABLED: 'false'
+      GOOGLE_REDIRECT_URI: ${APEX_PUBLIC_URL}/vault/api/auth/google/callback
+      AI_ENABLED: 'false'
+      ANTHROPIC_API_KEY: ''
+    volumes:
+      - slidesvault-data:/data
+    networks: [backend]
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4175/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  gateway:
+    <<: *hardening
+    build:
+      context: ../..
+      dockerfile: deploy/gateway/Dockerfile
+    image: apex-staging/gateway:${APEX_IMAGE_TAG:-local}
+    depends_on:
+      core: { condition: service_healthy }
+      showcase-api: { condition: service_healthy }
+      slidesvault-api: { condition: service_healthy }
+    environment:
+      APEX_HOST: 0.0.0.0
+      APEX_PORT: '4173'
+      APEX_PUBLIC_URL: ${APEX_PUBLIC_URL:?run generate-secrets.mjs}
+      APEX_SESSION_HOURS: '12'
+      # One service per API (apex/projects.mjs upstreamHost); the ports are the registry's.
+      APEX_UPSTREAM_HOST_SHOWCASE: showcase-api
+      APEX_UPSTREAM_HOST_VAULT: slidesvault-api
+      APEX_UPSTREAM_HOST_ACADEMIA: core
+      APEX_IDENTITY_MODE: required
+      # The whole store (every audience): only the gateway holds it.
+      APEX_IDENTITY_KEYS_STORE: ${APEX_IDENTITY_KEYS_STORE:?run generate-secrets.mjs}
+      APEX_GOOGLE_CLIENT_ID: ''
+    volumes:
+      - gateway-state:/var/lib/apex
+    ports:
+      - '127.0.0.1:${APEX_STAGING_PORT:-4173}:4173'
+    networks:
+      edge: {}
+      backend:
+        ipv4_address: ${APEX_STAGING_GATEWAY_IP:-10.213.47.10}
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4173/auth/config').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+networks:
+  edge:
+    name: apex-staging-edge
+  backend:
+    name: apex-staging-backend
+    # No route out of this network: the APIs cannot reach the internet, and nothing outside reaches them.
+    internal: true
+    ipam:
+      config:
+        - subnet: ${APEX_STAGING_SUBNET:-10.213.47.0/24}
+          # Dynamic addresses come from the upper half; the gateway's fixed one is below it.
+          ip_range: ${APEX_STAGING_DYNAMIC_RANGE:-10.213.47.128/25}
+
+volumes:
+  pgdata:
+  core-data:
+  core-work:
+  showcase-data:
+  slidesvault-data:
+  gateway-state:

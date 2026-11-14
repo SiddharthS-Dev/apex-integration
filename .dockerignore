@@ -1,0 +1,34 @@
+# Build context of the Apex gateway image (deploy/gateway/Dockerfile), which is the repository root:
+# it builds all three web apps. Send only sources — never dependencies, build output, databases,
+# local environment files or the gateway's own secrets.
+.git
+**/.git
+**/node_modules
+**/dist
+# API databases and caches (not apps/web/public/data, which the Showcase bundle needs).
+**/apps/api/data
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+
+# The gateway's local state: session secret, revocations, identity keys.
+apex/.session-secret
+apex/.revoked-sessions
+apex/.identity-keys.json*
+
+# Staging secrets written by deploy/staging/generate-secrets.mjs.
+deploy/staging/.env.staging
+deploy/staging/*.bak
+
+# Not needed by any image.
+docs
+tools
+demo video
+competitor analysis
+*.pdf
+inspironics-innovation-showcase/legacy
+inspironics-innovation-showcase/docs
+slide vault/apps/api/tests
+Inspironics Academia/apps/api/test
+Inspironics Academia/docs
