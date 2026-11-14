@@ -97,6 +97,19 @@ Playbook files are served by `GET /api/playbooks/:id/content` (content proxy): u
 
 Storage, clean-up, retention and Dropbox output are documented in [docs/dropbox/](docs/dropbox/) — start with [DROPBOX_OPTIMIZED_ARCHITECTURE.md](docs/dropbox/DROPBOX_OPTIMIZED_ARCHITECTURE.md). Admins see measured usage and run the clean-up in AI Studio → Storage & Dropbox.
 
+## APEX Core identity (API, R1)
+
+The API is also the APEX Core (ADR 0001; binding spec `docs/implementation/R1_IDENTITY_CONTRACT.md` at the repository root). The module lives in `apps/api/src/core/`; other modules use only `src/core/index.js`.
+
+- **Tables** (migration `008_core_identity`, real FK/UNIQUE/CHECK constraints and partial unique indexes): `organizations`, `organization_memberships`, `role_assignments`, `identity_links`, `external_identities`, `audit_events` (append-only). No existing table is altered.
+- **Backfill** (data migration `core_identity_backfill`, ADR 0004): the internal organisation `inspironics`; employee/leadership → membership + `staff`; intern → membership (title Intern) + `intern`, no `staff`; role admin → `platform_admin`; role user → `learner`. New accounts (register, invite, bootstrap admin) get the same mapping.
+- **Compatibility:** `users.role` stays authoritative for the existing routes. Granting or revoking `platform_admin` (Core API, break-glass CLI, or the user admin's role change) keeps `users.role` in step in the same transaction. Membership and `staff` give no administrative rights.
+- **Endpoints** (`/api/core`): `GET /me`; `GET /users?q=`, `GET /users/:id`; `GET|POST /organizations`; `GET|POST /organizations/:id/members`; `POST /memberships/:id/end`; `POST /role-assignments`, `/role-assignments/:id/revoke`, `/role-assignments/:id/transition`; `GET|POST /identity-links`, `POST /identity-links/:id/confirm|reject`; `GET /audit-events`; `POST /auth/google`, `POST /auth/google/accept-invite`, `POST /external-identities/google` (404 unless `GOOGLE_CLIENT_ID`); `POST /identity/resolve` (gateway only, `X-Apex-Service` assertion). Every mutation writes an audit event in its own transaction.
+- **Break-glass admin:** `npm run core:grant-admin -w @academy/api -- --email <email> --reason "<why>"` (the only way past "nobody grants themselves platform_admin").
+- **Link proposals:** `node tools/identity/propose-links.mjs` (dry run; `--apply` inserts `proposed` links only; `--core-db <path>` selects the Core database). Never confirms.
+- **Rollback:** back up the database, then `npm run core:rollback-identity -w @academy/api -- --yes` drops the R1 tables (`008_core_identity`'s six and `009`'s `user_session_epochs`) and removes their migration records; then deploy pre-R1 code (an R1 server re-applies the migration on start). Pre-R1 tables and rows are untouched.
+- **Settings** (all optional, defaults = pre-R1 behaviour): `GOOGLE_CLIENT_ID`, `CORE_EXTERNAL_ORGS_ENABLED`, `APEX_IDENTITY_KEYS`, `APEX_IDENTITY_ISSUER`, `APEX_IDENTITY_TRUSTED_SOURCES` — see `apps/api/.env.example`.
+
 ## Running it
 
 ```bash
@@ -111,6 +124,6 @@ Open http://localhost:5173 and register — in development the first account is 
 - **Dropbox:** create an app in the Dropbox App Console. Register the redirect URI, then set `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET` and `TOKEN_ENCRYPTION_KEY`. Connect from `/admin/integrations`.
 - **Production:** set `DATABASE_URL` (Postgres), `NODE_ENV=production`, `COOKIE_SECURE=true`, `APP_ORIGIN` and `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD`. Serve `apps/web/dist` and the API behind one domain.
 - **UI without a server:** `VITE_BACKEND=demo npm run dev:web`.
-- **Tests:** `npm test -w @academy/api` (246 tests; nothing calls a paid API or sends mail).
+- **Tests:** `npm test -w @academy/api` (281 tests; nothing calls a paid API, Google or sends mail).
 
 Email: with the default `EMAIL_PROVIDER=log` nothing leaves the server — reset links appear in the API log for an operator to hand over, and admin invites return a one-time temporary password. Set `EMAIL_PROVIDER=resend` or `smtp` to deliver them (and notifications) by email.

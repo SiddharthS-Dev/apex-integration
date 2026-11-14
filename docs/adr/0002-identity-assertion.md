@@ -36,7 +36,12 @@ Facts the design must respect:
 The design below meets them as follows:
 - Issuer: the `iss` claim is fixed to `apex-gateway`.
 - Key rotation: a key ID (`kid`) with current and previous keys accepted during an overlap.
-- Revocation: session revocation (existing), user disablement and role changes take effect within the resolve cache TTL (≤ 60 s), documented in the runbook.
+- Revocation:
+  - **Sign-out** revokes the Apex session immediately (existing).
+  - **Disabling a user** takes effect within the 30 s resolve cache.
+  - **A role change** can take up to about 90 s: an already-issued assertion lives up to 60 s, plus the 30 s cache.
+
+  These timings are measured from the implementation in R1 and documented in `docs/operations/IDENTITY_ASSERTION.md`. The original "≤ 60 s" estimate was corrected after implementation.
 - Bypass: in `required` mode an app rejects every non-health request without a valid assertion, even on loopback.
 
 ## Decision
