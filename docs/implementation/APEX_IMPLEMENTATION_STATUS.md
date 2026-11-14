@@ -7,8 +7,8 @@ Baseline: `docs/APEX_MASTER_PLAN.md`. Updated: 2026-11-14.
 | Phase | Status | Exit gate | Report |
 |---|---|---|---|
 | Pre-R0 remediation (security, broken features, CI) | **Done and externally verified.** Commits `8e11ccb`…`4add53f`; CI run 43420040675, 6/6 jobs green | — | `docs/APEX_BROCHURE_INPUT_PACK.md` §13 update; `docs/architecture/APEX_FULL_AUDIT_REPORT.md` |
-| **R0 Discovery** | **Deliverables complete; exit gate not passed** | Founder sign-off on the decision log and ADRs 0001–0003: **pending** | `docs/implementation/R0_PHASE_REPORT.md` |
-| R1 Identity, roles, shared data, navigation | Not started (blocked by R0 gate: DEC-007/008/009/013) | — | — |
+| **R0 Discovery** | **Passed 2026-11-14** | Founder approved DEC-007/008/009/013; CI run 43582855263 green (6/6 jobs; discovery 5/5); other decisions documented as non-blocking | `docs/implementation/R0_PHASE_REPORT.md` |
+| R1 Identity, roles, shared data, navigation | **In progress.** Authorised scope: shared identity, reviewed account mappings, organisation membership, scoped roles, gateway security, private staging readiness. Held: public registration, production consent screens, student-work publication, real external onboarding | — | `docs/implementation/R1_PHASE_REPORT.md` (to come) |
 | R2 Academy and student journey | Not started | — | — |
 | R3 Projects, mentoring, governed publication | Not started | — | — |
 | R4 Alumni and industry | Not started | — | — |
@@ -19,7 +19,7 @@ Baseline: `docs/APEX_MASTER_PLAN.md`. Updated: 2026-11-14.
 
 | Use Case | Status | Evidence |
 |---|---|---|
-| Use Case 001: confirm named areas | Blocked: founder input (DEC-001, DEC-002) | `docs/discovery/R0_DISCOVERY_REPORT.md` §2, §6 |
+| Use Case 001: confirm named areas | **Deliberately unresolved** by founder instruction; non-blocking for R1 | `docs/discovery/R0_DISCOVERY_REPORT.md` §2, §6 |
 | Use Case 002: cross-app user overlap report | Implemented, tested, executed locally | `tools/discovery/user-overlap.mjs`; R0 report §4 |
 | Use Cases 003–041 | Not started | — |
 

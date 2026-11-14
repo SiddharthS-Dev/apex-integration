@@ -3,7 +3,7 @@
 - Date: 2026-11-14
 - Baseline: `docs/APEX_MASTER_PLAN.md` §11 (R0)
 - Branch: `Feature-base-removal`; starting HEAD `4add53f` (clean working tree except the untracked master plan and the stray root file `ync handling"`, both preserved)
-- Phase result: see §9 (evaluated after the founder's 2026-11-14 decisions)
+- Phase result: **PASSED 2026-11-14** (§9)
 
 ## 1. Scope
 
@@ -96,4 +96,21 @@ Recorded in:
 - **Files:** no CSV, database, `.env` or key files in the diff. The per-account CSV stays outside Git.
 - **Unrelated changes excluded:** the stray root file `ync handling"`.
 
-Exit criteria E1–E7: `docs/discovery/R0_DISCOVERY_REPORT.md` §9. The verdict is recorded below after the remote CI run.
+Exit criteria E1–E7: `docs/discovery/R0_DISCOVERY_REPORT.md` §9.
+
+**Remote CI (externally verified).** Commit `3c01f73`, GitHub Actions run `43582855263`, conclusion **success**:
+- all 6 jobs succeeded
+- the new step "Discovery tools" reported tests 5, pass 5, fail 0
+- the gateway reported 13/13
+
+| Criterion | Result |
+|---|---|
+| E1 Use Case 002 produced, data unmodified | Pass |
+| E2 Discovery tests pass in GitHub CI | Pass (run 43582855263) |
+| E3 Regression unaffected | Pass (all 6 CI jobs green) |
+| E4 No personal data or secrets committed | Pass (diff review above) |
+| E5 R1 architecture decisions approved | Pass (DEC-007/008/009/013) |
+| E6 Remaining decisions documented as non-blocking for the authorised R1 scope | Pass (discovery report §9.2) |
+| E7 Persona matrix validated | Pass |
+
+**Verdict: R0 PASSED.** Use Case 001 remains deliberately unresolved by founder instruction and is documented as non-blocking for the authorised R1 scope. It is not closed.
