@@ -30,6 +30,9 @@ jobs:
         run: for f in *.mjs; do node --check "$f"; done
       - name: Unit tests
         run: npm test
+      - name: Discovery tools (R0 user overlap report, fixture data only)
+        working-directory: tools/discovery
+        run: node --test user-overlap.test.mjs
 
   academia:
     name: Inspironics Academia
