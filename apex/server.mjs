@@ -17,10 +17,20 @@
  *   APEX_TRUST_PROXY   set when a reverse proxy in front sets X-Forwarded-For/-Proto/-Host;
  *                      the client address is then the left-most X-Forwarded-For
  *   APEX_SESSION_HOURS how long one sign-in lasts (default 12)
+ *   APEX_UPSTREAM_HOST where the app servers listen (default 127.0.0.1); APEX_UPSTREAM_HOST_SHOWCASE,
+ *                      _VAULT, _ACADEMIA override it per project (containers, deploy/staging)
+ *   APEX_SESSION_SECRET_FILE, APEX_REVOKED_FILE, APEX_IDENTITY_KEYS_FILE  where the gateway's own
+ *                      state lives (default: files in apex/); APEX_IDENTITY_KEYS_STORE holds the
+ *                      identity keys themselves instead of the file (see identity-keys.mjs)
+ *   APEX_IDENTITY_MODE off | optional | required: identity assertion to the Showcase and
+ *                      SlidesVault (default off; APEX_IDENTITY_MODE_SHOWCASE / _SLIDESVAULT
+ *                      per app). See gateway-identity.mjs, docs/operations/IDENTITY_ASSERTION.md
+ *   APEX_GOOGLE_CLIENT_ID  shows "Sign in with Google" (must equal the Core's GOOGLE_CLIENT_ID)
  *
  * Deliberately dependency-free (node: builtins only) so the shell needs no
  * node_modules of its own and start.bat has nothing to install for it.
  */
+import crypto from 'node:crypto'
 import http from 'node:http'
 import net from 'node:net'
 import { spawn } from 'node:child_process'
@@ -37,6 +47,7 @@ import {
   gatewayUrl,
   localUrl,
   projectFor,
+  upstreamHost,
 } from './projects.mjs'
 import { API_PORTS, CHILD_PORTS, stopApex } from './stop.mjs'
 import {
@@ -49,8 +60,11 @@ import {
   sessionInfo,
   sessionOf,
   signIn,
+  signInWithGoogle,
   signOut,
 } from './auth.mjs'
+import { createIdentityGateway } from './gateway-identity.mjs'
+import { IDENTITY_HEADER, SERVICE_HEADER } from './identity.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.dirname(HERE)
@@ -61,6 +75,21 @@ const PORT = Number(process.env.APEX_PORT || (MODE === 'prod' ? PROD_PORT : GATE
 const HOST = GATEWAY_HOST
 const PUBLIC_ORIGIN = gatewayUrl(PORT)
 const TRUST_PROXY = /^(1|true|yes|on)$/i.test(String(process.env.APEX_TRUST_PROXY || '').trim())
+
+/** Identity assertion to the Showcase and SlidesVault. Inert while every app's mode is off (the default). */
+const identity = createIdentityGateway()
+
+/** "Sign in with Google" on the sign-in page, when set. The Core verifies the token against the same client id. */
+const GOOGLE_CLIENT_ID = (process.env.APEX_GOOGLE_CLIENT_ID || '').trim()
+
+/**
+ * The Host header one project's server sees: its upstream address (APEX_UPSTREAM_HOST_<ID>,
+ * else APEX_UPSTREAM_HOST, else loopback), bracketed when it is IPv6.
+ */
+const upstreamHostHeader = (project, port) => {
+  const host = upstreamHost(project?.id)
+  return `${net.isIPv6(host) ? `[${host}]` : host}:${port}`
+}
 
 /** How long to wait for a child to accept a connection, and how long a quiet upstream may stay quiet. */
 const CONNECT_TIMEOUT_MS = 10_000
@@ -92,7 +121,7 @@ const typeOf = (file) => MIME[path.extname(file).toLowerCase()] || 'application/
 const within = (dir, file) => file === dir || file.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep)
 
 /** Sends a file, or returns false if it is not a readable file. */
-function sendFile(res, file, { immutable = false } = {}) {
+function sendFile(res, file, { immutable = false, headers = {} } = {}) {
   let stat
   try {
     stat = fs.statSync(file)
@@ -105,6 +134,7 @@ function sendFile(res, file, { immutable = false } = {}) {
     'Content-Type': typeOf(file),
     'Content-Length': stat.size,
     'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+    ...headers,
   })
   fs.createReadStream(file).pipe(res)
   return true
@@ -201,9 +231,27 @@ function publicFace(req) {
  * every session cookie that is not this project's own, with Host rewritten
  * to the child's port.
  */
-const SPOOFABLE = ['forwarded', 'x-forwarded-for', 'x-forwarded-proto', 'x-forwarded-host', 'x-forwarded-port', 'x-real-ip']
+const SPOOFABLE = [
+  'forwarded',
+  'x-forwarded-for',
+  'x-forwarded-proto',
+  'x-forwarded-host',
+  'x-forwarded-port',
+  'x-real-ip',
+  // Identity is asserted by this gateway alone (R1 identity contract §4.3):
+  // whatever a client sends under these names never reaches an app.
+  IDENTITY_HEADER,
+  SERVICE_HEADER,
+]
 
-function upstreamHeaders(req, project, port, { cookies = true } = {}) {
+/** Removes every client-supplied identity header from a request, on every path, before anything reads it. */
+function stripIdentityHeaders(req) {
+  delete req.headers[IDENTITY_HEADER]
+  delete req.headers[SERVICE_HEADER]
+}
+
+/** @param {{ cookies?: boolean, extra?: Record<string, string> }} [options]  `extra` is added last (the assertion). */
+function upstreamHeaders(req, project, port, { cookies = true, extra = {} } = {}) {
   const headers = { ...req.headers }
   for (const name of SPOOFABLE) delete headers[name]
   delete headers.cookie
@@ -212,10 +260,11 @@ function upstreamHeaders(req, project, port, { cookies = true } = {}) {
   const face = publicFace(req)
   return {
     ...headers,
-    host: `127.0.0.1:${port}`,
+    host: upstreamHostHeader(project, port),
     'x-forwarded-for': clientIp(req),
     'x-forwarded-proto': face.proto,
     'x-forwarded-host': face.host,
+    ...extra,
   }
 }
 
@@ -240,9 +289,9 @@ function downstreamHeaders(up, project) {
  * @param {(err: Error & { code?: string }) => void} onError  Answers the browser
  *   when the child could not be reached at all (nothing has been sent yet).
  */
-function forward(req, res, { project, port, upstreamPath, cookies = true, onError }) {
+function forward(req, res, { project, port, upstreamPath, cookies = true, extra, onError }) {
   const upstream = http.request(
-    { host: '127.0.0.1', port, method: req.method, path: upstreamPath, headers: upstreamHeaders(req, project, port, { cookies }) },
+    { host: upstreamHost(project.id), port, method: req.method, path: upstreamPath, headers: upstreamHeaders(req, project, port, { cookies, extra }) },
     (up) => {
       res.writeHead(up.statusCode || 502, downstreamHeaders(up, project))
       up.pipe(res)
@@ -302,7 +351,7 @@ function proxy(req, res, project, target) {
  */
 function proxyUpgrade(req, socket, head, project, target) {
   const port = project.devPort
-  const upstream = net.connect(port, '127.0.0.1')
+  const upstream = net.connect(port, upstreamHost(project.id))
   upstream.setTimeout(CONNECT_TIMEOUT_MS)
   upstream.once('timeout', () => upstream.destroy(Object.assign(new Error('connect timeout'), { code: 'ETIMEDOUT' })))
 
@@ -349,13 +398,14 @@ function refuseUpgrade(socket, status, text) {
  * does need to know is the public URL it lives at, for the OAuth redirects it
  * issues; run.mjs passes that in (APP_BASE_URL, DROPBOX_REDIRECT_URI).
  */
-function proxyApi(req, res, project, target, { cookies = true } = {}) {
+function proxyApi(req, res, project, target, { cookies = true, extra } = {}) {
   const { api } = project
   forward(req, res, {
     project,
     port: api.port,
     upstreamPath: target.forward.slice(project.base.length) || '/',
     cookies,
+    extra,
     onError: (err) => {
       // The client is fetch() expecting JSON, so answer in the API's own error
       // shape — the app then shows its normal "cannot reach the server" state.
@@ -400,6 +450,7 @@ function serveBuilt(req, res, project, pathname) {
 const PUBLIC_PATHS = new Set([
   '/login',
   '/auth/login',
+  '/auth/google',
   '/auth/logout',
   '/auth/me',
   '/auth/config',
@@ -492,6 +543,8 @@ function sameOrigin(req) {
 /** What the sign-in page and the dashboard need to know about the platforms. */
 const REGISTRY = {
   sessionHours: SESSION_HOURS,
+  // A public value by design (it is in every Google sign-in page); null hides the button.
+  googleClientId: GOOGLE_CLIENT_ID || null,
   apps: PROJECTS.filter((p) => p.api?.sessionCookie).map((p) => ({
     id: p.id,
     name: p.name,
@@ -499,6 +552,72 @@ const REGISTRY = {
     health: p.api.health || null,
     logout: `${p.api.base}/auth/logout`,
   })),
+}
+
+/**
+ * The sign-in page's Content-Security-Policy. Its inline scripts are allowed
+ * by hash (recomputed when the file changes), Google Fonts as the page always
+ * loaded them, and Google Identity Services only when APEX_GOOGLE_CLIENT_ID
+ * is set — the sources Google documents for its button, nothing wider.
+ */
+let loginCspCache = { mtimeMs: -1, value: '' }
+function loginCsp(file) {
+  let stat
+  try {
+    stat = fs.statSync(file)
+  } catch {
+    return ''
+  }
+  if (stat.mtimeMs === loginCspCache.mtimeMs) return loginCspCache.value
+  const html = fs.readFileSync(file, 'utf8')
+  const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+    (m) => `'sha256-${crypto.createHash('sha256').update(m[1], 'utf8').digest('base64')}'`
+  )
+  const gsi = GOOGLE_CLIENT_ID ? 'https://accounts.google.com/gsi/' : ''
+  const value = [
+    "default-src 'self'",
+    `script-src 'self' ${hashes.join(' ')}${gsi ? ' https://accounts.google.com/gsi/client' : ''}`,
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com${gsi ? ' https://accounts.google.com/gsi/style' : ''}`,
+    'font-src https://fonts.gstatic.com',
+    "img-src 'self' data:",
+    `connect-src 'self'${gsi ? ` ${gsi}` : ''}`,
+    `frame-src ${gsi || "'none'"}`,
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+  ].join('; ')
+  loginCspCache = { mtimeMs: stat.mtimeMs, value }
+  return value
+}
+
+/**
+ * Who the session's Core user is now, when identity assertion is on and the
+ * session carries one: the resolver's answer, else null.
+ */
+async function identityOf(session) {
+  if (!identity.enabled || !session?.sub) return null
+  const resolved = await identity.resolve(session.sub)
+  // The Core ended this user's sessions (password change or reset, disable) after this Apex session was
+  // issued: revoke it too (security review L1). Issue time = expiry − APEX_SESSION_HOURS.
+  const after = resolved?.state === 'active' ? Date.parse(resolved.data?.sessions_valid_after || '') : NaN
+  if (Number.isFinite(after) && Number.isFinite(session.expiresAt) && after > session.expiresAt - SESSION_HOURS * 3600_000) {
+    return { state: 'inactive' }
+  }
+  return resolved
+}
+
+/**
+ * The Core says this user is disabled or gone: the Apex session ends here,
+ * exactly as a sign-out does (the token is revoked, every app session is
+ * revoked at its API and every cookie cleared).
+ */
+async function endRevokedSession(req, res, target) {
+  const cookies = await signOut(req, clientIp(req))
+  if (target && isNavigation(req)) {
+    return redirect(res, `/login?expired=1&next=${encodeURIComponent(target.forward)}`, { 'Set-Cookie': cookies })
+  }
+  return sendJson(res, 401, { error: 'Your Apex access has ended. Sign in again.', code: 'APEX_SIGNIN_REQUIRED' }, { 'Set-Cookie': cookies })
 }
 
 async function handleAuth(req, res, pathname, url) {
@@ -513,7 +632,8 @@ async function handleAuth(req, res, pathname, url) {
     if (!url.searchParams.get('reauth') && sessionOf(req)) {
       return redirect(res, safeNext(url.searchParams.get('next') || '/'))
     }
-    if (sendFile(res, path.join(PUBLIC, 'login.html'))) return
+    const file = path.join(PUBLIC, 'login.html')
+    if (sendFile(res, file, { headers: { 'Content-Security-Policy': loginCsp(file) } })) return
     return sendNotFound(res)
   }
 
@@ -521,9 +641,29 @@ async function handleAuth(req, res, pathname, url) {
 
   if (pathname === '/auth/me') {
     const session = sessionInfo(req)
+    if (session && (await identityOf(session))?.state === 'inactive') return endRevokedSession(req, res, null)
     return session
       ? sendJson(res, 200, { email: session.email, apps: session.apps })
       : sendJson(res, 401, { error: 'Not signed in.', code: 'APEX_SIGNIN_REQUIRED' })
+  }
+
+  if (pathname === '/auth/google') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Use POST.' }, { Allow: 'POST' })
+    if (!GOOGLE_CLIENT_ID) return sendJson(res, 404, { error: 'Google sign-in is not enabled.' })
+    // Only this gateway's own sign-in page may post a Google credential here.
+    if (!sameOrigin(req)) return sendJson(res, 403, { error: 'Cross-origin sign-in refused.' })
+    if (isLimited(ip)) return sendJson(res, 429, { error: 'Too many failed attempts. Wait a few minutes and try again.' })
+    const body = await readJson(req)
+    const credential = typeof body.credential === 'string' ? body.credential.trim() : ''
+    if (!credential || credential.length > 4096) return sendJson(res, 400, { error: 'Google did not hand over a sign-in.' })
+    const result = await signInWithGoogle(credential, { req, clientIp: ip, identity })
+    if (result.status !== 200) {
+      if (result.status === 401) noteFailure(ip)
+      return sendJson(res, result.status, { error: result.error })
+    }
+    clearFailures(ip)
+    if (result.sub) identity.forget(result.sub)
+    return sendJson(res, 200, { ok: true, apps: result.apps, next: safeNext(body.next) }, { 'Set-Cookie': result.cookies })
   }
 
   if (pathname === '/auth/logout') {
@@ -551,12 +691,14 @@ async function handleAuth(req, res, pathname, url) {
     const password = typeof body.password === 'string' ? body.password : ''
     if (!email || !password) return sendJson(res, 400, { error: 'Enter your email address and password.' })
 
-    const result = await signIn(email, password, { req, clientIp: ip })
+    const result = await signIn(email, password, { req, clientIp: ip, identity })
     if (result.status !== 200) {
       if (result.status === 401) noteFailure(ip)
       return sendJson(res, result.status, { error: result.error })
     }
     clearFailures(ip)
+    // A fresh sign-in is asked about afresh, not answered from a cache filled before it.
+    if (result.sub) identity.forget(result.sub)
     return sendJson(
       res,
       200,
@@ -598,7 +740,24 @@ function targetOf(rawUrl) {
 /** The JSON a fetch() gets when it has no Apex session. */
 const signInRequired = (res) => sendJson(res, 401, { error: 'Sign in to Apex first.', code: 'APEX_SIGNIN_REQUIRED' })
 
-const server = http.createServer((req, res) => {
+/** The JSON an API call gets when its app requires an assertion and the Core cannot be asked. */
+const identityUnavailable = (res, project) =>
+  sendJson(res, 503, {
+    error: `Apex cannot confirm who you are right now, so ${project.name} is unavailable. Try again in a moment.`,
+    code: 'APEX_IDENTITY_UNAVAILABLE',
+    retryable: true,
+  })
+
+export const server = http.createServer((req, res) => {
+  stripIdentityHeaders(req)
+  dispatch(req, res).catch((err) => {
+    console.error('  request error:', err)
+    if (!res.headersSent) sendJson(res, 500, { error: 'Apex could not handle that request.' })
+    else res.destroy()
+  })
+})
+
+async function dispatch(req, res) {
   const target = targetOf(req.url)
   if (!target) return sendNotFound(res, 400)
   const { url, pathname } = target
@@ -635,10 +794,29 @@ const server = http.createServer((req, res) => {
     return signInRequired(res)
   }
 
+  // Identity assertion (off by default: then `resolved` stays null and nothing
+  // below changes). A Core user who is disabled or gone ends the session here,
+  // on whatever path they asked for.
+  const session = sessionInfo(req)
+  const resolved = await identityOf(session)
+  if (resolved?.state === 'inactive') return endRevokedSession(req, res, target)
+
   // Before projectFor(): '/vault/api' is inside the '/vault' mount, and must
   // reach the API server rather than the SPA.
   const apiProject = apiFor(pathname)
-  if (apiProject) return proxyApi(req, res, apiProject, target)
+  if (apiProject) {
+    const mode = identity.modeOf(apiProject.id)
+    let extra
+    if (mode !== 'off' && session) {
+      if (resolved?.state === 'active') {
+        extra = { [IDENTITY_HEADER]: identity.assertionFor(apiProject.id, session.sub, resolved.data) }
+      } else if (mode === 'required' && resolved?.state === 'unavailable') {
+        // Never an unsigned pass-through to an app that requires the assertion.
+        return identityUnavailable(res, apiProject)
+      }
+    }
+    return proxyApi(req, res, apiProject, target, { extra })
+  }
 
   const project = projectFor(pathname)
 
@@ -658,7 +836,7 @@ const server = http.createServer((req, res) => {
   if (within(PUBLIC, asset) && sendFile(res, asset)) return
 
   sendNotFound(res)
-})
+}
 
 /**
  * Websocket upgrades: vite's HMR channel, in dev. They need the Apex session
@@ -666,6 +844,7 @@ const server = http.createServer((req, res) => {
  */
 server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => socket.destroy())
+  stripIdentityHeaders(req)
   const target = targetOf(req.url)
   if (!target) return refuseUpgrade(socket, 400, 'Bad Request')
   if (!sessionOf(req)) return refuseUpgrade(socket, 401, 'Unauthorized')
@@ -675,7 +854,22 @@ server.on('upgrade', (req, socket, head) => {
   refuseUpgrade(socket, 404, 'Not Found')
 })
 
-server.on('error', (err) => {
+/**
+ * True when this file is run (node apex/server.mjs). A test imports it instead
+ * and listens on a port of its own; then nothing below binds, probes or
+ * installs signal handlers.
+ */
+const IS_MAIN = (() => {
+  try {
+    const a = path.resolve(process.argv[1] || '')
+    const b = fileURLToPath(import.meta.url)
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
+  } catch {
+    return false
+  }
+})()
+
+if (IS_MAIN) server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`\n  Port ${PORT} is already in use. Run stop.bat first.\n`)
     process.exit(1)
@@ -708,7 +902,7 @@ function portInUse(port, host) {
 
 // A wildcard listen collides with anything on loopback; a specific address with what is on it.
 const probeHost = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST
-if ((await portInUse(PORT, probeHost)) || (probeHost !== '127.0.0.1' && (await portInUse(PORT, '127.0.0.1')))) {
+if (IS_MAIN && ((await portInUse(PORT, probeHost)) || (probeHost !== '127.0.0.1' && (await portInUse(PORT, '127.0.0.1'))))) {
   console.error(`\n  Port ${PORT} is already serving something else.`)
   console.error('  Run stop.bat, then start Apex again.\n')
   process.exit(1)
@@ -720,14 +914,14 @@ if ((await portInUse(PORT, probeHost)) || (probeHost !== '127.0.0.1' && (await p
  * F-003). On the default loopback host, answer on ::1 as well — same handlers,
  * still this machine only. If the machine has no IPv6 loopback, this stays quiet.
  */
-if (HOST === '127.0.0.1') {
+if (IS_MAIN && HOST === '127.0.0.1') {
   const v6 = http.createServer()
   for (const event of ['request', 'upgrade']) for (const fn of server.listeners(event)) v6.on(event, fn)
   v6.on('error', () => {})
   v6.listen(PORT, '::1')
 }
 
-server.listen(PORT, HOST, () => {
+if (IS_MAIN) server.listen(PORT, HOST, () => {
   const url = localUrl(PORT)
   console.log('')
   console.log(`  Apex gateway  ·  ${MODE}`)
@@ -781,6 +975,8 @@ function shutdown(signal) {
   process.exit(signal === 'SIGINT' ? 130 : 0)
 }
 
-for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']) {
-  process.on(signal, () => shutdown(signal))
+if (IS_MAIN) {
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']) {
+    process.on(signal, () => shutdown(signal))
+  }
 }

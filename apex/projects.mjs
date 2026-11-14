@@ -21,6 +21,26 @@ export const PROD_PORT = 4173
 export const GATEWAY_HOST = (process.env.APEX_HOST || '').trim() || '127.0.0.1'
 
 /**
+ * Where the gateway reaches the app servers (APEX_UPSTREAM_HOST). Loopback by
+ * default, where apex/run.mjs starts them; a container deployment names the
+ * host they listen on instead.
+ */
+export const UPSTREAM_HOST = (process.env.APEX_UPSTREAM_HOST || '').trim() || '127.0.0.1'
+
+/**
+ * Where the gateway reaches one project's servers: APEX_UPSTREAM_HOST_<ID>
+ * (APEX_UPSTREAM_HOST_SHOWCASE, _VAULT, _ACADEMIA) when set, else
+ * APEX_UPSTREAM_HOST, else loopback. A container deployment runs each API as
+ * its own service with its own host name (deploy/staging/compose.yml); the
+ * single-host default is unchanged when none of these is set. Read on every
+ * call, so it always reflects the environment it is given.
+ */
+export function upstreamHost(projectId, env = process.env) {
+  const specific = String(env[`APEX_UPSTREAM_HOST_${String(projectId || '').toUpperCase()}`] || '').trim()
+  return specific || String(env.APEX_UPSTREAM_HOST || '').trim() || '127.0.0.1'
+}
+
+/**
  * How long one sign-in lasts, in hours (APEX_SESSION_HOURS, default 12).
  *
  * Every app is started with the same value as its own session lifetime

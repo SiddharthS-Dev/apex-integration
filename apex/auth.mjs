@@ -8,7 +8,8 @@
  * browser gets:
  *
  *   apex_session   Apex's own session: an HMAC-signed "who, which apps, until
- *                  when". It is what the gateway checks before serving
+ *                  when" — and, when the Academia (APEX Core) accepted, which
+ *                  Core user (`sub`). It is what the gateway checks before serving
  *                  anything at all. Path=/.
  *   insp_session   the Showcase's session, as its API issued it, Path=/showcase/
  *   sv_session     SlidesVault's session, as its API issued it, Path=/vault/
@@ -31,7 +32,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PROJECTS, SESSION_COOKIES, SESSION_HOURS } from './projects.mjs'
+import { PROJECTS, SESSION_COOKIES, SESSION_HOURS, upstreamHost } from './projects.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
@@ -54,9 +55,10 @@ const SECURE_ATTR = COOKIE_SECURE ? '; Secure' : ''
 /**
  * The key that signs apex_session. Kept in a gitignored file rather than made
  * up per start, so restarting Apex does not sign everybody out.
+ * APEX_SESSION_SECRET_FILE moves it (a container keeps it on a volume).
  */
 function loadSecret() {
-  const file = path.join(HERE, '.session-secret')
+  const file = (process.env.APEX_SESSION_SECRET_FILE || '').trim() || path.join(HERE, '.session-secret')
   try {
     const existing = fs.readFileSync(file, 'utf8').trim()
     if (existing.length >= 32) return existing
@@ -73,35 +75,40 @@ const SECRET = loadSecret()
 const mac = (value) => crypto.createHmac('sha256', SECRET).update(value).digest('base64url')
 
 /**
- * `email.expiresAt.apps.signature`, all cookie-safe: the email is base64url,
- * the apps are project ids joined with '~'.
+ * `email.expiresAt.apps.sub.signature`, all cookie-safe: the email and the
+ * Core user id (`sub`, empty when the Core did not sign this browser in) are
+ * base64url, the apps are project ids joined with '~'.
  */
-function sign(email, expiresAt, apps) {
-  const body = `${Buffer.from(email).toString('base64url')}.${expiresAt}.${apps.join('~')}`
+function sign(email, expiresAt, apps, sub = '') {
+  const body = `${Buffer.from(email).toString('base64url')}.${expiresAt}.${apps.join('~')}.${Buffer.from(sub || '').toString('base64url')}`
   return `${body}.${mac(body)}`
 }
 
 /**
- * `{ email, apps }` for a valid token, or null for a missing, forged or expired one.
+ * `{ email, apps, sub }` for a valid token, or null for a missing, forged or expired one.
  *
- * A token from before the app list existed (three parts) is still honoured
- * until it expires, as signed in to every app — which is what it meant then.
+ * Older tokens are still honoured until they expire: one from before the app
+ * list existed (three parts) as signed in to every app — which is what it
+ * meant then — and one from before `sub` existed (four parts) with sub null.
  */
 export function verifyToken(token) {
   if (typeof token !== 'string') return null
   const parts = token.split('.')
-  if (parts.length !== 3 && parts.length !== 4) return null
+  if (parts.length < 3 || parts.length > 5) return null
   const signature = parts.pop()
-  const [emailB64, expiresAt, apps] = parts
+  const [emailB64, expiresAt, apps, subB64] = parts
   const expected = mac(parts.join('.'))
   const a = Buffer.from(signature)
   const b = Buffer.from(expected)
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null
   if (!(Number(expiresAt) > Date.now())) return null
   if (isRevoked(signature)) return null
+  const sub = subB64 ? Buffer.from(subB64, 'base64url').toString('utf8') : ''
   return {
     email: Buffer.from(emailB64, 'base64url').toString('utf8'),
     apps: apps === undefined ? APPS.map((p) => p.id) : apps.split('~').filter(Boolean),
+    sub: sub || null,
+    expiresAt: Number(expiresAt),
   }
 }
 
@@ -200,7 +207,7 @@ function post(project, pathname, { body, cookie = '', clientIp = '' } = {}) {
     const payload = body === undefined ? '' : JSON.stringify(body)
     const upstream = http.request(
       {
-        host: '127.0.0.1',
+        host: upstreamHost(project.id),
         port: project.api.port,
         method: 'POST',
         path: pathname,
@@ -257,13 +264,22 @@ export function classify(res, cookieName) {
  * the browser still holds for one of them is revoked and cleared, so nobody
  * inherits a previous user's session in an app they could not sign in to.
  *
+ * With identity assertion on (apex/gateway-identity.mjs), the Core's answer
+ * also names the Core user (`user.id`), which goes into the Apex session as
+ * `sub`. An application in `required` mode is not asked to check the password
+ * at all — its own sign-in refuses — and counts as signed in through the
+ * assertion whenever the Core accepted.
+ *
  * @param {string} email
  * @param {string} password
- * @param {{ req: import('node:http').IncomingMessage, clientIp: string }} context
+ * @param {{ req: import('node:http').IncomingMessage, clientIp: string,
+ *           identity?: { modeOf: (projectId: string) => string } }} context
  */
-export async function signIn(email, password, { req, clientIp }) {
+export async function signIn(email, password, { req, clientIp, identity }) {
+  const required = (project) => identity?.modeOf?.(project.id) === 'required'
   const results = await Promise.all(
     APPS.map(async (project) => {
+      if (required(project)) return { project, res: null, outcome: 'identity' }
       const res = await post(project, '/api/auth/login', { body: { email, password }, clientIp })
       return { project, res, outcome: classify(res, project.api.sessionCookie) }
     })
@@ -271,19 +287,37 @@ export async function signIn(email, password, { req, clientIp }) {
 
   const accepted = results.filter((r) => r.outcome === 'ok')
   if (!accepted.length) {
-    if (results.some((r) => r.outcome === 'limited')) {
+    const asked = results.filter((r) => r.outcome !== 'identity')
+    if (asked.some((r) => r.outcome === 'limited')) {
       return { status: 429, error: 'Too many sign-in attempts. Wait a few minutes and try again.' }
     }
     // Every app down: say so, rather than blame the password.
-    if (results.every((r) => r.outcome === 'down')) {
+    if (asked.every((r) => r.outcome === 'down')) {
       return { status: 503, error: 'No platform is reachable yet. Give Apex a few seconds and sign in again.' }
     }
     return { status: 401, error: 'That email address and password do not match.' }
   }
 
-  // An app left out may still hold an older session — perhaps someone else's.
-  const jar = parseCookies(req.headers.cookie)
+  const sub = coreSubject(accepted.find((r) => r.project.id === CORE_ID)?.res)
+  const asserted = sub ? results.filter((r) => r.outcome === 'identity') : []
   const skipped = results.filter((r) => r.outcome !== 'ok')
+  await revokeLeftovers(req, skipped, clientIp)
+
+  return sessionResult({ email, sub, accepted, asserted, skipped })
+}
+
+/** The project whose sign-in answer names the Core user: the Academia, which is APEX Core. */
+const CORE_ID = 'academia'
+
+/** The Core user id from a Core sign-in answer (`{ user: { id } }`), or ''. */
+function coreSubject(res) {
+  const id = res?.json?.user?.id
+  return typeof id === 'string' && /^[A-Za-z0-9_.:@-]{1,128}$/.test(id) ? id : ''
+}
+
+/** An app left out may still hold an older session — perhaps someone else's. Revoke it at its API. */
+async function revokeLeftovers(req, skipped, clientIp) {
+  const jar = parseCookies(req.headers.cookie)
   await Promise.all(
     skipped
       .filter((r) => jar[r.project.api.sessionCookie])
@@ -294,13 +328,20 @@ export async function signIn(email, password, { req, clientIp }) {
         })
       )
   )
+}
 
-  const apps = accepted.map((r) => r.project.id)
+/**
+ * The 200 answer for a sign-in: the Apex session (with `sub`), every accepted
+ * app's own session cookie under its mount, and every other app's cleared.
+ */
+function sessionResult({ email, sub, accepted, asserted, skipped }) {
+  const apps = [...accepted, ...asserted].map((r) => r.project.id)
   const expiresAt = Date.now() + SESSION_HOURS * 3600_000
-  const apexCookie = `${APEX_COOKIE}=${sign(email.toLowerCase(), expiresAt, apps)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.round(SESSION_HOURS * 3600)}${SECURE_ATTR}`
+  const apexCookie = `${APEX_COOKIE}=${sign(email.toLowerCase(), expiresAt, apps, sub)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.round(SESSION_HOURS * 3600)}${SECURE_ATTR}`
   return {
     status: 200,
     apps,
+    sub: sub || null,
     cookies: [
       apexCookie,
       // Legacy Path=/ copies go first, then the mount-scoped cookie that replaces them.
@@ -311,6 +352,39 @@ export async function signIn(email, password, { req, clientIp }) {
       ...skipped.flatMap((r) => clearCookie(r.project.api.sessionCookie, r.project.base)),
     ],
   }
+}
+
+/**
+ * "Sign in with Google": the Google ID token goes to the Core
+ * (`POST /api/core/auth/google`), which signs in only a Google subject already
+ * linked to a Core user — never by email. On success the Apex session is set
+ * up exactly as for a password: the Core's own session, `sub`, and every app in
+ * identity-assertion mode counted as signed in. Apps still on their own
+ * password sign-in (mode off) cannot be signed in without a password, so their
+ * sessions are cleared and the dashboard shows them as "Sign in required".
+ *
+ * @param {string} credential  The Google Identity Services ID token.
+ */
+export async function signInWithGoogle(credential, { req, clientIp, identity }) {
+  const core = APPS.find((p) => p.id === CORE_ID)
+  if (!core) return { status: 404, error: 'Google sign-in is not available.' }
+  const res = await post(core, '/api/core/auth/google', { body: { credential }, clientIp })
+  const outcome = classify(res, core.api.sessionCookie)
+  const sub = coreSubject(res)
+  const email = typeof res.json?.user?.email === 'string' ? res.json.user.email : ''
+  if (outcome !== 'ok' || !sub || !email) {
+    if (outcome === 'down') return { status: 503, error: 'Inspironics Academia is not reachable yet. Try again in a few seconds.' }
+    if (outcome === 'limited') return { status: 429, error: 'Too many sign-in attempts. Wait a few minutes and try again.' }
+    if (res.status === 404) return { status: 404, error: 'Google sign-in is not enabled.' }
+    // No hint whether the Google account exists anywhere.
+    return { status: 401, error: 'That Google account is not linked to an Apex account.' }
+  }
+  const accepted = [{ project: core, res, outcome }]
+  const others = APPS.filter((p) => p !== core).map((project) => ({ project, res: null, outcome: 'identity' }))
+  const asserted = others.filter((r) => (identity?.modeOf?.(r.project.id) || 'off') !== 'off')
+  const skipped = others
+  await revokeLeftovers(req, skipped, clientIp)
+  return sessionResult({ email, sub, accepted, asserted, skipped })
 }
 
 /**
@@ -387,8 +461,8 @@ export function revokeToken(token) {
 }
 
 /** A fresh token for tests: the same shape signIn() hands the browser. */
-export const issueToken = (email, apps = APPS.map((p) => p.id), hours = SESSION_HOURS) =>
-  sign(email.toLowerCase(), Date.now() + hours * 3600_000, apps)
+export const issueToken = (email, apps = APPS.map((p) => p.id), hours = SESSION_HOURS, sub = '') =>
+  sign(email.toLowerCase(), Date.now() + hours * 3600_000, apps, sub)
 
 /* ------------------------------------------------------ attempt limiter -- */
 

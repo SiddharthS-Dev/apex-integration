@@ -17,6 +17,8 @@ Thumbs.db
 .idea/
 apex/.session-secret
 apex/.revoked-sessions
+apex/.identity-keys.json
+apex/.identity-keys.json.*.tmp
 
 # Demo video capture intermediate output, scratch frames and large binary models
 demo video/capture/out/

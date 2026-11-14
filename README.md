@@ -62,6 +62,12 @@ All optional, set in the environment before `start.bat`:
 | `APEX_TRUST_PROXY`   | unset                       | Set to `1` when that proxy sets `X-Forwarded-For` (overwriting, not appending), `-Proto` and `-Host`. The gateway then takes the client address for its sign-in rate limit from the left-most `X-Forwarded-For`. Leave unset otherwise — any client could claim any address. |
 | `APEX_SESSION_HOURS` | `12`                        | How long one sign-in lasts. Each app is started with the same `SESSION_TTL_HOURS`, so no app session outlives Apex's. |
 | `APEX_PORT`          | `5173` dev, `4173` prod     | The gateway's port (`start.bat prod 4180` sets it too). |
+| `APEX_IDENTITY_MODE` | `off`                       | Identity assertion (R1): `off`, `optional` or `required`. Not `off`: the gateway signs a 60-second `X-Apex-Identity` assertion of the Core user on every Showcase and SlidesVault API request, and `start.bat` gives each app its own key. `required` turns off the apps' own sign-in. Any other value runs as `required`. See [`docs/operations/IDENTITY_ASSERTION.md`](docs/operations/IDENTITY_ASSERTION.md). |
+| `APEX_IDENTITY_MODE_SHOWCASE`, `APEX_IDENTITY_MODE_SLIDESVAULT` | `APEX_IDENTITY_MODE` | The same, for one app, so they can be switched one at a time. |
+| `APEX_IDENTITY_TRUSTED_SOURCES` | `loopback`       | Read by each app: the addresses (IPs or CIDRs, comma-separated) an assertion may arrive from. Name the gateway's container network when the apps do not share its host. |
+| `APEX_IDENTITY_KEYS_FILE` | `apex/.identity-keys.json` | Where the assertion keys live (gitignored, created on first use). Rotate with `node apex/identity-keys.mjs rotate`. |
+| `APEX_UPSTREAM_HOST` | `127.0.0.1`                 | Where the gateway reaches the app APIs and dev servers — a host name in a container deployment. |
+| `APEX_GOOGLE_CLIENT_ID` | unset                    | Shows **Sign in with Google** on the sign-in page. The Academia (APEX Core) is started with the same value as `GOOGLE_CLIENT_ID` and signs in only a Google account already linked to a Core user. Unset: no button, no Google scripts on the page. |
 
 `start.bat prod` runs every API with `NODE_ENV=production`. Over plain
 `http://localhost` that still works: each app is told its cookies are not

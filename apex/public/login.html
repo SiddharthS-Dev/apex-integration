@@ -1213,6 +1213,36 @@
           transition-duration: 0.01ms !important;
         }
       }
+
+      /* "Sign in with Google" — only when the gateway has APEX_GOOGLE_CLIENT_ID. */
+      .google[hidden] {
+        display: none;
+      }
+      .google {
+        margin-top: 18px;
+      }
+      .google__or {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .google__or::before,
+      .google__or::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: rgba(148, 163, 184, 0.25);
+      }
+      .google__button {
+        display: flex;
+        justify-content: center;
+        min-height: 44px;
+      }
     </style>
   </head>
   <body>
@@ -1446,6 +1476,14 @@
               </ol>
             </form>
 
+            <!-- Shown only when /auth/config names a Google client (APEX_GOOGLE_CLIENT_ID).
+                 Google's own button; the Core signs in only a Google account
+                 already linked to an Apex account — never by email. -->
+            <div class="google" id="google" hidden>
+              <div class="google__or">or</div>
+              <div class="google__button" id="google-button"></div>
+            </div>
+
             <div class="secure">
               <span class="secure__main">
                 <span class="secure__icon">
@@ -1560,8 +1598,51 @@
               steps.append(li)
             }
             if (c.sessionHours) document.querySelectorAll('[data-hours]').forEach((el) => (el.textContent = String(c.sessionHours)))
+            if (typeof c.googleClientId === 'string' && c.googleClientId) startGoogle(c.googleClientId)
           })
           .catch(() => {})
+
+        /* ------------------------------------------- sign in with Google */
+        // Google Identity Services, loaded only when configured (the page's
+        // CSP allows accounts.google.com/gsi only then). The ID token goes to
+        // the gateway, which hands it to the Core and sets up the session.
+        function startGoogle(clientId) {
+          const s = document.createElement('script')
+          s.src = 'https://accounts.google.com/gsi/client'
+          s.async = true
+          s.onload = () => {
+            const gsi = window.google && window.google.accounts && window.google.accounts.id
+            if (!gsi) return
+            gsi.initialize({ client_id: clientId, callback: onGoogle, ux_mode: 'popup' })
+            gsi.renderButton($('google-button'), { theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'pill', width: 320 })
+            $('google').hidden = false
+          }
+          document.head.append(s)
+        }
+
+        async function onGoogle(response) {
+          if (busy || !response || !response.credential) return
+          busy = true
+          clearError()
+          try {
+            const res = await fetch('/auth/google', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({ credential: response.credential, next }),
+            })
+            const body = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(body.error || `Sign-in failed (${res.status}).`)
+            const signedIn = Array.isArray(body.apps) ? body.apps : []
+            let target = safeNext(body.next || next)
+            const into = apps.find((a) => target === a.base || target.startsWith(`${a.base}/`))
+            if (into && !signedIn.includes(into.id)) target = '/'
+            location.replace(target)
+          } catch (err) {
+            busy = false
+            showError(err.message === 'Failed to fetch' ? 'Apex is not reachable. Check that it is running.' : err.message)
+          }
+        }
 
         /* ----------------------------------------------- field behaviour */
         const showError = (message) => {

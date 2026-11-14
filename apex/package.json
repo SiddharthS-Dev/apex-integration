@@ -5,7 +5,7 @@
   "type": "module",
   "engines": { "node": ">=22.5" },
   "scripts": {
-    "test": "node --test session.test.mjs auth.test.mjs",
+    "test": "node --test session.test.mjs auth.test.mjs identity.test.mjs gateway.test.mjs",
     "smoke": "node smoke.mjs"
   }
 }

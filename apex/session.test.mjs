@@ -51,3 +51,22 @@ test('cookies are Secure only behind an https public URL', async () => {
     else process.env.APEX_PUBLIC_URL = before
   }
 })
+
+test('APEX_SESSION_SECRET_FILE moves the signing secret, and it survives a restart', async () => {
+  const file = path.join(tmp, 'state', 'session-secret')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const before = process.env.APEX_SESSION_SECRET_FILE
+  process.env.APEX_SESSION_SECRET_FILE = file
+  try {
+    const first = await import('./auth.mjs?secret-file-1')
+    assert.ok(fs.readFileSync(file, 'utf8').trim().length >= 32, 'created at the configured path')
+    const token = first.issueToken('someone@example.com')
+    const restarted = await import('./auth.mjs?secret-file-2')
+    assert.equal(restarted.verify(token), 'someone@example.com', 'same secret after a restart')
+  } finally {
+    if (before === undefined) delete process.env.APEX_SESSION_SECRET_FILE
+    else process.env.APEX_SESSION_SECRET_FILE = before
+  }
+  const fallback = await import('./auth.mjs?secret-file-3')
+  assert.equal(fallback.verify(fallback.issueToken('x@example.com')), 'x@example.com', 'unset: apex/.session-secret as before')
+})

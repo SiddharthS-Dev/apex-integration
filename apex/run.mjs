@@ -16,11 +16,13 @@
  *
  * Dependency-free, like the gateway.
  */
+import { childEnv } from './identity-keys.mjs'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { GATEWAY_PORT, PROJECTS, apiEnvOptions, dropboxRedirectUris, gatewayUrl } from './projects.mjs'
+import { identityEnv } from './gateway-identity.mjs'
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const [target, role = 'api', ...rest] = process.argv.slice(2)
@@ -64,6 +66,7 @@ if (role === 'api') {
       TRUST_PROXY: 'loopback',
       ...(mode === 'prod' ? { NODE_ENV: 'production' } : {}),
       ...api.env(gateway, apiEnvOptions(port)),
+      ...identityEnv(project),
     },
   }
 } else if (role === 'build') {
@@ -99,7 +102,8 @@ if (role === 'api') {
 
 const proc = spawn(child.file, child.args, {
   cwd: child.cwd,
-  env: { ...process.env, ...child.env },
+  // Never the gateway's whole key store or secret files (security review L2).
+  env: childEnv(process.env, child.env),
   stdio: 'inherit',
   windowsHide: false,
   // npm is a .cmd on Windows, which Node only runs through a shell.
