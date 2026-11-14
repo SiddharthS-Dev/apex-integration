@@ -182,6 +182,27 @@ export function createHttpDriver() {
       sendTestEmail: (to) => request('POST', '/notifications/email/test', { body: { to } }),
     },
 
+    // APEX Core identity (R1): people, organisations, scoped roles, reviewed identity links, audit log.
+    // Authorization is enforced by the API; these calls only carry what the admin screens ask for.
+    core: {
+      me: () => request('GET', '/core/me'),
+      users: (q = '') => request('GET', '/core/users', { query: { q } }),
+      user: (id) => request('GET', `/core/users/${encodeURIComponent(id)}`),
+      organizations: () => request('GET', '/core/organizations'),
+      createOrganization: (body) => request('POST', '/core/organizations', { body }),
+      members: (orgId) => request('GET', `/core/organizations/${encodeURIComponent(orgId)}/members`),
+      addMember: (orgId, body) => request('POST', `/core/organizations/${encodeURIComponent(orgId)}/members`, { body }),
+      endMembership: (id, body = {}) => request('POST', `/core/memberships/${encodeURIComponent(id)}/end`, { body }),
+      grantRole: (body) => request('POST', '/core/role-assignments', { body }),
+      revokeRole: (id, body) => request('POST', `/core/role-assignments/${encodeURIComponent(id)}/revoke`, { body }),
+      transitionRole: (id, body) => request('POST', `/core/role-assignments/${encodeURIComponent(id)}/transition`, { body }),
+      links: (status) => request('GET', '/core/identity-links', { query: { status } }),
+      proposeLink: (body) => request('POST', '/core/identity-links', { body }),
+      confirmLink: (id, body = {}) => request('POST', `/core/identity-links/${encodeURIComponent(id)}/confirm`, { body }),
+      rejectLink: (id, body) => request('POST', `/core/identity-links/${encodeURIComponent(id)}/reject`, { body }),
+      auditEvents: (query = {}) => request('GET', '/core/audit-events', { query }),
+    },
+
     system: {
       config: () => request('GET', '/config'),
       metrics: () => request('GET', '/metrics'),

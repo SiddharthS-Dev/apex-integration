@@ -8,6 +8,7 @@ import ProfileStats from '@/components/profile/ProfileStats';
 import ChangePasswordForm from '@/components/profile/ChangePasswordForm';
 import ThemePreference from '@/components/profile/ThemePreference';
 import NotificationPreferences from '@/components/profile/NotificationPreferences';
+import MyAccessCard from '@/components/core/MyAccessCard';
 
 export default function Profile() {
   const { user, refreshUser, logout } = useAuth();
@@ -23,6 +24,7 @@ export default function Profile() {
       />
       <ProfileCard user={user} refreshUser={refreshUser} />
       <ProfileStats />
+      <MyAccessCard />
       <div className="grid gap-4 lg:grid-cols-2">
         <ChangePasswordForm user={user} />
         <div className="space-y-4">

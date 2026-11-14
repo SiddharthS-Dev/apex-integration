@@ -104,6 +104,12 @@ export function createDemoDriver() {
       }),
       sendTestEmail: unavailable('Email delivery'),
     },
+    // APEX Core (people, organisations, roles, identity links, audit) lives only in the API server.
+    // The screens check `backendKind` and show a notice; these keep any stray call a clean 503.
+    core: Object.fromEntries([
+      'me', 'users', 'user', 'organizations', 'createOrganization', 'members', 'addMember', 'endMembership',
+      'grantRole', 'revokeRole', 'transitionRole', 'links', 'proposeLink', 'confirmLink', 'rejectLink', 'auditEvents',
+    ].map((name) => [name, unavailable('APEX Core')])),
     system: {
       config: async () => ({ ...DEMO_CONFIG }),
       metrics: async () => ({ demo: true, uptime_s: Math.round(performance.now() / 1000), requests: {}, functions: {} }),

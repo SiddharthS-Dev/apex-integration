@@ -41,6 +41,7 @@ import AdminQuestions from '@/pages/admin/AdminQuestions';
 import AdminLearners from '@/pages/admin/AdminLearners';
 import Integrations from '@/pages/admin/Integrations';
 import AdminCompliance from '@/pages/admin/AdminCompliance';
+import AdminAccess from '@/pages/admin/AdminAccess';
 import AIStudio from '@/pages/admin/AIStudio';
 import Meetings from '@/pages/Meetings';
 import MeetingDetail from '@/pages/MeetingDetail';
@@ -90,6 +91,7 @@ export default function App() {
               <Route path="/admin/questions" element={<AdminGuard><AdminQuestions /></AdminGuard>} />
               <Route path="/admin/learners" element={<AdminGuard><AdminLearners /></AdminGuard>} />
               <Route path="/admin/integrations" element={<AdminGuard><Integrations /></AdminGuard>} />
+              <Route path="/admin/access" element={<AdminGuard><AdminAccess /></AdminGuard>} />
               <Route path="/admin/compliance" element={<AdminGuard><AdminCompliance /></AdminGuard>} />
               <Route path="/admin/ai-studio" element={<AdminGuard><AIStudio /></AdminGuard>} />
 
