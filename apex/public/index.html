@@ -349,6 +349,16 @@
         font-weight: 600;
         word-break: break-all;
       }
+      .menu__link {
+        color: var(--text);
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .menu__link:focus-visible {
+        outline: 2px solid currentColor;
+        outline-offset: 2px;
+      }
       .menu p {
         margin: 12px 0 0;
         padding-top: 12px;
@@ -1397,6 +1407,7 @@
               Signed in as
               <strong id="menu-email"></strong>
               <p id="menu-session">One session covers Apex and every platform it opened. Sign out ends them all.</p>
+              <p><a class="menu__link" href="/link">Link your Showcase and SlidesVault accounts</a></p>
             </div>
           </div>
 

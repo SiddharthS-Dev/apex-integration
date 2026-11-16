@@ -193,6 +193,8 @@ function identityConfig(env) {
     audience: IDENTITY_AUDIENCE,
     audienceMismatch: !!str(env.APEX_IDENTITY_AUDIENCE) && str(env.APEX_IDENTITY_AUDIENCE) !== IDENTITY_AUDIENCE,
     keys: parseKeys(str(env.APEX_IDENTITY_KEYS)),
+    /** The kid this app signs its account-ownership proofs with (APEX_IDENTITY_KID); else the last key listed. */
+    kid: str(env.APEX_IDENTITY_KID),
     trustedSources: sources,
   }
 }

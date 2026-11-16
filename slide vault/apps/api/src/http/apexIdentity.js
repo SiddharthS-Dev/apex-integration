@@ -242,3 +242,68 @@ export function parseIdentityMode(value, fallback = 'off') {
   if (!s) return fallback
   return IDENTITY_MODES.includes(s) ? s : null
 }
+
+/* ------------------------------------------------- ownership proof -- */
+
+/**
+ * An application's proof that someone just typed the right password for one
+ * of its accounts (R1 linking addendum): the same `kid.payload.signature`
+ * format, signed with the application's own audience key, with
+ *
+ *   { iss: <app id>, aud: "apex-link", app_user_id, challenge_id, iat, exp: iat + 60 }
+ *
+ * The gateway verifies it with that application's key before it asks the Core
+ * to confirm a link. It can never pass for an identity assertion (the issuer
+ * and audience differ), nor be used for another challenge or application.
+ */
+export const LINK_PROOF_AUDIENCE = 'apex-link'
+export const LINK_PROOF_TTL_SECONDS = 60
+const ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/
+
+/**
+ * The key an application signs with: `preferredKid` when it names a known key
+ * (APEX_IDENTITY_KID), else the last one listed — the gateway hands keys out
+ * previous first, current last. null when there is no key at all.
+ */
+export function currentSigningKey(keys, preferredKid) {
+  if (!(keys instanceof Map) || !keys.size) return null
+  if (preferredKid && keys.has(preferredKid)) return { kid: preferredKid, key: keys.get(preferredKid) }
+  const [kid, key] = [...keys.entries()].pop()
+  return { kid, key }
+}
+
+/** Signs an ownership proof for one application account and one Core challenge. */
+export function issueLinkProof({ app, kid, key, appUserId, challengeId, now = Date.now() }) {
+  if (!str(app, 64)) throw new Error('A link proof names the application that issues it.')
+  if (!ID_RE.test(String(appUserId)) || !ID_RE.test(String(challengeId))) throw new Error('A link proof needs an account id and a challenge id.')
+  const iat = Math.floor(now / 1000)
+  return signAssertion(
+    { iss: app, aud: LINK_PROOF_AUDIENCE, app_user_id: String(appUserId), challenge_id: String(challengeId), iat, exp: iat + LINK_PROOF_TTL_SECONDS },
+    { kid, key }
+  )
+}
+
+/**
+ * Verifies an ownership proof: format, known kid, signature, iss = `app`,
+ * aud = "apex-link", unexpired with a lifetime of at most 60 s, an account id,
+ * and the exact `challengeId` the gateway is completing.
+ *
+ * @returns {{ ok: true, claims: { iss, aud, app_user_id, challenge_id, iat, exp } } | { ok: false, reason: string }}
+ */
+export function verifyLinkProof(proof, { keys, app, challengeId, now = Date.now() } = {}) {
+  if (!str(app, 64)) return { ok: false, reason: 'issuer' }
+  const result = verifyAssertion(proof, { keys, audience: LINK_PROOF_AUDIENCE, issuer: app, now, requireSubject: false })
+  if (!result.ok) return result
+  const { iat, exp } = result.claims
+  if (exp - iat > LINK_PROOF_TTL_SECONDS) return { ok: false, reason: 'lifetime' }
+  let payload
+  try {
+    payload = JSON.parse(Buffer.from(proof.split('.')[1], 'base64url').toString('utf8'))
+  } catch {
+    return { ok: false, reason: 'format' }
+  }
+  const appUserId = typeof payload.app_user_id === 'string' && ID_RE.test(payload.app_user_id) ? payload.app_user_id : null
+  if (!appUserId) return { ok: false, reason: 'subject' }
+  if (typeof challengeId !== 'string' || !challengeId || payload.challenge_id !== challengeId) return { ok: false, reason: 'challenge' }
+  return { ok: true, claims: { iss: payload.iss, aud: payload.aud, app_user_id: appUserId, challenge_id: payload.challenge_id, iat, exp } }
+}

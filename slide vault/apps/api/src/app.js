@@ -16,7 +16,7 @@ import { createRateLimiter, byUserOrIp } from './http/rateLimit.js';
 import { M } from './services/metrics/metrics.js';
 
 import { createDropboxRouter } from './integrations/dropbox/routes/index.js';
-import { createAuthRouter } from './routes/auth.js';
+import { createApexLinkRouter, createAuthRouter, createLoginLimiters } from './routes/auth.js';
 import { createEntityRouter } from './routes/entities.js';
 import { createSystemRouter } from './routes/system.js';
 import { createAiRouter } from './routes/ai.js';
@@ -102,7 +102,10 @@ export function createApp(container) {
   });
 
   app.use('/api', generalLimiter);
-  app.use('/api/auth', createAuthRouter(container));
+  // One set of sign-in limiters for the password sign-in and the Apex ownership check.
+  const loginLimiters = createLoginLimiters();
+  app.use('/api/auth', createAuthRouter({ ...container, loginLimiters }));
+  app.use('/api/apex', createApexLinkRouter({ ...container, loginLimiters }));
   app.use('/api', createSystemRouter({ ...container, startedAt }));
   // The administrative limiter is for administration: a reader opening decks
   // goes through /api/dropbox/files/:id/{preview,content} too, and must not

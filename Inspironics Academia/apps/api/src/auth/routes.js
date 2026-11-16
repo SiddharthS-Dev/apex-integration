@@ -10,6 +10,7 @@ import {
 } from '../repo/users.js';
 import { hashPassword, randomToken, sha256, validatePassword, verifyPassword } from './passwords.js';
 import { createSession, destroySession, destroyUserSessions, requireAdmin, requireUser } from './sessions.js';
+import { clearFailures, lockedFor, noteFailure } from './lockout.js';
 import { emailConfigured } from '../notify/mailer.js';
 import { sendAccountEmail } from '../notify/index.js';
 import { onUserCreated } from '../core/index.js';
@@ -47,28 +48,7 @@ router.post('/register', sensitiveLimiter, asyncHandler(async (req, res) => {
   res.status(201).json({ user: publicUser(user) });
 }));
 
-// Per-account lockout: after config.loginMaxFailures consecutive failures for one email within
-// LOCK_WINDOW_MS, that email is refused (429) for LOCK_WINDOW_MS whatever the client IP; a successful
-// sign-in clears it. Kept in memory, so it is per process and forgotten on restart — acceptable for a
-// single-instance deployment; a multi-instance one would need it in the database.
-const LOCK_WINDOW_MS = 15 * 60_000;
-const loginFailures = new Map(); // email -> { count, first, lockedUntil }
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of loginFailures) if (v.lockedUntil <= now && v.first + LOCK_WINDOW_MS <= now) loginFailures.delete(k);
-}, LOCK_WINDOW_MS).unref();
-
-function lockedFor(email, now = Date.now()) {
-  const entry = loginFailures.get(email);
-  return entry && entry.lockedUntil > now ? entry.lockedUntil - now : 0;
-}
-function noteFailure(email, now = Date.now()) {
-  let entry = loginFailures.get(email);
-  if (!entry || entry.first + LOCK_WINDOW_MS <= now) entry = { count: 0, first: now, lockedUntil: 0 };
-  entry.count += 1;
-  if (entry.count >= config.loginMaxFailures) entry.lockedUntil = now + LOCK_WINDOW_MS;
-  loginFailures.set(email, entry);
-}
+// Per-account lockout (shared with the Core's linking password re-check): see auth/lockout.js.
 
 // An unknown email is checked against this throwaway hash, so it costs the same scrypt work as a wrong
 // password and response timing does not reveal which emails have accounts.
@@ -91,7 +71,7 @@ router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
     noteFailure(email);
     throw unauthorized('Invalid email or password');
   }
-  loginFailures.delete(email);
+  clearFailures(email);
   await updateUser(user.id, { last_login_at: new Date().toISOString() });
   await createSession(res, user, req);
   res.json({ user: publicUser(user) });

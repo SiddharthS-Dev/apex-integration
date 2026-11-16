@@ -102,6 +102,27 @@ sign-out as before; in `required` mode they are not accepted at all.
 - Asserted roles never reach the apps' role columns, so turning identity off returns every account
   to exactly the role it had.
 
+## Linking an existing app account (ownership proof)
+
+A signed-in user links their own Showcase or SlidesVault account to their Apex (Core) account at `/link` (dashboard account menu, "Link your Showcase and SlidesVault accounts"). Binding rules: `docs/implementation/R1_LINKING_ADDENDUM.md`.
+
+1. **Step 1**: the user re-enters their Apex password. The gateway calls `POST /auth/link/start`, which calls the Core (`/api/core/link-challenges`, `X-Apex-Service`). It gets back a 5-minute single-use challenge.
+2. **Step 2**: the user enters the app account's email and password. The gateway calls `POST /auth/link/complete`, which:
+   - asks the app at `POST /api/apex/link-proof` on its own port;
+   - verifies the returned proof with that app's key (`iss` = app id, `aud = "apex-link"`, the same challenge, at most 60 s old);
+   - asks the Core to confirm the link by possession, then clears the resolve cache for that user.
+
+**Requirements**
+- The app's identity mode must not be `off`, because the gateway and the app both need the app's keys. Otherwise the gateway answers 503, and so does the app (no keys).
+- The app also receives `APEX_IDENTITY_KID` (the current kid, from `run.mjs`) and signs proofs with it. Without it, the app signs with the last key listed. The gateway accepts any of the app's current or previous kids.
+
+**Protections**
+- `/api/apex/link-proof` answers only a peer in `APEX_IDENTITY_TRUSTED_SOURCES` that also carries an `X-Apex-Service` credential signed with that app's key (`aud` = the app). Everything else gets 403.
+- The gateway also refuses to proxy any `/<app>/api/apex/…` path from a browser (404).
+- The app checks the password with its legacy login code, behind the same limiter and lockout. It creates no session, sets no cookie and leaves the account row untouched.
+- Gateway rate limits: 5 starts and 10 completes per 15 minutes, per client address and per Core user.
+- Passwords are never logged.
+
 ## Containers
 
 Containers do not use `run.mjs`, so every service gets its environment explicitly. The working reference is `deploy/staging/compose.yml`, with its runbook at `docs/operations/STAGING_RUNBOOK.md`.

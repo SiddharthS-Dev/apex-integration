@@ -13,6 +13,7 @@
  */
 import express from 'express'
 import { ROLES } from '@inspironics/shared'
+import { SERVICE_HEADER, currentSigningKey, issueLinkProof, verifyAssertion } from '../lib/apexIdentity.js'
 import { hashPassword, needsRehash, verifyPassword } from '../lib/crypto.js'
 import { HttpError, badRequest, field, route } from '../lib/http.js'
 import { requireAuth, sessionCookieOptions } from '../middleware/auth.js'
@@ -71,17 +72,42 @@ export function createLoginLockout({ maxFailures = 10, windowMs = 15 * 60_000, n
 let dummyHash
 const dummyPasswordHash = () => (dummyHash ??= hashPassword('dummy-password-for-timing'))
 
+/**
+ * The sign-in limiter (per address) and the per-account lockout. One pair per app,
+ * shared by the password sign-in and the Apex account-ownership check, so neither
+ * can be used to get round the other's limits.
+ */
+export function createLoginGuards({ config, metrics }) {
+  return {
+    limiter: rateLimit({ windowMs: 15 * 60_000, max: config.isProd ? 30 : 300, bucket: 'auth', metrics }),
+    lockout: createLoginLockout({ maxFailures: config.auth.loginMaxFailures, windowMs: config.auth.loginLockoutMinutes * 60_000 }),
+  }
+}
+
+/**
+ * The password check of the legacy sign-in: `{ lockedMs }` while the account is
+ * locked, else `{ user, matches }`. scrypt always runs, so an unknown email
+ * answers no faster than a wrong password; an account with no password never matches.
+ */
+async function checkCredentials({ repos, lockout, email, password }) {
+  const lockedMs = lockout.lockedFor(email)
+  if (lockedMs) return { lockedMs }
+  const user = await repos.users.findByEmail(email)
+  const stored = user?.password_hash || (await dummyPasswordHash())
+  const matches = (await verifyPassword(password, stored)) && !!user?.password_hash
+  return { user, matches }
+}
+
 const CODE_ERRORS = {
   missing: 'No code is pending for that email — request a new one.',
   expired: 'That code has expired — request a new one.',
   locked: 'Too many incorrect attempts — request a new code.',
 }
 
-export function authRoutes({ config, repos, metrics, log }) {
+export function authRoutes({ config, repos, metrics, log, loginGuards }) {
   const r = express.Router()
-  const limiter = rateLimit({ windowMs: 15 * 60_000, max: config.isProd ? 30 : 300, bucket: 'auth', metrics })
+  const { limiter, lockout } = loginGuards || createLoginGuards({ config, metrics })
   const client = (req) => ({ ip: req.ip, userAgent: req.get('user-agent') || '' })
-  const lockout = createLoginLockout({ maxFailures: config.auth.loginMaxFailures, windowMs: config.auth.loginLockoutMinutes * 60_000 })
 
   /**
    * Development only: an install with no administrator hands the role to the
@@ -229,17 +255,12 @@ export function authRoutes({ config, repos, metrics, log }) {
     route(async (req, res) => {
       const email = normaliseEmail(field(req.body, 'email', { max: 254 }))
       const password = field(req.body, 'password', { max: 200 })
-      const lockedMs = lockout.lockedFor(email)
+      const { lockedMs, user, matches: ok } = await checkCredentials({ repos, lockout, email, password })
       if (lockedMs) {
         await failed(req, email, 'password', 'locked')
         res.setHeader('Retry-After', String(Math.ceil(lockedMs / 1000)))
         throw new HttpError(429, 'Too many failed sign-in attempts — try again in 15 minutes.')
       }
-      const user = await repos.users.findByEmail(email)
-      // always run scrypt, so an unknown email answers no faster than a wrong password
-      const stored = user?.password_hash || (await dummyPasswordHash())
-      const matches = await verifyPassword(password, stored)
-      const ok = matches && !!user?.password_hash
       if (!ok || user.disabled) {
         lockout.fail(email)
         await failed(req, email, 'password', user?.disabled ? 'disabled' : 'bad_credentials')
@@ -356,6 +377,98 @@ export function authRoutes({ config, repos, metrics, log }) {
 
   return r
 }
+
+/**
+ * /api/apex — routes only the Apex gateway may call (R1 linking addendum).
+ *
+ * POST /api/apex/link-proof { email, password, challenge_id } -> 200 { proof }
+ *
+ * The account-holder ownership check: the person linking this app's account to
+ * their Apex account types this account's password, and the gateway asks here.
+ * Available in every identity mode (required too, where /auth/login answers 403),
+ * but only from APEX_IDENTITY_TRUSTED_SOURCES (the TCP peer, never
+ * X-Forwarded-For) carrying the gateway's X-Apex-Service credential signed with
+ * this app's key — anything else is 403; no keys at all is 503. The password is
+ * checked exactly as the legacy sign-in checks it, behind the same limiter and
+ * per-account lockout, and nothing else happens: no session, no cookie, and the
+ * account row is not touched. The proof is signed with this app's current key:
+ *   { iss: 'showcase', aud: 'apex-link', app_user_id, challenge_id, iat, exp: iat + 60 }
+ */
+export function apexLinkRoutes({ config, repos, metrics, log, loginGuards }) {
+  const r = express.Router()
+  const { limiter, lockout } = loginGuards || createLoginGuards({ config, metrics })
+  const id = config.identity || {}
+  const client = (req) => ({ ip: req.ip, userAgent: req.get('user-agent') || '' })
+  const failed = async (req, email, reason) => {
+    await repos.loginHistory.record({ email, method: 'apex-link', success: false, reason, ...client(req) })
+    metrics.inc('auth_login_total', { method: 'apex-link', result: 'failure' })
+  }
+
+  /** Only the gateway: a trusted source address and a valid X-Apex-Service for this app. */
+  const fromGateway = (req, res, next) => {
+    const peer = req.socket?.remoteAddress
+    if (!id.trustedSources?.matches(peer)) return next(new HttpError(403, 'Only the Apex gateway may ask this.', 'APEX_GATEWAY_ONLY'))
+    if (!id.keys?.size) return next(new HttpError(503, 'Account linking is not set up on this server (no Apex identity keys).', 'APEX_LINK_UNAVAILABLE'))
+    const check = verifyAssertion(req.headers[SERVICE_HEADER], {
+      keys: id.keys,
+      audience: id.audience,
+      issuer: id.issuer,
+      requireSubject: false,
+      sourceAddress: peer,
+      trustedSources: id.trustedSources,
+    })
+    if (!check.ok) {
+      log?.warn?.('Apex service credential refused on link-proof', { reason: check.reason, peer })
+      return next(new HttpError(403, 'Only the Apex gateway may ask this.', 'APEX_GATEWAY_ONLY'))
+    }
+    next()
+  }
+
+  r.post(
+    '/link-proof',
+    fromGateway,
+    limiter,
+    route(async (req, res) => {
+      const email = normaliseEmail(field(req.body, 'email', { max: 254 }))
+      const password = field(req.body, 'password', { max: 200 })
+      const challengeId = field(req.body, 'challenge_id', { max: 128 })
+      if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(challengeId)) throw badRequest('challenge_id is not valid.')
+
+      const { lockedMs, user, matches } = await checkCredentials({ repos, lockout, email, password })
+      if (lockedMs) {
+        await failed(req, email, 'locked')
+        res.setHeader('Retry-After', String(Math.ceil(lockedMs / 1000)))
+        throw new HttpError(429, 'Too many failed sign-in attempts — try again in 15 minutes.')
+      }
+      if (user?.role === ROLES.GUEST) throw new HttpError(403, 'The shared guest account cannot be linked.', 'APEX_LINK_GUEST')
+      if (user && !user.password_hash) {
+        lockout.fail(email)
+        await failed(req, email, 'no_password')
+        throw new HttpError(422, 'This Showcase account has no password (it signs in with Google), so it cannot be linked with a password.', 'NO_PASSWORD')
+      }
+      if (!matches) {
+        lockout.fail(email)
+        await failed(req, email, 'bad_credentials')
+        throw new HttpError(401, 'Email or password is incorrect.')
+      }
+      if (user.disabled) {
+        lockout.fail(email)
+        await failed(req, email, 'disabled')
+        throw new HttpError(403, 'This Showcase account is disabled, so it cannot be linked.', 'APEX_LINK_DISABLED')
+      }
+      lockout.succeed(email)
+      if (!user.verified) throw new HttpError(403, 'This Showcase account is not verified yet, so it cannot be linked.', 'UNVERIFIED')
+
+      const signing = currentSigningKey(id.keys, id.kid)
+      const proof = issueLinkProof({ app: id.audience, kid: signing.kid, key: signing.key, appUserId: user.id, challengeId })
+      log?.info?.('Account ownership proven for Apex linking', { userId: user.id })
+      res.json({ proof })
+    })
+  )
+
+  return r
+}
+
 
 export function sessionBody(user, issuedAt, expiresAt) {
   return {

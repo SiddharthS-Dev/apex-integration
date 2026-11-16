@@ -10,9 +10,19 @@ import { config, validateConfig } from '../src/config/index.js';
 import { createDatabase } from '../src/db/index.js';
 import { rollbackMigration } from '../src/db/migrations.js';
 import { createLogger } from '../src/util/logger.js';
+import { defaultDbRefusal } from '../src/db/safety.js';
 
 const cfg = config();
 const logger = createLogger({ level: cfg.logLevel });
+
+// Say what is about to be migrated, and refuse the real database unless it is asked for by name.
+const sqlite = cfg.db.driver !== 'postgres';
+console.log(sqlite ? `Migration target: sqlite ${cfg.db.file}` : 'Migration target: postgres (DATABASE_URL)');
+const refusal = sqlite ? defaultDbRefusal(cfg.db.file) : null;
+if (refusal) {
+  console.error(refusal);
+  process.exit(2);
+}
 
 const { errors } = validateConfig(cfg);
 if (errors.length) {

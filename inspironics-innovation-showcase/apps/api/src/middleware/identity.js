@@ -34,12 +34,20 @@ export const LEGACY_SIGN_IN_PATHS = Object.freeze([
 ])
 
 /**
+ * Gateway-only routes (R1 linking addendum): answered in every mode without a
+ * session or an assertion, but only from APEX_IDENTITY_TRUSTED_SOURCES with the
+ * gateway's X-Apex-Service credential, which the route checks itself
+ * (routes/auth.js, apexLinkRoutes).
+ */
+export const GATEWAY_ONLY_PATHS = Object.freeze(['/apex/link-proof'])
+
+/**
  * Paths (under /api) that answer without a session today, and so need no
  * assertion in required mode either. A header that is present is still
  * verified on them.
  */
 export const PUBLIC_PATHS = Object.freeze(
-  new Set(['/health', '/auth/config', '/auth/session', '/auth/logout', '/entities/plates/count', '/dropbox/oauth/callback', ...LEGACY_SIGN_IN_PATHS])
+  new Set(['/health', '/auth/config', '/auth/session', '/auth/logout', '/entities/plates/count', '/dropbox/oauth/callback', ...LEGACY_SIGN_IN_PATHS, ...GATEWAY_ONLY_PATHS])
 )
 
 const clean = (p) => (p.length > 1 ? p.replace(/\/+$/, '') : p)

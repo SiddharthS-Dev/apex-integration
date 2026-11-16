@@ -1,11 +1,15 @@
-// R1 rollback (contract §1): drops the R1 Core identity tables and removes the 008_core_identity, 009_user_session_epochs and
-// core_identity_backfill records. No pre-R1 table is touched.
+// R1 rollback (contract §1): drops the R1 Core identity tables and removes the 008_core_identity, 009_user_session_epochs,
+// 010_link_challenges and core_identity_backfill records. No pre-R1 table is touched.
 //   npm run core:rollback-identity -- --yes
 // Back up the database first. Then deploy pre-R1 code: starting this (R1) server again re-applies the
 // migration and the backfill, recreating empty Core tables from users.role/users.audience.
 import { closeDb, getDb } from '../../db/index.js';
 import { rollbackIdentity } from '../index.js';
 import { parseArgs } from './args.js';
+import { config } from '../../config.js';
+import { guardCliTarget } from '../../db/safety.js';
+
+guardCliTarget('core:rollback-identity', config); // prints the target; refuses apps/api/data without --allow-default-db
 
 const args = parseArgs(process.argv.slice(2));
 let code = 0;

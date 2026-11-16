@@ -59,6 +59,9 @@ export async function verifyPassword(password, stored) {
   return derived.length === expected.length && crypto.timingSafeEqual(derived, expected);
 }
 
+/** True when the account has a password the sign-in can check (accounts made by Google or Apex have none). */
+export const hasPassword = (user) => typeof user?.password_hash === 'string' && user.password_hash.startsWith('scrypt$');
+
 export const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
 
 export class UserRepository {

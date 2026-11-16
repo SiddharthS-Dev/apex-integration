@@ -27,6 +27,14 @@ export const LEGACY_SIGN_IN_PATHS = Object.freeze([
 ]);
 
 /**
+ * Gateway-only routes (R1 linking addendum): answered in every mode without a
+ * session or an assertion, but only from APEX_IDENTITY_TRUSTED_SOURCES with the
+ * gateway's X-Apex-Service credential, which the route checks itself
+ * (routes/auth.js, createApexLinkRouter).
+ */
+export const GATEWAY_ONLY_PATHS = Object.freeze(['/api/apex/link-proof']);
+
+/**
  * Paths that answer without a session today, and so need no assertion in
  * required mode either. A header that is present is still verified on them.
  */
@@ -38,6 +46,7 @@ export const PUBLIC_PATHS = Object.freeze(
     '/api/auth/logout',
     '/api/dropbox/oauth/callback',
     ...LEGACY_SIGN_IN_PATHS,
+    ...GATEWAY_ONLY_PATHS,
   ])
 );
 

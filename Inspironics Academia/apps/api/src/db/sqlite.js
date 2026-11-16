@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { assertNotDefaultDbUnderTest } from './safety.js';
 
 // SQLite driver on Node's built-in node:sqlite (no native module to compile). Development default.
 //
@@ -12,6 +13,7 @@ import { DatabaseSync } from 'node:sqlite';
 // the open transaction waits until it has ended. The transaction's own statements are recognised
 // through AsyncLocalStorage; a transaction started inside another simply joins it.
 export function createSqliteDriver(file) {
+  assertNotDefaultDbUnderTest(file); // before anything touches the file system
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');

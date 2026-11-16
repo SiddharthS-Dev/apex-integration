@@ -305,7 +305,10 @@ test('Core unreachable: required apps get 503 and are never reached unsigned; op
 
 test('the sign-in page CSP allows its own inline scripts by hash and Google only when configured', async () => {
   const html = fs.readFileSync(path.join(HERE, 'public', 'login.html'), 'utf8')
-  const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => crypto.createHash('sha256').update(m[1]).digest('base64'))
+  // As the browser hashes them: its HTML parser turns CRLF / CR into LF first. Hashing the raw file
+  // passed on Linux but blocked every script on a Windows (autocrlf) checkout.
+  const asBrowser = (t) => t.replace(/\r\n?/g, '\n')
+  const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => crypto.createHash('sha256').update(asBrowser(m[1])).digest('base64'))
   assert.ok(hashes.length >= 2)
 
   const plain = await gateway('csp-plain')

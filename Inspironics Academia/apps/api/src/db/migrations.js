@@ -284,6 +284,28 @@ const CORE_MIGRATIONS = [
       )
     `,
   },
+  {
+    // R1 linking addendum (ADR 0003 item 4): account-holder ownership proof. A challenge is created after
+    // a fresh Core password check and consumed once by the possession call. Only the SHA-256 of the
+    // nonce is stored. used_at/outcome are set atomically on the first verification attempt.
+    id: '010_link_challenges',
+    sql: () => `
+      CREATE TABLE IF NOT EXISTS link_challenges (
+        id TEXT PRIMARY KEY,
+        core_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        app TEXT NOT NULL CHECK (app IN ('showcase', 'slidesvault')),
+        nonce_hash TEXT NOT NULL,
+        action TEXT NOT NULL DEFAULT 'link' CHECK (action = 'link'),
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        outcome TEXT,
+        CHECK (expires_at > created_at),
+        CHECK (outcome IS NULL OR used_at IS NOT NULL)
+      );
+      CREATE INDEX IF NOT EXISTS idx_link_challenges_user ON link_challenges(core_user_id, created_at)
+    `,
+  },
 ];
 
 async function existingColumns(db, table) {

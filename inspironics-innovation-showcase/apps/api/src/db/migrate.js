@@ -13,6 +13,7 @@ import { loadConfig, loadDotEnv } from '../config.js'
 import { createLogger } from '../lib/log.js'
 import { MIGRATIONS } from './migrations.js'
 import { nowIso, openDatabase } from './index.js'
+import { defaultDbRefusal } from './safety.js'
 
 /** Split a migration into statements (none of ours contain `;` inside a literal). */
 const statements = (sql) =>
@@ -77,6 +78,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   loadDotEnv()
   const config = loadConfig()
   const log = createLogger({ level: 'info' })
+  // Say what is about to be migrated, and refuse the real database unless it is asked for by name.
+  console.log(config.db.url ? 'Migration target: postgres (DATABASE_URL)' : `Migration target: sqlite ${config.db.sqlitePath}`)
+  const refusal = config.db.url ? null : defaultDbRefusal(config.db.sqlitePath)
+  if (refusal) {
+    console.error(refusal)
+    process.exit(2)
+  }
   const db = await openDatabase(config, log)
   const at = process.argv.indexOf('--rollback')
   if (at > 0) {

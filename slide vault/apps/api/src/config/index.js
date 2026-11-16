@@ -247,6 +247,8 @@ function identityConfig(env) {
     audience: IDENTITY_AUDIENCE,
     audienceMismatch: Boolean(audience) && audience !== IDENTITY_AUDIENCE,
     keys: parseKeys(String(env.APEX_IDENTITY_KEYS ?? '')),
+    /** The kid this app signs its account-ownership proofs with (APEX_IDENTITY_KID); else the last key listed. */
+    kid: String(env.APEX_IDENTITY_KID ?? '').trim(),
     trustedSources: parseTrustedSources(String(env.APEX_IDENTITY_TRUSTED_SOURCES ?? '').trim() || 'loopback'),
   };
 }

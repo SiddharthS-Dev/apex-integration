@@ -13,12 +13,15 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { createMutex } from '../lib/concurrency.js'
 import { randomId } from '../lib/crypto.js'
+import { assertTestSafeSqlite } from './safety.js'
 
 /** node:sqlite binds null/number/bigint/string/Buffer only. */
 const bind = (params = []) =>
   params.map((v) => (v === undefined ? null : typeof v === 'boolean' ? (v ? 1 : 0) : v))
 
 export function createSqliteDb(file) {
+  // Under the test runner, never the real database (before anything is created or opened).
+  assertTestSafeSqlite(file)
   if (file !== ':memory:') mkdirSync(path.dirname(file), { recursive: true })
   const raw = new DatabaseSync(file)
   raw.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;')

@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { assertTestSafeSqlite } from './safety.js';
 
 /**
  * node:sqlite binds only null, number, bigint, string and Buffer. Everything
@@ -25,6 +26,8 @@ function bindable(value) {
 
 export function createSqliteDriver(cfg, logger) {
   const file = cfg.db.file;
+  // Under the test runner, never the real database (before anything is created or opened).
+  assertTestSafeSqlite(file);
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
 
   const handle = new DatabaseSync(file);

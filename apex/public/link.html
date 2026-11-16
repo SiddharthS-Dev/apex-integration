@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#030712" />
+    <title>Link accounts · Apex</title>
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <style>
+      /*
+       * Link an existing Showcase or SlidesVault account to your Apex account
+       * (R1 linking addendum). Self-contained like the sign-in page: no build
+       * step, one inline script allowed by its hash (server.mjs), nothing from
+       * any other origin. Passwords go to /auth/link/* once and are never kept.
+       */
+      :root {
+        color-scheme: dark;
+        --bg: #030712;
+        --panel: #0b1124;
+        --field: #050a19;
+        --border: rgba(148, 163, 184, 0.22);
+        --border-2: rgba(148, 163, 184, 0.4);
+        --text: #f8fafc;
+        --muted: #a5b0c2;
+        --accent: #22d3ee;
+        --ok: #4ade80;
+        --bad: #fca5a5;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font: 400 15px/1.6 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      a {
+        color: var(--accent);
+      }
+      a:focus-visible,
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      h1 {
+        margin: 12px 0 4px;
+        font-size: 1.6rem;
+        line-height: 1.25;
+      }
+      h2 {
+        margin: 0;
+        font-size: 1.15rem;
+      }
+      p {
+        margin: 8px 0;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .card {
+        margin-top: 20px;
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--panel);
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border: 1px solid var(--border-2);
+        border-radius: 999px;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+      .badge--ok {
+        border-color: var(--ok);
+        color: var(--ok);
+      }
+      form {
+        margin-top: 14px;
+      }
+      fieldset {
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+      legend {
+        padding: 0;
+        font-weight: 600;
+      }
+      label {
+        display: block;
+        margin-top: 12px;
+        font-size: 0.9rem;
+      }
+      input {
+        display: block;
+        width: 100%;
+        margin-top: 4px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-2);
+        border-radius: 10px;
+        background: var(--field);
+        color: var(--text);
+        font: inherit;
+      }
+      button {
+        margin-top: 14px;
+        padding: 10px 18px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #031018;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button[disabled] {
+        opacity: 0.6;
+        cursor: progress;
+      }
+      button.secondary {
+        margin-left: 8px;
+        border: 1px solid var(--border-2);
+        background: transparent;
+        color: var(--text);
+      }
+      .msg {
+        margin-top: 12px;
+        min-height: 1.6em;
+      }
+      .msg--bad {
+        color: var(--bad);
+      }
+      .msg--ok {
+        color: var(--ok);
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a href="/">&larr; Back to Apex</a>
+      <h1>Link your accounts</h1>
+      <p class="muted" id="who">Loading&hellip;</p>
+      <p>
+        If you already have an account in the Innovation Showcase or SlidesVault, you can link it to your Apex account, so
+        Apex opens it for you. To prove both accounts are yours, you type your Apex password, then that app's own email address
+        and password. Nothing is matched by email or name, and both passwords are only checked, never stored.
+      </p>
+      <p class="muted">Linking changes nothing in the app account itself, and gives you no new permissions.</p>
+
+      <p class="msg msg--bad" id="page-error" role="alert"></p>
+      <div id="apps"></div>
+    </main>
+
+    <template id="app-card">
+      <section class="card">
+        <div class="row">
+          <h2 data-name></h2>
+          <span class="badge" data-badge></span>
+        </div>
+        <p class="muted" data-note></p>
+        <form data-step="1" hidden novalidate>
+          <fieldset>
+            <legend>Step 1 of 2: confirm it is you</legend>
+            <label>Your Apex password<input type="password" name="core_password" autocomplete="current-password" required maxlength="200" /></label>
+          </fieldset>
+          <button type="submit">Continue</button>
+        </form>
+        <form data-step="2" hidden novalidate>
+          <fieldset>
+            <legend data-legend2></legend>
+            <label><span data-email-label></span><input type="email" name="app_email" autocomplete="username" required maxlength="254" /></label>
+            <label><span data-password-label></span><input type="password" name="app_password" autocomplete="off" required maxlength="200" /></label>
+          </fieldset>
+          <p class="muted">You have 5 minutes to finish this step.</p>
+          <button type="submit">Link account</button><button type="button" class="secondary" data-cancel>Cancel</button>
+        </form>
+        <p class="msg" data-msg role="status" aria-live="polite"></p>
+      </section>
+    </template>
+
+    <script>
+      ;(function () {
+        'use strict'
+        var appsEl = document.getElementById('apps')
+        var pageError = document.getElementById('page-error')
+
+        function post(path, body) {
+          return fetch(path, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }).then(function (res) {
+            return res
+              .json()
+              .catch(function () {
+                return {}
+              })
+              .then(function (json) {
+                return { status: res.status, json: json }
+              })
+          })
+        }
+
+        function say(el, text, kind) {
+          el.textContent = text || ''
+          el.className = 'msg' + (kind ? ' msg--' + kind : '')
+        }
+
+        function card(app, state) {
+          var node = document.getElementById('app-card').content.firstElementChild.cloneNode(true)
+          var q = function (sel) {
+            return node.querySelector(sel)
+          }
+          var step1 = q('form[data-step="1"]')
+          var step2 = q('form[data-step="2"]')
+          var msg = q('[data-msg]')
+          var badge = q('[data-badge]')
+          var challenge = null
+          q('[data-name]').textContent = app.name
+          q('[data-legend2]').textContent = 'Step 2 of 2: sign in to your ' + app.name + ' account'
+          q('[data-email-label]').textContent = app.name + ' email address'
+          q('[data-password-label]').textContent = app.name + ' password'
+          var uid = 'f-' + app.app
+          step1.querySelector('input').id = uid + '-core'
+          step2.querySelectorAll('input')[0].id = uid + '-email'
+          step2.querySelectorAll('input')[1].id = uid + '-pass'
+
+          if (app.linked) {
+            badge.textContent = 'Linked'
+            badge.className = 'badge badge--ok'
+            q('[data-note]').textContent = 'Your ' + app.name + ' account is linked to your Apex account.'
+          } else if (!state.core) {
+            badge.textContent = 'Not linked'
+            q('[data-note]').textContent =
+              'Your current Apex session is not tied to an Apex account. Sign out, sign in again with your Apex password, then come back here.'
+          } else if (!app.available) {
+            badge.textContent = 'Not available'
+            q('[data-note]').textContent = 'Linking to ' + app.name + ' is switched off on this Apex installation. Ask an administrator.'
+          } else {
+            badge.textContent = 'Not linked'
+            q('[data-note]').textContent = 'Link an existing ' + app.name + ' account to your Apex account.'
+            step1.hidden = false
+          }
+
+          function busy(form, on) {
+            form.querySelector('button[type="submit"]').disabled = on
+          }
+          function reset() {
+            challenge = null
+            step1.reset()
+            step2.reset()
+            step2.hidden = true
+            step1.hidden = false
+          }
+
+          step1.addEventListener('submit', function (e) {
+            e.preventDefault()
+            var input = step1.elements.core_password
+            if (!input.value) return say(msg, 'Enter your Apex password.', 'bad')
+            busy(step1, true)
+            say(msg, 'Checking your Apex password…')
+            post('/auth/link/start', { app: app.app, core_password: input.value })
+              .then(function (r) {
+                input.value = ''
+                if (r.status !== 201) return say(msg, (r.json && r.json.error) || 'That did not work. Try again.', 'bad')
+                challenge = { id: r.json.challenge_id, nonce: r.json.nonce }
+                step1.hidden = true
+                step2.hidden = false
+                say(msg, 'Apex password confirmed.')
+                step2.elements.app_email.focus()
+              })
+              .catch(function () {
+                say(msg, 'Apex could not be reached. Try again.', 'bad')
+              })
+              .then(function () {
+                busy(step1, false)
+              })
+          })
+
+          step2.addEventListener('submit', function (e) {
+            e.preventDefault()
+            var email = step2.elements.app_email
+            var pass = step2.elements.app_password
+            if (!challenge) return reset()
+            if (!email.value || !pass.value) return say(msg, 'Enter the email address and password of your ' + app.name + ' account.', 'bad')
+            busy(step2, true)
+            say(msg, 'Checking with ' + app.name + '…')
+            post('/auth/link/complete', {
+              app: app.app,
+              challenge_id: challenge.id,
+              nonce: challenge.nonce,
+              app_email: email.value,
+              app_password: pass.value,
+            })
+              .then(function (r) {
+                pass.value = ''
+                if (r.status === 200 || r.status === 201) {
+                  challenge = null
+                  step2.hidden = true
+                  badge.textContent = 'Linked'
+                  badge.className = 'badge badge--ok'
+                  q('[data-note]').textContent = 'Your ' + app.name + ' account is linked to your Apex account.'
+                  return say(msg, 'Linked. Apex now opens your ' + app.name + ' account for you.', 'ok')
+                }
+                // Each attempt uses up its challenge at Apex Core: wrong app passwords may be retried, anything else starts over.
+                var text = (r.json && r.json.error) || 'That did not work.'
+                if (r.status === 401 || r.status === 429) return say(msg, text, 'bad')
+                reset()
+                say(msg, text + ' Start again from step 1.', 'bad')
+              })
+              .catch(function () {
+                say(msg, app.name + ' could not be reached. Try again.', 'bad')
+              })
+              .then(function () {
+                busy(step2, false)
+              })
+          })
+
+          q('[data-cancel]').addEventListener('click', function () {
+            reset()
+            say(msg, '')
+          })
+          return node
+        }
+
+        fetch('/auth/link/state', { credentials: 'same-origin' })
+          .then(function (res) {
+            if (res.status === 401) {
+              location.href = '/login?next=' + encodeURIComponent('/link')
+              return null
+            }
+            return res.json().then(function (json) {
+              return { status: res.status, json: json }
+            })
+          })
+          .then(function (r) {
+            if (!r) return
+            var who = document.getElementById('who')
+            if (r.status !== 200) {
+              who.textContent = ''
+              pageError.textContent = (r.json && r.json.error) || 'Your links could not be loaded. Try again in a moment.'
+              return
+            }
+            var s = r.json
+            var name = s.user && (s.user.name || s.user.email)
+            who.textContent = 'Signed in as ' + (name || s.email || 'you') + (s.user && s.user.name && s.user.email ? ' (' + s.user.email + ')' : '')
+            if (!s.enabled && s.core) pageError.textContent = 'Account linking is switched off on this Apex installation.'
+            s.apps.forEach(function (app) {
+              appsEl.appendChild(card(app, s))
+            })
+          })
+          .catch(function () {
+            pageError.textContent = 'Apex could not be reached. Try again in a moment.'
+          })
+      })()
+    </script>
+  </body>
+</html>

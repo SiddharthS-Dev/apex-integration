@@ -65,6 +65,7 @@ import {
 } from './auth.mjs'
 import { createIdentityGateway } from './gateway-identity.mjs'
 import { IDENTITY_HEADER, SERVICE_HEADER } from './identity.mjs'
+import { createLinker } from './linking.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.dirname(HERE)
@@ -78,6 +79,9 @@ const TRUST_PROXY = /^(1|true|yes|on)$/i.test(String(process.env.APEX_TRUST_PROX
 
 /** Identity assertion to the Showcase and SlidesVault. Inert while every app's mode is off (the default). */
 const identity = createIdentityGateway()
+
+/** Account-holder ownership proof (R1 linking addendum): /link and /auth/link/*. */
+const linker = createLinker({ identity })
 
 /** "Sign in with Google" on the sign-in page, when set. The Core verifies the token against the same client id. */
 const GOOGLE_CLIENT_ID = (process.env.APEX_GOOGLE_CLIENT_ID || '').trim()
@@ -560,20 +564,23 @@ const REGISTRY = {
  * loaded them, and Google Identity Services only when APEX_GOOGLE_CLIENT_ID
  * is set — the sources Google documents for its button, nothing wider.
  */
-let loginCspCache = { mtimeMs: -1, value: '' }
-function loginCsp(file) {
+const cspCache = new Map() // file -> { mtimeMs, value }
+function loginCsp(file, { google = true } = {}) {
   let stat
   try {
     stat = fs.statSync(file)
   } catch {
     return ''
   }
-  if (stat.mtimeMs === loginCspCache.mtimeMs) return loginCspCache.value
+  const cached = cspCache.get(file)
+  if (cached && stat.mtimeMs === cached.mtimeMs) return cached.value
   const html = fs.readFileSync(file, 'utf8')
+  // Hash each inline script as the browser sees it: the HTML parser turns CRLF and lone CR into LF
+  // before the CSP check, so a Windows checkout (autocrlf) would otherwise block every script.
   const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
-    (m) => `'sha256-${crypto.createHash('sha256').update(m[1], 'utf8').digest('base64')}'`
+    (m) => `'sha256-${crypto.createHash('sha256').update(m[1].replace(/\r\n?/g, '\n'), 'utf8').digest('base64')}'`
   )
-  const gsi = GOOGLE_CLIENT_ID ? 'https://accounts.google.com/gsi/' : ''
+  const gsi = google && GOOGLE_CLIENT_ID ? 'https://accounts.google.com/gsi/' : ''
   const value = [
     "default-src 'self'",
     `script-src 'self' ${hashes.join(' ')}${gsi ? ' https://accounts.google.com/gsi/client' : ''}`,
@@ -587,9 +594,12 @@ function loginCsp(file) {
     "base-uri 'none'",
     "form-action 'self'",
   ].join('; ')
-  loginCspCache = { mtimeMs: stat.mtimeMs, value }
+  cspCache.set(file, { mtimeMs: stat.mtimeMs, value })
   return value
 }
+
+/** The linking page's policy: the sign-in page's, without Google (the page never loads it). */
+const linkCsp = (file) => loginCsp(file, { google: false })
 
 /**
  * Who the session's Core user is now, when identity assertion is on and the
@@ -710,6 +720,46 @@ async function handleAuth(req, res, pathname, url) {
   return sendNotFound(res)
 }
 
+/* -------------------------------------------------------------- linking --- */
+
+/**
+ * /link and /auth/link/* (R1 linking addendum). Reached only with an Apex session
+ * (dispatch checked it). The writes are same-origin only — Origin, or failing that
+ * Referer, must be this gateway, exactly as for /auth/google and /auth/logout —
+ * and JSON only; the nonce travels in the body. Request bodies are never logged.
+ */
+async function handleLink(req, res, pathname, session) {
+  if (pathname === '/link' || pathname === '/link.html') {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'Use GET.' }, { Allow: 'GET' })
+    if (pathname === '/link.html') return redirect(res, '/link')
+    const file = path.join(PUBLIC, 'link.html')
+    if (sendFile(res, file, { headers: { 'Content-Security-Policy': linkCsp(file), 'Cache-Control': 'no-store' } })) return
+    return sendNotFound(res)
+  }
+
+  const sub = session?.sub || null
+  if (pathname === '/auth/link/state') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Use GET.' }, { Allow: 'GET' })
+    const out = await linker.state({ sub })
+    return sendJson(res, out.status, { ...out.body, email: session?.email || null }, out.headers)
+  }
+
+  const step = pathname === '/auth/link/start' ? 'start' : pathname === '/auth/link/complete' ? 'complete' : null
+  if (!step) return sendNotFound(res)
+  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Use POST.' }, { Allow: 'POST' })
+  if (!sameOrigin(req)) return sendJson(res, 403, { error: 'Cross-origin request refused.', code: 'BAD_ORIGIN' })
+  if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) {
+    return sendJson(res, 415, { error: 'Send JSON.', code: 'JSON_ONLY' })
+  }
+  const body = await readJson(req)
+  const out = await linker[step]({ sub, clientIp: clientIp(req), body })
+  return sendJson(res, out.status, out.body, out.headers)
+}
+
+/** An application's gateway-only routes (/api/apex/…), which no browser may reach through the proxy. */
+const isGatewayOnlyApiPath = (project, target) =>
+  [target.forward.split('?')[0], target.pathname].some((p) => /^\/api\/apex(\/|$)/i.test(p.slice(project.base.length).replace(/\/{2,}/g, '/')))
+
 /* -------------------------------------------------------------- dispatch --- */
 
 /**
@@ -801,10 +851,13 @@ async function dispatch(req, res) {
   const resolved = await identityOf(session)
   if (resolved?.state === 'inactive') return endRevokedSession(req, res, target)
 
+  if (pathname === '/link' || pathname === '/link.html' || pathname.startsWith('/auth/link/')) return handleLink(req, res, pathname, session)
+
   // Before projectFor(): '/vault/api' is inside the '/vault' mount, and must
   // reach the API server rather than the SPA.
   const apiProject = apiFor(pathname)
   if (apiProject) {
+    if (isGatewayOnlyApiPath(apiProject, target)) return sendJson(res, 404, { error: 'Not found.' })
     const mode = identity.modeOf(apiProject.id)
     let extra
     if (mode !== 'off' && session) {

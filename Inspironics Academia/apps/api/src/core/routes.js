@@ -14,6 +14,7 @@ import { grantRole, revokeRole, transitionRole } from './roles.js';
 import { confirmLink, confirmedLinkMap, linksForUser, listLinks, proposeLink, rejectLink } from './links.js';
 import { externalIdentityProviders, linkGoogleIdentity, userForGoogleSubject, verifyGoogleCredential } from './google.js';
 import { verifyServiceRequest } from './service.js';
+import { confirmLinkByPossession, createLinkChallenge } from './linking.js';
 
 // /api/core — APEX Core identity endpoints (contract §3). Default deny: everything except the Google
 // sign-in routes and the gateway's resolve call needs a signed-in user, and each handler then checks
@@ -69,12 +70,16 @@ router.post('/auth/google/accept-invite', googleLimiter, asyncHandler(async (req
 
 // ---- Gateway service call ----------------------------------------------------------------------
 
-router.post('/identity/resolve', asyncHandler(async (req, res) => {
+function requireService(req) {
   const check = verifyServiceRequest(req);
   if (!check.ok) {
-    log.warn('core.service_assertion_rejected', { reason: check.reason, peer: req.socket?.remoteAddress });
+    log.warn('core.service_assertion_rejected', { reason: check.reason, peer: req.socket?.remoteAddress, path: req.path });
     throw unauthorized('Service authentication required');
   }
+}
+
+router.post('/identity/resolve', asyncHandler(async (req, res) => {
+  requireService(req);
   const sub = typeof req.body?.sub === 'string' ? req.body.sub : '';
   if (!sub) throw badRequest('sub is required');
   const user = await findUserById(sub);
@@ -88,6 +93,20 @@ router.post('/identity/resolve', asyncHandler(async (req, res) => {
     // Apex sessions issued before this instant must be revoked (password change/reset, disable).
     sessions_valid_after: (await db().query('SELECT valid_after FROM user_session_epochs WHERE user_id = ?', [user.id]))[0]?.valid_after || null,
   });
+}));
+
+// Account-holder ownership proof (R1 linking addendum): gateway service only, like resolve.
+const sendOutcome = (res, o) => {
+  for (const [k, v] of Object.entries(o.headers || {})) res.setHeader(k, v);
+  res.status(o.status).json(o.body);
+};
+router.post('/link-challenges', asyncHandler(async (req, res) => {
+  requireService(req);
+  sendOutcome(res, await createLinkChallenge(db(), req.body, { ip: req.ip }));
+}));
+router.post('/identity-links/possession', asyncHandler(async (req, res) => {
+  requireService(req);
+  sendOutcome(res, await confirmLinkByPossession(db(), req.body, { ip: req.ip }));
 }));
 
 // ---- Signed-in -----------------------------------------------------------------------------------

@@ -7,6 +7,10 @@ import { closeDb, getDb } from '../../db/index.js';
 import { migrate } from '../../db/migrations.js';
 import { grantAdminBreakGlass } from '../index.js';
 import { parseArgs } from './args.js';
+import { config } from '../../config.js';
+import { guardCliTarget } from '../../db/safety.js';
+
+guardCliTarget('core:grant-admin', config); // prints the target; refuses apps/api/data without --allow-default-db
 
 const args = parseArgs(process.argv.slice(2));
 let code = 0;

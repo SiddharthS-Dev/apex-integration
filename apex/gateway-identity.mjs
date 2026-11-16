@@ -18,7 +18,7 @@
  */
 import http from 'node:http'
 import { PROJECTS, upstreamHost } from './projects.mjs'
-import { ISSUER, SERVICE_HEADER, issueAssertion, normaliseRoles, parseIdentityMode } from './identity.mjs'
+import { ISSUER, SERVICE_HEADER, issueAssertion, normaliseRoles, parseIdentityMode, parseKeys } from './identity.mjs'
 import { keysFile, keysFor, loadKeyStore, signingKey } from './identity-keys.mjs'
 
 /** Project id -> assertion audience. */
@@ -60,11 +60,14 @@ export function identityEnv(project, env = process.env, file = keysFile()) {
   const mode = isCore ? (parseIdentityMode(env.APEX_IDENTITY_MODE, 'off') ?? 'required') : identityMode(project.id, env)
   const needsKeys = isCore ? identityEnabled(env) : mode !== 'off'
   const google = String(env.APEX_GOOGLE_CLIENT_ID || '').trim()
+  const store = needsKeys ? loadKeyStore({ env, file }) : null
   return {
     APEX_IDENTITY_ISSUER: ISSUER,
     APEX_IDENTITY_AUDIENCE: audience,
     APEX_IDENTITY_MODE: mode,
-    APEX_IDENTITY_KEYS: needsKeys ? JSON.stringify(keysFor(loadKeyStore({ env, file }), audience)) : '',
+    APEX_IDENTITY_KEYS: store ? JSON.stringify(keysFor(store, audience)) : '',
+    // The kid an application signs its ownership proofs with (R1 linking addendum); not secret.
+    APEX_IDENTITY_KID: store ? store.current : '',
     // The gateway's Google button and the Core's verification must name the same client.
     ...(isCore && google ? { GOOGLE_CLIENT_ID: google } : {}),
   }
@@ -74,24 +77,27 @@ export function identityEnv(project, env = process.env, file = keysFile()) {
 export const validSubject = (sub) => typeof sub === 'string' && /^[A-Za-z0-9_.:@-]{1,128}$/.test(sub)
 
 /**
- * One POST to the Core's resolve endpoint. Resolves `{ status, json }`;
- * status 0 when the Core could not be reached at all.
+ * One JSON POST from the gateway to a service (the Core, or an application's
+ * own API), straight to its port, with a signed X-Apex-Service header.
+ * Resolves `{ status, json }`; status 0 when it could not be reached at all.
+ * The body is never logged.
  */
-function postResolve({ host, port, sub, service, timeoutMs }) {
+export function postJson({ host, port, path, body, service, headers = {}, timeoutMs = 5_000 }) {
   return new Promise((resolve) => {
-    const payload = JSON.stringify({ sub })
+    const payload = JSON.stringify(body)
     const req = http.request(
       {
         host,
         port,
         method: 'POST',
-        path: RESOLVE_PATH,
+        path,
         timeout: timeoutMs,
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(payload),
           'X-Requested-With': 'Apex',
           'User-Agent': 'Apex gateway',
+          ...headers,
           [SERVICE_HEADER]: service,
         },
       },
@@ -109,7 +115,7 @@ function postResolve({ host, port, sub, service, timeoutMs }) {
           } catch {
             /* not JSON */
           }
-          resolve({ status: res.statusCode, json })
+          resolve({ status: res.statusCode, json, headers: res.headers })
         })
         res.on('error', () => resolve({ status: 0, json: null }))
       }
@@ -159,7 +165,7 @@ export function createIdentityGateway({
 
   async function ask(sub) {
     calls += 1
-    const res = await postResolve({ host, port: corePort(), sub, service: serviceAssertion(), timeoutMs })
+    const res = await postJson({ host, port: corePort(), path: RESOLVE_PATH, body: { sub }, service: serviceAssertion(), timeoutMs })
     const body = res.json
     if (res.status === 200 && body && body.active === false) return { state: 'inactive' }
     if (res.status === 200 && body && body.active === true && body.user && body.user.id === sub) {
@@ -215,8 +221,25 @@ export function createIdentityGateway({
     })
   }
 
+  /**
+   * An X-Apex-Service credential towards one application (aud = its own id, no user claims), which
+   * its account-ownership endpoint requires besides the trusted source address (R1 linking addendum).
+   */
+  function appServiceAssertion(projectId) {
+    const audience = AUDIENCE_OF[projectId]
+    if (!enabled || !ASSERTED_PROJECTS.includes(projectId)) throw new Error(`no service assertions for ${projectId}`)
+    const { kid, key } = signingKey(store, audience)
+    return issueAssertion({ audience, kid, key, now: now(), claims: { purpose: 'link-proof' } })
+  }
+
   return {
     enabled,
+    /** The Core API host, its port, and the X-Apex-Service credential towards it. */
+    core: () => ({ host, port: corePort() }),
+    serviceAssertion,
+    appServiceAssertion,
+    /** Every key (current and previous) of one application's audience, as verifiers take them. */
+    appKeys: (projectId) => (enabled && AUDIENCE_OF[projectId] ? parseKeys(keysFor(store, AUDIENCE_OF[projectId])) : new Map()),
     modeOf: (projectId) => modes[projectId] || 'off',
     resolve,
     assertionFor,
