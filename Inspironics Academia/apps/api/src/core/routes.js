@@ -15,6 +15,8 @@ import { confirmLink, confirmedLinkMap, linksForUser, listLinks, proposeLink, re
 import { externalIdentityProviders, linkGoogleIdentity, userForGoogleSubject, verifyGoogleCredential } from './google.js';
 import { verifyServiceRequest } from './service.js';
 import { confirmLinkByPossession, createLinkChallenge } from './linking.js';
+import { userPlatforms } from './platforms.js';
+import { approveRegistration, listRegistrations, registrationDetail, rejectRegistration, requestInfo } from './onboarding/admin.js';
 
 // /api/core — APEX Core identity endpoints (contract §3). Default deny: everything except the Google
 // sign-in routes and the gateway's resolve call needs a signed-in user, and each handler then checks
@@ -124,6 +126,8 @@ router.get('/me', asyncHandler(async (req, res) => {
     roles: me.roles.map((r) => ({ id: r.id, ...roleView(r), valid_from: r.valid_from })),
     memberships: await activeMemberships(db(), me.id),
     links: (await linksForUser(db(), me.id, { confirmedOnly: true })).map((l) => ({ id: l.id, app: l.app, app_user_id: l.app_user_id, evidence: l.evidence, reviewed_at: l.reviewed_at })),
+    // APEX home display setting from onboarding approval (null = show every platform). Not an authorization.
+    platforms: await userPlatforms(db(), me.id),
   });
 }));
 
@@ -187,6 +191,13 @@ router.get('/identity-links', asyncHandler(async (req, res) => res.json(await li
 router.post('/identity-links', asyncHandler(async (req, res) => res.status(201).json(await proposeLink(db(), req.actor, req.body, ctx(req)))));
 router.post('/identity-links/:id/confirm', asyncHandler(async (req, res) => res.json(await confirmLink(db(), req.actor, req.params.id, req.body, ctx(req)))));
 router.post('/identity-links/:id/reject', asyncHandler(async (req, res) => res.json(await rejectLink(db(), req.actor, req.params.id, req.body, ctx(req)))));
+
+// Access requests (Use Case 007): platform administrators review and decide; never GET for a decision.
+router.get('/registrations', asyncHandler(async (req, res) => res.json(await listRegistrations(db(), req.actor, req.query))));
+router.get('/registrations/:id', asyncHandler(async (req, res) => res.json(await registrationDetail(db(), req.actor, req.params.id))));
+router.post('/registrations/:id/approve', asyncHandler(async (req, res) => res.json(await approveRegistration(db(), req.actor, req.params.id, req.body, ctx(req)))));
+router.post('/registrations/:id/reject', asyncHandler(async (req, res) => res.json(await rejectRegistration(db(), req.actor, req.params.id, req.body, ctx(req)))));
+router.post('/registrations/:id/request-info', asyncHandler(async (req, res) => res.json(await requestInfo(db(), req.actor, req.params.id, req.body, ctx(req)))));
 
 router.get('/audit-events', asyncHandler(async (req, res) => {
   if (!can(req.actor, 'platform.admin')) throw forbidden('Platform administrator access required');

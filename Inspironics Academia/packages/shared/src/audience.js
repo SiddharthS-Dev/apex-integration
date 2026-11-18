@@ -10,6 +10,10 @@ export const AUDIENCES = Object.freeze([
   { key: 'intern', label: 'Intern / Trainee' },
   { key: 'employee', label: 'Employee' },
   { key: 'leadership', label: 'Leadership / Executive' },
+  // People approved through stakeholder onboarding (Use Case 007). Not an employee: no Inspironics
+  // membership is derived from it (ADR 0004 maps only intern/employee/leadership), and no playbook
+  // category lists it by default, so it sees nothing until an administrator adds it to a category.
+  { key: 'external', label: 'External (onboarding)' },
 ]);
 export const AUDIENCE_KEYS = AUDIENCES.map((a) => a.key);
 export const DEFAULT_AUDIENCE = 'employee';

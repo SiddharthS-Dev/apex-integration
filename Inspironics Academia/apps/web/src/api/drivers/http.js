@@ -201,6 +201,18 @@ export function createHttpDriver() {
       confirmLink: (id, body = {}) => request('POST', `/core/identity-links/${encodeURIComponent(id)}/confirm`, { body }),
       rejectLink: (id, body) => request('POST', `/core/identity-links/${encodeURIComponent(id)}/reject`, { body }),
       auditEvents: (query = {}) => request('GET', '/core/audit-events', { query }),
+      // Access requests (Use Case 007). Decisions are POSTs; the API re-checks every permission.
+      registrations: (query = {}) => request('GET', '/core/registrations', { query }),
+      registration: (id) => request('GET', `/core/registrations/${encodeURIComponent(id)}`),
+      approveRegistration: (id, body) => request('POST', `/core/registrations/${encodeURIComponent(id)}/approve`, { body }),
+      rejectRegistration: (id, body) => request('POST', `/core/registrations/${encodeURIComponent(id)}/reject`, { body }),
+      requestRegistrationInfo: (id, body) => request('POST', `/core/registrations/${encodeURIComponent(id)}/request-info`, { body }),
+    },
+
+    // Orientation for accounts approved through an access request (null for everyone else).
+    onboarding: {
+      orientation: () => request('GET', '/onboarding/orientation'),
+      completeOrientation: () => request('POST', '/onboarding/orientation/complete', { body: {} }),
     },
 
     system: {

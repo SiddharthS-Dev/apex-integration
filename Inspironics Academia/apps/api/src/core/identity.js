@@ -96,6 +96,11 @@ export function can(actor, action, scope = {}) {
   switch (action) {
     case 'platform.admin':
       return actor.isPlatformAdmin;
+    // Stakeholder onboarding (Use Case 007): reviewing and deciding access requests. Platform
+    // administrators only in v1 — external organisations, and so organisation-scoped reviewers, are held.
+    case 'registration.review':
+    case 'registration.decide':
+      return actor.isPlatformAdmin;
     case 'org.manage':
       return actor.isPlatformAdmin || (!!scope.organizationId && actor.orgAdminOf.has(scope.organizationId));
     case 'role.grant':

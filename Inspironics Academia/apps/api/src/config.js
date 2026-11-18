@@ -212,6 +212,15 @@ export const config = Object.freeze({
     from: env.EMAIL_FROM || 'Inspironics Academia <academia@localhost>',
     resendApiKey: env.RESEND_API_KEY || '',
     smtpUrl: env.SMTP_URL || '',
+    // EMAIL_PROVIDER=emailjs: the EmailJS REST API, called from this server only (never the browser).
+    emailjs: {
+      serviceId: (env.EMAILJS_SERVICE_ID || '').trim(),
+      templateId: (env.EMAILJS_TEMPLATE_ID || '').trim(),
+      // Optional: a separate EmailJS template for verification codes (uses {{passcode}}, {{time}} ...).
+      otpTemplateId: (env.EMAILJS_OTP_TEMPLATE_ID || '').trim(),
+      publicKey: (env.EMAILJS_PUBLIC_KEY || '').trim(),
+      privateKey: (env.EMAILJS_PRIVATE_KEY || '').trim(),
+    },
     maxAttempts: Math.max(1, num(env.EMAIL_MAX_ATTEMPTS, 5)),
   },
 

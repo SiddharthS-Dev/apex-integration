@@ -1,4 +1,4 @@
-// R1 rollback (contract §1): drops the R1 Core identity tables and removes the 008_core_identity, 009_user_session_epochs,
+// R1 rollback (contract §1): drops the R1 Core identity tables (incl. 011 registration_requests and registration_decoys) and removes the 008_core_identity, 009_user_session_epochs, 011_registration_requests,
 // 010_link_challenges and core_identity_backfill records. No pre-R1 table is touched.
 //   npm run core:rollback-identity -- --yes
 // Back up the database first. Then deploy pre-R1 code: starting this (R1) server again re-applies the

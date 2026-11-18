@@ -1,0 +1,2363 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f8fafc" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Enterprise Onboarding · APEX</title>
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <style>
+      /*
+       * APEX Enterprise Onboarding Assistant (Use Case 007) — deep-space theme. Served by onboarding/server.mjs
+       * on its own port; one inline script allowed by its hash; nothing from another origin (the starfield,
+       * planet and holographic props are drawn in code). Six short steps; no password is ever asked for.
+       * Server text is inserted with textContent only; nothing is kept in browser storage. All motion stops
+       * for people who prefer reduced motion.
+       */
+      :root {
+        color-scheme: dark;
+        --space: #050816;
+        --glass: rgba(14, 22, 48, 0.62);
+        --glass-2: rgba(20, 30, 64, 0.55);
+        --ink: #eef4ff;
+        --ink-2: #c7d2fe;
+        --muted: #8ea0c8;
+        --line: rgba(120, 160, 255, 0.18);
+        --cyan: #22d3ee;
+        --cyan-2: #67e8f9;
+        --teal: #14b8a6;
+        --violet: #a855f7;
+        --magenta: #d946ef;
+        --gold: #fbbf24;
+        --ok: #34d399;
+        --bad: #fb7185;
+        --glow: 0 0 24px rgba(34, 211, 238, 0.35), 0 0 60px rgba(168, 85, 247, 0.18);
+        --spring: cubic-bezier(0.22, 1.2, 0.36, 1);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(1200px 700px at 20% 10%, #0b1640 0%, transparent 60%), radial-gradient(900px 600px at 90% 80%, #1a0b3d 0%, transparent 60%), var(--space);
+        color: var(--ink);
+        font: 400 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        overflow-x: hidden;
+      }
+      a {
+        color: var(--cyan-2);
+      }
+      [tabindex='-1']:focus {
+        outline: none;
+      }
+      :focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 2px;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        border: 0;
+      }
+      [hidden] {
+        display: none !important;
+      }
+
+      /* ------------------------------------------------------ space scene -- */
+      #space {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -3;
+        pointer-events: none;
+      }
+      .scene {
+        position: fixed;
+        inset: 0;
+        z-index: -2;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .nebula {
+        position: absolute;
+        inset: -20%;
+        background: radial-gradient(30% 25% at 70% 30%, rgba(168, 85, 247, 0.18), transparent 70%), radial-gradient(28% 22% at 25% 70%, rgba(34, 211, 238, 0.14), transparent 70%);
+        filter: blur(20px);
+        animation: drift 30s ease-in-out infinite alternate;
+      }
+      /* A ringed planet, bottom right. */
+      .planet {
+        position: absolute;
+        right: -60px;
+        bottom: -40px;
+        width: 340px;
+        height: 340px;
+        transform: translate3d(var(--px, 0), var(--py, 0), 0);
+        transition: transform 0.6s ease-out;
+      }
+      .planet .body {
+        position: absolute;
+        inset: 60px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 32% 30%, #e0f2fe 0%, #7dd3fc 14%, #3b82f6 38%, #4c1d95 70%, #0b1030 100%);
+        box-shadow: inset -30px -30px 60px rgba(5, 8, 22, 0.85), 0 0 60px rgba(96, 165, 250, 0.45), 0 0 140px rgba(168, 85, 247, 0.25);
+      }
+      .planet .body::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: repeating-linear-gradient(170deg, transparent 0 14px, rgba(255, 255, 255, 0.06) 14px 20px);
+        mix-blend-mode: screen;
+      }
+      .planet .ring {
+        position: absolute;
+        left: -10px;
+        right: -10px;
+        top: 50%;
+        height: 90px;
+        margin-top: -45px;
+        border-radius: 50%;
+        border: 10px solid rgba(165, 180, 252, 0.35);
+        box-shadow: 0 0 30px rgba(129, 140, 248, 0.5), inset 0 0 18px rgba(34, 211, 238, 0.35);
+        transform: rotate(-18deg);
+      }
+      .planet .ring.back {
+        z-index: 0;
+        clip-path: inset(0 0 50% 0);
+      }
+      .planet .ring.front {
+        z-index: 2;
+        clip-path: inset(50% 0 0 0);
+      }
+      .planet .body {
+        z-index: 1;
+      }
+      /* Floating holographic props (line art drawn in SVG), in front of the panels but never clickable. */
+      .props {
+        position: fixed;
+        inset: 0;
+        z-index: 3;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .prop {
+        position: absolute;
+        opacity: 0.9;
+        filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.6));
+        animation: float 7s ease-in-out infinite;
+        transform: translate3d(var(--px, 0), var(--py, 0), 0);
+      }
+      .prop svg {
+        display: block;
+        overflow: visible;
+      }
+      .prop.cap {
+        left: max(2px, calc(50% - 700px));
+        top: 46%;
+        scale: 0.72;
+        animation-delay: -1s;
+      }
+      .prop.sat {
+        left: 46%;
+        top: 1%;
+        transform: translate3d(var(--px, 0), var(--py, 0), 0) scale(0.7);
+        animation-delay: -3s;
+      }
+      .prop.city {
+        left: max(0px, calc(50% - 700px));
+        bottom: 1%;
+        animation-delay: -2s;
+      }
+      .prop.city2 {
+        display: none;
+        right: 24%;
+        bottom: 3%;
+        animation-delay: -4s;
+      }
+      .prop.hand {
+        right: calc(min(100%, 1280px) * 0.2);
+        bottom: 2%;
+        filter: drop-shadow(0 0 14px rgba(251, 191, 36, 0.65));
+        animation-delay: -5s;
+      }
+      @media (max-width: 1100px) {
+        .prop {
+          display: none;
+        }
+      }
+
+      /* ----------------------------------------------------------- layout -- */
+      .top {
+        border-bottom: 1px solid var(--line);
+        background: rgba(5, 8, 22, 0.55);
+        backdrop-filter: blur(10px);
+        position: relative;
+        z-index: 2;
+      }
+      .top-inner {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 12px 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+      .brand img {
+        width: 26px;
+        height: 26px;
+        filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.7));
+      }
+      .brand small {
+        font-weight: 500;
+        color: var(--muted);
+        letter-spacing: 0;
+      }
+      .page {
+        position: relative;
+        z-index: 1;
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 22px 20px 40px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+        gap: 28px;
+        align-items: start;
+        perspective: 1400px;
+      }
+      @media (max-width: 980px) {
+        .page {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      /* Glass panels with a glowing, slowly turning edge; they tilt toward the pointer. */
+      .card {
+        position: relative;
+        background: linear-gradient(160deg, rgba(30, 44, 92, 0.55), rgba(10, 16, 40, 0.72));
+        border: 1px solid rgba(120, 180, 255, 0.22);
+        border-radius: 22px;
+        backdrop-filter: blur(14px) saturate(140%);
+        box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--glow);
+        transform-style: preserve-3d;
+        transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+        transition: transform 0.35s ease-out;
+      }
+      .card::before {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        padding: 1px;
+        background: conic-gradient(from var(--angle, 0deg), rgba(34, 211, 238, 0.9), rgba(168, 85, 247, 0.6), transparent 40%, rgba(34, 211, 238, 0.7), rgba(217, 70, 239, 0.6), transparent 85%, rgba(34, 211, 238, 0.9));
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        pointer-events: none;
+        animation: edge 8s linear infinite;
+      }
+
+      /* -------------------------------------------------------- assistant -- */
+      .assistant {
+        display: flex;
+        flex-direction: column;
+        height: min(780px, calc(100vh - 110px));
+        min-height: 560px;
+        overflow: hidden;
+        animation: rise 0.8s var(--spring) both;
+      }
+      .a-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 18px 8px;
+      }
+      .a-who {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      /* The assistant: a glossy 3D sphere with orbit rings. */
+      .orb {
+        position: relative;
+        width: 54px;
+        height: 54px;
+        flex: none;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+      }
+      .orb::before {
+        content: '';
+        position: absolute;
+        inset: -6px;
+        border-radius: 50%;
+        border: 2px solid rgba(34, 211, 238, 0.55);
+        border-left-color: transparent;
+        border-bottom-color: rgba(168, 85, 247, 0.7);
+        animation: spin 4s linear infinite;
+        box-shadow: 0 0 18px rgba(34, 211, 238, 0.45);
+      }
+      .orb::after {
+        content: '';
+        position: absolute;
+        inset: -12px;
+        border-radius: 50%;
+        border: 1px dashed rgba(168, 85, 247, 0.45);
+        animation: spin 12s linear infinite reverse;
+      }
+      .orb span {
+        position: relative;
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 32% 28%, #ffffff 0%, #a5f3fc 12%, #22d3ee 32%, #6366f1 62%, #1e1b4b 100%);
+        box-shadow: inset -6px -8px 14px rgba(5, 8, 22, 0.75), 0 0 22px rgba(34, 211, 238, 0.7), 0 0 50px rgba(168, 85, 247, 0.35);
+        display: grid;
+        place-items: center;
+        animation: bob 4s ease-in-out infinite;
+      }
+      .orb img {
+        width: 22px;
+        height: 22px;
+        filter: brightness(0) invert(1) drop-shadow(0 0 4px rgba(255, 255, 255, 0.9));
+      }
+      .thinking .orb::before {
+        animation-duration: 0.9s;
+      }
+      .thinking .orb span {
+        box-shadow: inset -6px -8px 14px rgba(5, 8, 22, 0.75), 0 0 34px rgba(34, 211, 238, 0.95), 0 0 80px rgba(168, 85, 247, 0.6);
+      }
+      .orb.sm {
+        width: 30px;
+        height: 30px;
+      }
+      .orb.sm span {
+        width: 26px;
+        height: 26px;
+        animation: none;
+      }
+      .orb.sm img {
+        width: 13px;
+        height: 13px;
+      }
+      .orb.sm::after {
+        display: none;
+      }
+      .orb.sm::before {
+        inset: -3px;
+        border-width: 1px;
+      }
+      .a-head h1 {
+        margin: 0;
+        font-size: 1.08rem;
+        font-weight: 650;
+        letter-spacing: 0.01em;
+        text-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 0.8rem;
+        color: var(--muted);
+        height: 18px;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--ok);
+        box-shadow: 0 0 8px var(--ok);
+        animation: ping 2.2s infinite;
+      }
+      .status.off .dot {
+        background: #64748b;
+        box-shadow: none;
+        animation: none;
+      }
+      .eq {
+        display: none;
+        gap: 2px;
+        align-items: flex-end;
+        height: 12px;
+      }
+      .eq i {
+        width: 3px;
+        border-radius: 2px;
+        background: linear-gradient(var(--cyan), var(--violet));
+        animation: eq 0.9s ease-in-out infinite;
+      }
+      .eq i:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+      .eq i:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+      .eq i:nth-child(4) {
+        animation-delay: 0.45s;
+      }
+      .thinking .eq {
+        display: inline-flex;
+      }
+      .thinking .dot {
+        display: none;
+      }
+      .head-actions {
+        display: flex;
+        gap: 4px;
+      }
+
+      /* Stepper: glowing nodes joined by a light trail. */
+      .stepper {
+        list-style: none;
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        margin: 0;
+        padding: 8px 18px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+      .stepper li {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.7rem;
+        color: var(--muted);
+        text-align: center;
+      }
+      .stepper li::before {
+        content: '';
+        position: absolute;
+        top: 13px;
+        left: -50%;
+        right: 50%;
+        height: 2px;
+        background: rgba(120, 160, 255, 0.18);
+      }
+      .stepper li:first-child::before {
+        display: none;
+      }
+      .stepper li.done::before,
+      .stepper li.now::before {
+        background: linear-gradient(90deg, var(--cyan), var(--violet));
+        box-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+      }
+      .stepper b {
+        position: relative;
+        z-index: 1;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(circle at 35% 30%, #1e2a5a, #0b1030);
+        border: 1px solid rgba(120, 160, 255, 0.35);
+        font-size: 0.72rem;
+        color: var(--muted);
+        transition: all 0.4s var(--spring);
+      }
+      .stepper li.now b {
+        background: radial-gradient(circle at 32% 28%, #ffffff, #67e8f9 25%, #6366f1 70%, #1e1b4b);
+        color: #050816;
+        font-weight: 700;
+        border-color: transparent;
+        transform: scale(1.22);
+        box-shadow: 0 0 18px rgba(34, 211, 238, 0.9), 0 0 40px rgba(168, 85, 247, 0.5);
+        animation: halo 1.8s ease-in-out infinite;
+      }
+      .stepper li.now {
+        color: var(--cyan-2);
+        font-weight: 600;
+      }
+      .stepper li.done b {
+        background: linear-gradient(135deg, var(--cyan), var(--violet));
+        border-color: transparent;
+        color: #fff;
+        box-shadow: 0 0 12px rgba(34, 211, 238, 0.6);
+      }
+      .stepper li.done {
+        color: var(--ink-2);
+      }
+
+      .chat {
+        flex: 1;
+        overflow-y: auto;
+        padding: 18px 18px 12px;
+        scroll-behavior: smooth;
+        scrollbar-color: rgba(120, 160, 255, 0.35) transparent;
+      }
+      .log {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .msg {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        animation: pop 0.42s var(--spring) both;
+      }
+      .msg.me {
+        justify-content: flex-end;
+      }
+      .msg.note {
+        justify-content: center;
+        font-size: 0.76rem;
+        color: var(--muted);
+      }
+      .bubble {
+        max-width: min(580px, 86%);
+        padding: 10px 14px;
+        border-radius: 16px 16px 16px 5px;
+        background: rgba(30, 41, 82, 0.72);
+        border: 1px solid rgba(120, 160, 255, 0.2);
+        color: var(--ink);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        box-shadow: 0 8px 20px -14px rgba(0, 0, 0, 0.9);
+      }
+      .msg.me .bubble {
+        border-radius: 16px 16px 5px 16px;
+        background: linear-gradient(135deg, rgba(34, 211, 238, 0.95), rgba(124, 58, 237, 0.95));
+        border-color: transparent;
+        color: #fff;
+        box-shadow: 0 0 22px rgba(34, 211, 238, 0.35);
+      }
+      .msg.me .bubble small {
+        display: block;
+        opacity: 0.88;
+        font-size: 0.8rem;
+      }
+      .thinking-bubble {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 0.82rem;
+        background: linear-gradient(90deg, rgba(30, 41, 82, 0.7) 0%, rgba(34, 211, 238, 0.25) 50%, rgba(30, 41, 82, 0.7) 100%);
+        background-size: 200% 100%;
+        animation: shimmer 1.4s linear infinite;
+      }
+      .thinking-bubble i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--cyan);
+        box-shadow: 0 0 6px var(--cyan);
+        animation: dots 1s infinite ease-in-out;
+      }
+      .thinking-bubble i:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+      .thinking-bubble i:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+      .caret::after {
+        content: '▍';
+        color: var(--cyan);
+        animation: blink 0.8s steps(1) infinite;
+      }
+
+      /* Interactive cards inside the conversation */
+      .widget {
+        width: 100%;
+        max-width: 640px;
+        margin-left: 40px;
+        border: 1px solid rgba(120, 180, 255, 0.25);
+        border-radius: 18px;
+        background: linear-gradient(160deg, rgba(25, 38, 80, 0.85), rgba(10, 16, 40, 0.88));
+        box-shadow: 0 20px 40px -24px rgba(0, 0, 0, 0.9), 0 0 30px rgba(34, 211, 238, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        padding: 16px 16px 14px;
+        animation: card-in 0.6s var(--spring) both;
+        transform-origin: left top;
+      }
+      @media (max-width: 560px) {
+        .widget {
+          margin-left: 0;
+        }
+      }
+      .widget h3 {
+        margin: 0 0 12px;
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--cyan-2);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-shadow: 0 0 10px rgba(34, 211, 238, 0.6);
+      }
+      .widget h3::before {
+        content: '';
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--cyan);
+        box-shadow: 0 0 10px var(--cyan);
+      }
+      .field {
+        margin-bottom: 12px;
+        animation: field-in 0.5s var(--spring) both;
+      }
+      .field label,
+      .field .label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--ink-2);
+      }
+      .field .opt {
+        font-weight: 400;
+        color: var(--muted);
+      }
+      .followup {
+        border-left: 2px solid var(--cyan);
+        box-shadow: -6px 0 12px -8px var(--cyan);
+        padding-left: 12px;
+        margin-left: 4px;
+        animation: open 0.45s var(--spring) both;
+      }
+      input[type='text'],
+      input[type='email'],
+      input[type='url'],
+      input[type='number'],
+      input[type='month'],
+      input[type='password'],
+      textarea {
+        width: 100%;
+        padding: 10px 13px;
+        border-radius: 12px;
+        border: 1px solid rgba(120, 160, 255, 0.3);
+        background: rgba(5, 10, 30, 0.6);
+        color: var(--ink);
+        font: inherit;
+        color-scheme: dark;
+        transition: border-color 0.15s ease, box-shadow 0.25s ease;
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: #5f6f96;
+      }
+      textarea {
+        min-height: 70px;
+        resize: vertical;
+      }
+      input:focus,
+      textarea:focus {
+        outline: none;
+        border-color: var(--cyan);
+        box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18), 0 0 22px rgba(34, 211, 238, 0.35);
+      }
+      /* Password box with a show/hide eye inside it */
+      .pw {
+        position: relative;
+      }
+      .pw input {
+        padding-right: 44px;
+      }
+      .pw .eye {
+        position: absolute;
+        top: 50%;
+        right: 6px;
+        transform: translateY(-50%);
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: #7f8fb8;
+        cursor: pointer;
+        box-shadow: none;
+      }
+      .pw .eye:hover:not([disabled]),
+      .pw .eye:active:not([disabled]),
+      .pw .eye[aria-pressed='true'] {
+        /* keep the eye still inside the box (the general button hover lifts and glows) */
+        transform: translateY(-50%);
+        border: 0;
+        box-shadow: none;
+        color: var(--cyan);
+        background: rgba(34, 211, 238, 0.08);
+      }
+      .pw .eye .ripple {
+        display: none;
+      }
+      .pw .eye:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 1px;
+      }
+      .pw .eye svg {
+        width: 18px;
+        height: 18px;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 12px;
+      }
+      @media (max-width: 560px) {
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+      }
+      .err {
+        margin-top: 4px;
+        color: var(--bad);
+        font-size: 0.8rem;
+      }
+      .err:empty {
+        display: none;
+      }
+      .invalid input,
+      .invalid textarea,
+      .invalid .chips {
+        animation: shake 0.35s;
+      }
+      .invalid input,
+      .invalid textarea {
+        border-color: var(--bad);
+        box-shadow: 0 0 14px rgba(251, 113, 133, 0.35);
+      }
+      .counter {
+        text-align: right;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .ideas {
+        margin-top: 6px;
+      }
+      button {
+        font: inherit;
+        border-radius: 12px;
+        padding: 9px 16px;
+        border: 1px solid rgba(120, 160, 255, 0.3);
+        background: rgba(20, 30, 64, 0.7);
+        color: var(--ink);
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.15s ease, border-color 0.15s ease, background 0.2s ease, color 0.15s ease, box-shadow 0.2s ease;
+      }
+      button:hover:not([disabled]) {
+        border-color: var(--cyan);
+        color: #fff;
+        box-shadow: 0 0 16px rgba(34, 211, 238, 0.35);
+        transform: translateY(-1px);
+      }
+      button:active:not([disabled]) {
+        transform: scale(0.97);
+      }
+      button .ripple {
+        position: absolute;
+        border-radius: 50%;
+        background: rgba(103, 232, 249, 0.45);
+        transform: scale(0);
+        animation: ripple 0.6s ease-out forwards;
+        pointer-events: none;
+      }
+      .chip {
+        border-radius: 99px;
+        padding: 6px 13px;
+        font-size: 0.85rem;
+        background: rgba(34, 211, 238, 0.1);
+        border-color: rgba(34, 211, 238, 0.4);
+        color: var(--cyan-2);
+      }
+      .chip[aria-pressed='true'] {
+        background: linear-gradient(135deg, var(--cyan), var(--violet));
+        border-color: transparent;
+        color: #fff;
+        box-shadow: 0 0 18px rgba(34, 211, 238, 0.55);
+      }
+      .chip.idea {
+        background: transparent;
+        border-style: dashed;
+        font-size: 0.78rem;
+        padding: 4px 10px;
+      }
+      .chip.idea[aria-pressed='true'] {
+        border-style: solid;
+        background: linear-gradient(135deg, var(--cyan), var(--violet));
+      }
+      /* APEX platform choice: square, selectable cards */
+      .platforms {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 10px;
+        margin-top: 6px;
+      }
+      .platform {
+        position: relative;
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(34, 211, 238, 0.3);
+        background: rgba(34, 211, 238, 0.05);
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+      }
+      .platform strong {
+        display: block;
+        font-size: 0.92rem;
+      }
+      .platform span span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 0.76rem;
+        line-height: 1.35;
+      }
+      .platform .tick {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        border: 1px solid rgba(34, 211, 238, 0.5);
+        color: transparent;
+        font-size: 0.75rem;
+        font-weight: 800;
+      }
+      .platform[aria-pressed='true'] {
+        border-color: var(--cyan);
+        background: linear-gradient(135deg, rgba(34, 211, 238, 0.16), rgba(139, 92, 246, 0.16));
+        box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
+      }
+      .platform[aria-pressed='true'] .tick {
+        border-color: transparent;
+        background: linear-gradient(135deg, var(--cyan), var(--violet));
+        color: #fff;
+      }
+      .ideas-hint {
+        align-self: center;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      .primary {
+        border: none;
+        background: linear-gradient(90deg, #06b6d4, #6366f1 55%, #a855f7);
+        background-size: 200% 100%;
+        color: #fff;
+        font-weight: 650;
+        box-shadow: 0 0 22px rgba(34, 211, 238, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+        animation: sheen 5s ease-in-out infinite;
+      }
+      .primary:hover:not([disabled]) {
+        box-shadow: 0 0 32px rgba(34, 211, 238, 0.75), 0 0 60px rgba(168, 85, 247, 0.4);
+      }
+      .ghost {
+        border-color: transparent;
+        background: transparent;
+        color: var(--muted);
+        padding: 6px 10px;
+        font-size: 0.85rem;
+      }
+      .tiny {
+        padding: 2px 10px;
+        font-size: 0.74rem;
+        border-radius: 99px;
+      }
+      button[disabled] {
+        opacity: 0.4;
+        cursor: not-allowed;
+        transform: none !important;
+        box-shadow: none !important;
+      }
+      .actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        margin-top: 6px;
+      }
+      .actions .hint {
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+      /* Consent line and role cards */
+      .consent-note {
+        margin: 14px 0 0;
+        color: var(--muted);
+        font-size: 0.78rem;
+        line-height: 1.45;
+      }
+      .consent {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 10px 12px;
+        margin-bottom: 14px;
+        border-radius: 12px;
+        background: rgba(34, 211, 238, 0.08);
+        border: 1px solid rgba(34, 211, 238, 0.25);
+        font-size: 0.88rem;
+      }
+      .consent input {
+        margin-top: 4px;
+        accent-color: var(--cyan);
+        width: 16px;
+        height: 16px;
+      }
+      details.notice {
+        margin-top: 4px;
+        font-size: 0.82rem;
+      }
+      details.notice summary {
+        cursor: pointer;
+        color: var(--cyan-2);
+        font-weight: 600;
+      }
+      details.notice div {
+        margin-top: 6px;
+        color: var(--muted);
+        white-space: pre-wrap;
+      }
+      .draft {
+        display: inline-block;
+        margin-bottom: 4px;
+        padding: 1px 8px;
+        border-radius: 99px;
+        background: rgba(251, 191, 36, 0.15);
+        color: var(--gold);
+        font-size: 0.68rem;
+        font-weight: 700;
+      }
+      .group-title {
+        margin: 14px 0 7px;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--muted);
+      }
+      .roles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+        gap: 10px;
+        perspective: 900px;
+      }
+      .role {
+        text-align: left;
+        padding: 12px;
+        border-radius: 14px;
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        background: linear-gradient(160deg, rgba(30, 44, 92, 0.75), rgba(12, 18, 44, 0.85));
+        border: 1px solid rgba(120, 180, 255, 0.28);
+        animation: field-in 0.5s var(--spring) both;
+        transform-style: preserve-3d;
+      }
+      .role::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.18) 45%, transparent 60%);
+        transform: translateX(-120%);
+        transition: transform 0.7s ease;
+        pointer-events: none;
+      }
+      .role:hover:not([disabled])::after {
+        transform: translateX(120%);
+      }
+      .role:hover:not([disabled]) {
+        transform: translateY(-4px) rotateX(6deg) rotateY(-4deg);
+        border-color: var(--cyan);
+        box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.6), 0 0 26px rgba(34, 211, 238, 0.45), 0 18px 30px -18px rgba(0, 0, 0, 0.9);
+      }
+      .role[aria-pressed='true'] {
+        border-color: var(--cyan);
+        box-shadow: 0 0 26px rgba(34, 211, 238, 0.5);
+      }
+      .role.alt:hover:not([disabled]) {
+        border-color: var(--gold);
+        box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.6), 0 0 26px rgba(251, 191, 36, 0.4);
+      }
+      .role .ic {
+        flex: none;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(circle at 35% 30%, rgba(103, 232, 249, 0.35), rgba(30, 41, 82, 0.9));
+        border: 1px solid rgba(34, 211, 238, 0.4);
+        box-shadow: 0 0 12px rgba(34, 211, 238, 0.3);
+        transition: transform 0.35s var(--spring);
+      }
+      .role .ic svg {
+        width: 20px;
+        height: 20px;
+        filter: drop-shadow(0 0 4px rgba(103, 232, 249, 0.9));
+      }
+      .role.alt .ic {
+        background: radial-gradient(circle at 35% 30%, rgba(251, 191, 36, 0.35), rgba(30, 41, 82, 0.9));
+        border-color: rgba(251, 191, 36, 0.45);
+      }
+      .role:hover .ic {
+        transform: translateZ(20px) rotate(-8deg) scale(1.12);
+      }
+      .role strong {
+        display: block;
+        font-size: 0.9rem;
+        color: #fff;
+      }
+      .role span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.74rem;
+        line-height: 1.35;
+      }
+      /* Review */
+      .summary h4 {
+        margin: 12px 0 4px;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--cyan-2);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .summary dl {
+        margin: 0;
+      }
+      .summary dl > div {
+        display: grid;
+        grid-template-columns: minmax(8rem, 40%) 1fr;
+        gap: 10px;
+        padding: 6px 0;
+        border-top: 1px solid var(--line);
+        font-size: 0.88rem;
+        animation: field-in 0.45s var(--spring) both;
+      }
+      .summary dt {
+        color: var(--muted);
+      }
+      .summary dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      /* Code */
+      .otp {
+        display: flex;
+        gap: 9px;
+        justify-content: center;
+        margin: 6px 0 10px;
+        perspective: 600px;
+      }
+      .otp input {
+        width: 48px;
+        height: 58px;
+        padding: 0;
+        text-align: center;
+        font: 700 1.5rem/1 ui-monospace, Consolas, monospace;
+        border-radius: 12px;
+      }
+      .otp input:not(:placeholder-shown) {
+        border-color: var(--cyan);
+        background: rgba(34, 211, 238, 0.12);
+        box-shadow: 0 0 16px rgba(34, 211, 238, 0.45);
+        animation: flip 0.35s var(--spring);
+      }
+      .otp-meta {
+        text-align: center;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      /* Done */
+      .done-mark {
+        width: 70px;
+        height: 70px;
+        display: block;
+        margin: 2px auto 8px;
+        filter: drop-shadow(0 0 12px rgba(52, 211, 153, 0.8));
+      }
+      .done-mark circle {
+        stroke-dasharray: 190;
+        stroke-dashoffset: 190;
+        animation: draw 0.7s ease-out forwards;
+      }
+      .done-mark path {
+        stroke-dasharray: 45;
+        stroke-dashoffset: 45;
+        animation: draw 0.45s 0.5s ease-out forwards;
+      }
+      .confetti {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 50;
+      }
+      .confetti i {
+        position: absolute;
+        top: -14px;
+        width: 7px;
+        height: 12px;
+        border-radius: 2px;
+        box-shadow: 0 0 8px currentColor;
+        animation: fall 1.8s cubic-bezier(0.25, 0.6, 0.4, 1) forwards;
+      }
+
+      /* ---------------------------------------------------------- side ---- */
+      .side {
+        display: grid;
+        gap: 20px;
+      }
+      .panel {
+        padding: 22px;
+        animation: rise 0.8s 0.15s var(--spring) both;
+      }
+      .panel h2 {
+        margin: 0 0 6px;
+        font-size: 1.22rem;
+        text-shadow: 0 0 16px rgba(34, 211, 238, 0.3);
+      }
+      .panel p {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+      .panel a.primary {
+        display: block;
+        text-align: center;
+        padding: 13px;
+        border-radius: 14px;
+        text-decoration: none;
+      }
+      .tag {
+        display: inline-block;
+        margin-bottom: 8px;
+        padding: 3px 10px;
+        border-radius: 6px;
+        background: rgba(34, 211, 238, 0.12);
+        border: 1px solid rgba(34, 211, 238, 0.3);
+        color: var(--cyan-2);
+        font-size: 0.72rem;
+        font-weight: 600;
+      }
+      .wave {
+        display: block;
+        width: 100%;
+        height: 34px;
+        margin: 2px 0 8px;
+      }
+      .wave path {
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+      }
+      .live dl {
+        margin: 0;
+      }
+      .live dl > div {
+        display: grid;
+        grid-template-columns: 7rem 1fr;
+        gap: 8px;
+        padding: 6px 8px;
+        margin: 0 -8px;
+        border-radius: 8px;
+        font-size: 0.86rem;
+      }
+      .live dl > div.flash {
+        animation: flash 1.2s ease-out;
+      }
+      .live dt {
+        color: var(--muted);
+      }
+      .live dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .live .empty {
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+      .role-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 100%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding: 6px 12px;
+        border-radius: 8px;
+        letter-spacing: 0.01em;
+        background: linear-gradient(135deg, var(--cyan), var(--violet));
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 600;
+        margin-bottom: 6px;
+        box-shadow: 0 0 14px rgba(34, 211, 238, 0.5);
+        animation: pop 0.4s var(--spring);
+      }
+
+      @keyframes pop {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.95);
+        }
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(24px) rotateX(8deg);
+        }
+      }
+      @keyframes card-in {
+        from {
+          opacity: 0;
+          transform: perspective(900px) rotateX(-14deg) translateY(18px) scale(0.96);
+          filter: blur(4px);
+        }
+      }
+      @keyframes field-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+      }
+      @keyframes open {
+        from {
+          opacity: 0;
+          transform: translateX(-8px);
+          max-height: 0;
+        }
+        to {
+          max-height: 220px;
+        }
+      }
+      @keyframes flip {
+        from {
+          transform: rotateX(-90deg);
+        }
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes bob {
+        50% {
+          transform: translateY(-2px);
+        }
+      }
+      @keyframes float {
+        50% {
+          translate: 0 -14px;
+          rotate: 3deg;
+        }
+      }
+      @keyframes eq {
+        0%,
+        100% {
+          height: 3px;
+        }
+        50% {
+          height: 12px;
+        }
+      }
+      @keyframes ping {
+        70% {
+          box-shadow: 0 0 0 7px rgba(52, 211, 153, 0);
+        }
+      }
+      @keyframes halo {
+        50% {
+          box-shadow: 0 0 26px rgba(34, 211, 238, 1), 0 0 60px rgba(168, 85, 247, 0.6);
+        }
+      }
+      @keyframes dots {
+        0%,
+        80%,
+        100% {
+          opacity: 0.3;
+          transform: translateY(0);
+        }
+        40% {
+          opacity: 1;
+          transform: translateY(-3px);
+        }
+      }
+      @keyframes shimmer {
+        to {
+          background-position: -200% 0;
+        }
+      }
+      @keyframes sheen {
+        50% {
+          background-position: 100% 0;
+        }
+      }
+      @keyframes edge {
+        to {
+          --angle: 360deg;
+        }
+      }
+      @property --angle {
+        syntax: '<angle>';
+        initial-value: 0deg;
+        inherits: false;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+      @keyframes shake {
+        25% {
+          transform: translateX(-5px);
+        }
+        75% {
+          transform: translateX(5px);
+        }
+      }
+      @keyframes ripple {
+        to {
+          transform: scale(4);
+          opacity: 0;
+        }
+      }
+      @keyframes flash {
+        from {
+          background: rgba(34, 211, 238, 0.25);
+        }
+      }
+      @keyframes draw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      @keyframes fall {
+        to {
+          transform: translateY(105vh) rotate(720deg);
+          opacity: 0.3;
+        }
+      }
+      @keyframes drift {
+        to {
+          transform: translate(3vmax, -2vmax) rotate(6deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+          scroll-behavior: auto !important;
+        }
+        .done-mark circle,
+        .done-mark path {
+          stroke-dashoffset: 0;
+        }
+        .card {
+          transform: none !important;
+        }
+      }
+</style>
+  </head>
+  <body>
+    <canvas id="space" aria-hidden="true"></canvas>
+    <div class="scene" aria-hidden="true">
+      <div class="nebula"></div>
+      <div class="planet" data-depth="18"><div class="ring back"></div><div class="body"></div><div class="ring front"></div></div>
+      <div class="prop hand" data-depth="12"><svg width="150" height="110" viewBox="0 0 150 110" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="75" cy="55" rx="70" ry="26" stroke="#a855f7" opacity=".5" transform="rotate(-12 75 55)" /><path d="M10 52l24-14 14 6 18-10c4-2 8-2 11 1l4 4" /><path d="M140 52l-24-14-12 4-16-8c-3-1-7 0-9 2L62 54c-3 3 0 8 4 7l13-5" /><path d="M48 62l10 9c2 2 5 2 7 0M58 56l12 11c2 2 5 2 7 0M70 52l12 11c2 2 5 2 7 0M84 50l9 8c2 2 5 1 6-1" /><path d="M34 38l-6 24M116 38l6 24" /><circle cx="30" cy="20" r="2" fill="#fbbf24" /><circle cx="122" cy="14" r="2.5" fill="#fbbf24" /><circle cx="134" cy="84" r="1.8" fill="#fbbf24" /></svg></div>
+    </div>
+    <div class="props" aria-hidden="true">
+      <div class="prop cap" data-depth="10"><svg width="96" height="80" viewBox="0 0 96 80" fill="none" stroke="#67e8f9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 30 48 12l40 18-40 18Z" /><path d="M24 38v16c0 6 11 12 24 12s24-6 24-12V38" /><path d="M80 34v22" /><circle cx="80" cy="60" r="4" fill="#a855f7" stroke="none" /><ellipse cx="48" cy="74" rx="34" ry="5" stroke="#a855f7" opacity=".6" /></svg></div>
+      <div class="prop sat" data-depth="24"><svg width="86" height="60" viewBox="0 0 86 60" fill="none" stroke="#67e8f9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="35" y="22" width="16" height="16" rx="2" /><rect x="4" y="24" width="26" height="12" stroke="#a855f7" /><rect x="56" y="24" width="26" height="12" stroke="#a855f7" /><path d="M13 24v12M21 24v12M65 24v12M73 24v12M30 30h5M51 30h5M43 22V12" /><circle cx="43" cy="9" r="3" /></svg></div>
+      <div class="prop city" data-depth="14"><svg width="120" height="110" viewBox="0 0 120 110" fill="none" stroke="#67e8f9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="60" cy="96" rx="52" ry="10" stroke="#a855f7" /><ellipse cx="60" cy="96" rx="36" ry="6" opacity=".6" /><path d="M30 92V50h14v42M48 92V22h16v70M68 92V40h12v52M84 92V60h10v32M52 30h8M52 40h8M52 50h8M52 60h8M33 60h8M33 70h8M71 50h6M71 62h6" /><path d="M56 22V10" /></svg></div>
+      <div class="prop city2" data-depth="20"><svg width="100" height="90" viewBox="0 0 100 90" fill="none" stroke="#67e8f9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="50" cy="78" rx="44" ry="8" stroke="#a855f7" /><path d="M26 74V40h12v34M42 74V18h14v56M60 74V34h12v40M45 28h8M45 38h8M45 48h8M63 44h6M63 56h6" /></svg></div>
+    </div>
+    <header class="top">
+      <div class="top-inner">
+        <span class="brand"><img src="/logo.svg" alt="" />APEX <small>· Enterprise Onboarding</small></span>
+      </div>
+    </header>
+
+    <div class="page">
+      <section class="card assistant" id="assistant" aria-labelledby="a-title">
+        <div class="a-head">
+          <div class="a-who">
+            <div class="orb" aria-hidden="true"><span><img src="/logo.svg" alt="" /></span></div>
+            <div>
+              <h1 id="a-title">Enterprise Onboarding Assistant</h1>
+              <div class="status off" id="status"><span class="dot"></span><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span id="status-text">Connecting…</span></div>
+            </div>
+          </div>
+          <div class="head-actions">
+            <button type="button" class="ghost" id="back" disabled>← Back</button>
+            <button type="button" class="ghost" id="restart">Restart</button>
+          </div>
+        </div>
+        <ol class="stepper" id="stepper" aria-label="Progress"></ol>
+        <div class="chat" id="chat">
+          <ol class="log" id="log" role="log" aria-live="polite" aria-label="Conversation"></ol>
+        </div>
+      </section>
+
+      <aside class="side" aria-label="Account">
+        <div class="card panel">
+          <span class="tag">Existing users</span>
+          <h2>Sign in to APEX</h2>
+          <p>Already have an account, or received an invitation? Sign in on the APEX sign-in page.</p>
+          <a class="primary" id="signin-link" href="http://localhost:5173/login">Sign in</a>
+        </div>
+        <div class="card panel live" aria-live="polite">
+          <span class="tag">Your request · live</span>
+          <svg class="wave" viewBox="0 0 300 34" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="wv" x1="0" x2="1"><stop offset="0" stop-color="#22d3ee" stop-opacity="0" /><stop offset=".3" stop-color="#22d3ee" /><stop offset=".7" stop-color="#a855f7" /><stop offset="1" stop-color="#a855f7" stop-opacity="0" /></linearGradient></defs><path id="wave-a" stroke="url(#wv)" d="M0 17 H300" /><path id="wave-b" stroke="url(#wv)" opacity=".45" d="M0 17 H300" /></svg>
+          <div id="live-role"></div>
+          <dl id="live-list"></dl>
+          <p class="empty" id="live-empty">Your answers will appear here as you go. Nothing is granted until an administrator approves your request.</p>
+        </div>
+      </aside>
+    </div>
+    <noscript><p style="padding: 16px">This page needs JavaScript.</p></noscript>
+
+    <script>
+      ;(() => {
+        'use strict'
+        const API = '/auth/onboarding/'
+        const $ = (id) => document.getElementById(id)
+        const log = $('log')
+        const chat = $('chat')
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        const ICONS = { INTERN: '🎓', ALUMNI: '🤝', INDUSTRY_PARTNER: '🏭', CEO: '🧭', VP: '📈', DIRECTOR: '🏛️' }
+        const ICON_PATHS = {
+          INTERN: 'M2 9l10-5 10 5-10 5zM6 11v5c0 2 3 4 6 4s6-2 6-4v-5M20 10v6',
+          ALUMNI: 'M2 12l5-3 4 2 4-2 2 1M22 12l-5-3-3 1M8 14l3 3c1 1 2 1 3 0l5-5M10 16l2 2M12 13l3 3',
+          INDUSTRY_PARTNER: 'M3 21V10l6 3V10l6 3V6h6v15zM7 17h2M12 17h2M17 17h2M17 9h2',
+          CEO: 'M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5zM12 10v4M10 12h4',
+          VP: 'M3 20h18M5 16l5-5 4 3 6-7M15 7h5v5',
+          DIRECTOR: 'M3 21h18M4 10h16M12 3l8 5H4zM6 10v8M10 10v8M14 10v8M18 10v8',
+        }
+        function icon(code) {
+          const ns = 'http://www.w3.org/2000/svg'
+          const svg = document.createElementNS(ns, 'svg')
+          svg.setAttribute('viewBox', '0 0 24 24')
+          svg.setAttribute('aria-hidden', 'true')
+          const path = document.createElementNS(ns, 'path')
+          for (const [k, v] of Object.entries({ d: ICON_PATHS[code] || 'M12 4v16M4 12h16', fill: 'none', stroke: code === 'ALUMNI' ? '#fde68a' : '#a5f3fc', 'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })) path.setAttribute(k, v)
+          svg.append(path)
+          return svg
+        }
+        const STAGES = ['Role', 'You', 'Details', 'Goals', 'Review', 'Verify']
+
+        function el(tag, props, ...kids) {
+          const n = document.createElement(tag)
+          for (const [k, v] of Object.entries(props || {})) {
+            if (v === undefined || v === null || v === false) continue
+            if (k === 'class') n.className = v
+            else if (k === 'text') n.textContent = v
+            else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v)
+            else if (v === true) n.setAttribute(k, '')
+            else n.setAttribute(k, String(v))
+          }
+          for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) n.append(c)
+          return n
+        }
+        const human = (v) =>
+          /^\d+_\d+$/.test(String(v)) ? String(v).replace('_', '–') : String(v).replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+        const sleep = (ms) => new Promise((r) => setTimeout(r, reduced ? 0 : ms))
+        const scrollDown = () => requestAnimationFrame(() => chat.scrollTo({ top: chat.scrollHeight, behavior: reduced ? 'auto' : 'smooth' }))
+
+        // Ripple on every button press.
+        document.addEventListener('pointerdown', (e) => {
+          const b = e.target.closest('button')
+          if (!b || b.disabled || reduced) return
+          const r = b.getBoundingClientRect()
+          const size = Math.max(r.width, r.height)
+          const s = el('span', { class: 'ripple' })
+          s.style.width = s.style.height = `${size}px`
+          s.style.left = `${e.clientX - r.left - size / 2}px`
+          s.style.top = `${e.clientY - r.top - size / 2}px`
+          b.append(s)
+          setTimeout(() => s.remove(), 650)
+        })
+
+        async function api(step, body) {
+          const opts =
+            body === undefined
+              ? { method: 'GET', cache: 'no-store', credentials: 'same-origin' }
+              : { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+          let res
+          try {
+            res = await fetch(API + step, opts)
+          } catch {
+            return { status: 0, data: { error: 'The onboarding service could not be reached. Check your connection and try again.' } }
+          }
+          let data = null
+          try {
+            data = await res.json()
+          } catch {
+            /* empty */
+          }
+          return { status: res.status, data: data || {} }
+        }
+
+        /* ------------------------------------------------------------ state -- */
+        let cfg = null
+        let app = { sign_in_url: 'http://localhost:5173/login' }
+        const S = {
+          password: '', // memory only, never stored in the browser; cleared once sent
+          agreed: false,
+          verified: false,
+          submitted: false,
+          code: null,
+          stage: 0,
+          returnToReview: false,
+          draft: { full_name: '', email: '', onboarding_role: '', claimed_organization: '', category_profile: {}, platforms: [] },
+        }
+        const platformNames = (codes) => (codes || []).map((c) => (cfg?.platforms || []).find((p) => p.code === c)?.label || c).join(', ')
+        const role = () => (cfg?.roles || []).find((r) => r.code === S.draft.onboarding_role) || null
+        const firstName = () => (S.draft.full_name || '').split(/\s+/)[0]
+        const fieldOf = (key) => role()?.fields.find((f) => f.key === key)
+        const applies = (f, answers = S.draft.category_profile) => !f.when || answers[f.when.key] === f.when.equals
+
+        /* --------------------------------------------------------- stepper -- */
+        function stepper() {
+          const titles = role() ? ['Role', 'You', role().steps[0].title, role().steps[1].title, 'Review', 'Verify'] : STAGES
+          $('stepper').replaceChildren(
+            ...titles.map((t, i) => el('li', { class: i < S.stage ? 'done' : i === S.stage ? 'now' : null, 'aria-current': i === S.stage ? 'step' : null },
+              el('b', { text: i < S.stage ? '✓' : String(i + 1) }), el('span', { text: t.replace(/ and .*/, '') }))))
+          $('back').disabled = !(S.stage > 0 && S.stage < 5 && !S.submitted)
+        }
+        const setStage = (n) => {
+          S.stage = n
+          stepper()
+        }
+
+        /* --------------------------------------------------- live request -- */
+        const lastLive = new Map()
+        function live() {
+          const d = S.draft
+          const r = role()
+          $('live-role').replaceChildren(r ? el('span', { class: 'role-badge' }, ICONS[r.code] || '', ' ', r.label) : '')
+          const rows = [['Name', d.full_name], ['Email', d.email], ['APEX platforms', platformNames(d.platforms)], ['Organisation', d.claimed_organization]]
+          if (r) {
+            for (const f of r.fields) {
+              const v = d.category_profile[f.key]
+              if (v !== undefined && v !== '' && applies(f) && f.type !== 'longtext') rows.push([f.label, f.type === 'enum' ? human(v) : String(v)])
+            }
+          }
+          const shown = rows.filter(([, v]) => v)
+          $('live-empty').hidden = shown.length > 0
+          $('live-list').replaceChildren(
+            ...shown.map(([k, v]) => {
+              const row = el('div', {}, el('dt', { text: k }), el('dd', { text: v }))
+              if (lastLive.get(k) !== v) row.classList.add('flash')
+              lastLive.set(k, v)
+              return row
+            })
+          )
+        }
+
+        /* --------------------------------------------------------- the chat -- */
+        function thinking(on) {
+          $('assistant').classList.toggle('thinking', on)
+          $('status-text').textContent = on ? 'Thinking…' : 'Online'
+        }
+
+        /** An assistant message: a brief "thinking" shimmer, then the text types itself out. */
+        async function say(text, ...extra) {
+          thinking(true)
+          const t = el('li', { class: 'msg', 'aria-hidden': 'true' }, el('div', { class: 'orb sm' }, el('span', {}, el('img', { src: '/logo.svg', alt: '' }))),
+            el('div', { class: 'bubble thinking-bubble' }, el('i'), el('i'), el('i'), 'Thinking'))
+          log.append(t)
+          scrollDown()
+          await sleep(450)
+          t.remove()
+          const bubble = el('div', { class: 'bubble' })
+          log.append(el('li', { class: 'msg' }, el('div', { class: 'orb sm', 'aria-hidden': 'true' }, el('span', {}, el('img', { src: '/logo.svg', alt: '' }))), bubble))
+          const node = document.createTextNode('')
+          bubble.append(node)
+          if (reduced) node.data = text
+          else {
+            bubble.classList.add('caret')
+            const step = Math.max(1, Math.ceil(text.length / 45))
+            for (let i = 0; i < text.length; i += step) {
+              node.data = text.slice(0, i + step)
+              await new Promise((r) => requestAnimationFrame(r))
+            }
+            bubble.classList.remove('caret')
+          }
+          for (const x of extra.filter(Boolean)) bubble.append(x)
+          thinking(false)
+          scrollDown()
+        }
+        const reply = (title, detail) => {
+          log.append(el('li', { class: 'msg me' }, el('div', { class: 'bubble' }, title, detail ? el('small', { text: detail }) : null)))
+          live()
+          scrollDown()
+        }
+        const note = (text) => {
+          log.append(el('li', { class: 'msg note', text }))
+          scrollDown()
+        }
+
+        /** Puts an interactive card into the conversation; resolves when it is submitted (or Back is pressed). */
+        let pending = null
+        function widget(title, build) {
+          return new Promise((resolve) => {
+            const box = el('div', { class: 'widget', role: 'group', 'aria-label': title })
+            const li = el('li', { class: 'msg' }, box)
+            const done = (v) => {
+              pending = null
+              li.remove()
+              resolve(v)
+            }
+            pending = () => done(BACK)
+            box.append(el('h3', { text: title }), ...[].concat(build(done)).filter(Boolean))
+            log.append(li)
+            const f = box.querySelector('[data-focus]') || box.querySelector('input, textarea, button')
+            if (f) setTimeout(() => f.focus({ preventScroll: true }), reduced ? 0 : 250)
+            scrollDown()
+          })
+        }
+        const BACK = Symbol('back')
+
+        /* ------------------------------------------------- field controls -- */
+        /** Builds one field (input, chips or textarea) and returns { node, read(), validate() }. */
+        function control(f, value, { onChange } = {}) {
+          const id = `f-${f.key}-${Math.random().toString(36).slice(2, 6)}`
+          const err = el('div', { class: 'err', role: 'alert' })
+          const wrap = el('div', { class: 'field' })
+          const lab = (forId) =>
+            el(forId ? 'label' : 'span', { class: forId ? null : 'label', for: forId || null }, f.label, f.required ? null : el('span', { class: 'opt', text: ' (optional)' }))
+          let read
+          if (f.type === 'platforms') {
+            // APEX platforms: a multi-select of cards (one or more), each with what the platform is for.
+            const picked = new Set(Array.isArray(value) ? value : [])
+            const group = el('div', { class: 'platforms', role: 'group', 'aria-label': f.label })
+            for (const p of f.options) {
+              const b = el('button', { type: 'button', class: 'platform', 'aria-pressed': String(picked.has(p.code)) },
+                el('span', { class: 'tick', 'aria-hidden': 'true', text: '✓' }),
+                el('span', {}, el('strong', { text: p.label }), el('span', { text: p.description })))
+              b.addEventListener('click', () => {
+                if (picked.has(p.code)) picked.delete(p.code)
+                else picked.add(p.code)
+                b.setAttribute('aria-pressed', String(picked.has(p.code)))
+                wrap.classList.remove('invalid')
+                err.textContent = ''
+                onChange?.()
+              })
+              group.append(b)
+            }
+            wrap.append(lab(null), el('div', { class: 'ideas-hint', text: 'Pick one or more. An administrator confirms your access.' }), group, err)
+            read = () => f.options.map((p) => p.code).filter((c) => picked.has(c))
+          } else if (f.type === 'enum') {
+            let picked = value ?? ''
+            const group = el('div', { class: 'chips', role: 'radiogroup', 'aria-label': f.label })
+            for (const o of f.options) {
+              const b = el('button', { type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(picked === o), 'aria-pressed': String(picked === o), text: human(o) })
+              b.addEventListener('click', () => {
+                picked = o
+                for (const x of group.children) {
+                  x.setAttribute('aria-pressed', String(x === b))
+                  x.setAttribute('aria-checked', String(x === b))
+                }
+                wrap.classList.remove('invalid')
+                err.textContent = ''
+                onChange?.()
+              })
+              group.append(b)
+            }
+            wrap.append(lab(null), group, err)
+            read = () => picked
+          } else {
+            const type = { url: 'url', year: 'number', month: 'month', email: 'email', password: 'password' }[f.type] || 'text'
+            const input = f.type === 'longtext'
+              ? el('textarea', { id, maxlength: String(f.max || 1000), rows: '3', placeholder: 'Type your answer…' })
+              : el('input', { id, type, maxlength: type === 'number' || type === 'month' ? null : String(f.max || 200), min: f.type === 'year' ? String(f.min) : null, max: f.type === 'year' ? String(f.max) : null,
+                  inputmode: f.type === 'year' ? 'numeric' : null, autocomplete: f.autocomplete || 'off', spellcheck: type === 'email' || type === 'url' || type === 'password' ? 'false' : null, placeholder: type === 'month' ? null : f.placeholder || '', 'data-key': f.key })
+            input.value = value ?? ''
+            const counter = f.type === 'longtext' ? el('div', { class: 'counter', 'aria-hidden': 'true', text: `${input.value.length} / ${f.max || 1000}` }) : null
+            // Suggestions are a multi-select: each chip adds or removes its phrase in the text, which is kept
+            // as a semicolon-separated list (a suggestion may itself contain a comma, e.g. "Python, SQL"). Anything typed by hand is kept alongside the chosen phrases.
+            // Single-answer fields (college, degree, designation …) keep one choice: a chip replaces the text.
+            const multi = f.type === 'longtext'
+            const items = () => (multi ? input.value.split(/[;\n]/) : [input.value]).map((s) => s.trim()).filter(Boolean)
+            const ideaButtons = (f.ideas || []).map((t) => {
+              const b = el('button', { type: 'button', class: 'chip idea', 'aria-pressed': 'false', text: `+ ${t}` })
+              b.addEventListener('click', () => {
+                const list = items()
+                const at = list.findIndex((x) => x.toLowerCase() === t.toLowerCase())
+                let next
+                if (!multi) next = at >= 0 ? '' : t
+                else {
+                  if (at >= 0) list.splice(at, 1)
+                  else list.push(t)
+                  next = list.join('; ')
+                }
+                if (next.length > (f.max || 1000)) return
+                input.value = next
+                input.dispatchEvent(new Event('input'))
+              })
+              return b
+            })
+            const syncIdeas = () => {
+              const chosen = new Set(items().map((x) => x.toLowerCase()))
+              ideaButtons.forEach((b, i) => {
+                const on = chosen.has(f.ideas[i].toLowerCase())
+                b.setAttribute('aria-pressed', String(on))
+                b.textContent = `${on ? '✓' : '+'} ${f.ideas[i]}`
+              })
+            }
+            input.addEventListener('input', () => {
+              wrap.classList.remove('invalid')
+              err.textContent = ''
+              if (counter) counter.textContent = `${input.value.length} / ${f.max || 1000}`
+              syncIdeas()
+              onChange?.()
+            })
+            syncIdeas()
+            const ideas = ideaButtons.length
+              ? el('div', { class: 'chips ideas', role: 'group', 'aria-label': multi ? 'Suggestions — choose any' : 'Suggestions' },
+                  multi ? el('span', { class: 'ideas-hint', text: 'Pick one or more:' }) : null, ...ideaButtons)
+              : null
+            // Password: the box carries a show/hide eye (an icon button, so no button text to collide with).
+            let box = input
+            if (f.type === 'password') {
+              const eyeOpen = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>'
+              const eyeShut = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17.3 17.3 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>'
+              const eye = el('button', { type: 'button', class: 'eye', 'aria-label': 'Show password', 'aria-pressed': 'false', title: 'Show password' })
+              eye.innerHTML = eyeOpen // static, trusted markup (no user data)
+              eye.addEventListener('click', () => {
+                const show = input.type === 'password'
+                input.type = show ? 'text' : 'password'
+                eye.setAttribute('aria-pressed', String(show))
+                eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password')
+                eye.title = show ? 'Hide password' : 'Show password'
+                eye.innerHTML = show ? eyeShut : eyeOpen
+                input.focus()
+              })
+              box = el('div', { class: 'pw' }, input, eye)
+            }
+            wrap.append(...[lab(id), box, counter, ideas, err].filter(Boolean))
+            read = () => (f.type === 'password' ? input.value : input.value.trim()) // a password is used exactly as typed
+          }
+          const validate = () => {
+            const v = read()
+            let problem = ''
+            if (Array.isArray(v)) problem = f.required && !v.length ? 'Choose at least one.' : ''
+            else if (v === '' || v === null) problem = f.required ? 'This is required.' : ''
+            else if (f.type === 'url' && !/^https?:\/\/\S+\.\S+$/i.test(v)) problem = 'Enter a web address starting with https://'
+            else if (f.type === 'year' && !(Number.isInteger(Number(v)) && Number(v) >= f.min && Number(v) <= f.max)) problem = `Enter a year between ${f.min} and ${f.max}.`
+            else if (f.type === 'month' && !/^\d{4}-\d{2}$/.test(v)) problem = 'Choose a month.'
+            else if (f.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) problem = 'Enter a valid email address, such as name@company.com.'
+            else if (f.type === 'password' && f.match) {
+              const other = wrap.closest('form')?.querySelector(`[data-key="${f.match}"]`)
+              if (other && other.value !== v) problem = 'The passwords do not match.'
+            } else if (f.type === 'password' && v.length < 8) problem = 'Use at least 8 characters.'
+            else if (f.type === 'password' && v.length > 256) problem = 'That password is too long.'
+            err.textContent = problem
+            wrap.classList.toggle('invalid', !!problem)
+            if (problem) void wrap.offsetWidth
+            return !problem
+          }
+          return { node: wrap, read, validate, key: f.key, field: f }
+        }
+
+        /** A card of several fields with follow-ups that open in place; resolves with the answers. */
+        function formCard(title, fields, values, { submitLabel = 'Continue', extra } = {}) {
+          return widget(title, (done) => {
+            const holder = el('div')
+            const controls = new Map()
+            const answers = { ...values }
+            const render = () => {
+              // Keep what was typed, then re-lay the fields (a follow-up may have opened or closed).
+              for (const [k, c] of controls) answers[k] = c.read()
+              const prev = new Set(controls.keys())
+              controls.clear()
+              holder.replaceChildren()
+              const short = []
+              for (const f of fields) {
+                if (!applies(f, answers)) continue
+                const c = control(f, answers[f.key], { onChange: f.type === 'enum' ? () => { answers[f.key] = c.read(); if (fields.some((g) => g.when?.key === f.key)) render() } : null })
+                controls.set(f.key, c)
+                if (f.when) c.node.classList.add('followup')
+                if (prev.size && !prev.has(f.key)) c.node.style.animationDelay = '0s'
+                else c.node.style.animationDelay = `${controls.size * 0.06}s`
+                if (['text', 'url', 'year', 'month', 'email', 'password'].includes(f.type) && !f.when && !(f.ideas || []).length) short.push(c.node)
+                else {
+                  if (short.length) holder.append(short.length > 1 ? el('div', { class: 'grid2' }, ...short.splice(0)) : short.splice(0)[0])
+                  holder.append(c.node)
+                }
+              }
+              if (short.length) holder.append(short.length > 1 ? el('div', { class: 'grid2' }, ...short.splice(0)) : short.splice(0)[0])
+              const first = holder.querySelector('input, textarea, button')
+              if (first && !prev.size) first.setAttribute('data-focus', '')
+            }
+            render()
+            const go = el('button', { type: 'submit', class: 'primary', text: submitLabel })
+            const form = el('form', { novalidate: true }, holder, el('div', { class: 'actions' }, el('span', { class: 'hint', text: extra || '' }), go))
+            form.addEventListener('submit', (e) => {
+              e.preventDefault()
+              let ok = true
+              let firstBad = null
+              for (const c of controls.values()) {
+                if (!c.validate()) {
+                  ok = false
+                  firstBad = firstBad || c.node.querySelector('input, textarea, button')
+                }
+              }
+              if (!ok) return firstBad?.focus()
+              const out = {}
+              for (const [k, c] of controls) out[k] = c.read()
+              done(out)
+            })
+            return form
+          })
+        }
+
+        /* ------------------------------------------------------------ steps -- */
+        async function stepRole() {
+          setStage(0)
+          await say("Hi! I'm your Enterprise Onboarding Assistant. I'll get you set up in about two minutes — just six quick steps, tailored to your professional role. Which category best describes you?")
+          const v = await widget('Choose your role', (done) => {
+            // No checkbox: choosing a role is the agreement. One small line says so, because the server
+            // records the applicant's consent and age confirmation with the request.
+            const consentNote = el('p', { class: 'consent-note', text: 'By choosing a role, you confirm you are 18 or older and agree to your details being used to review this request.' })
+            const groups = cfg.role_groups.map((g) =>
+              el('div', {}, el('div', { class: 'group-title', text: g.label }),
+                el('div', { class: 'roles' }, ...cfg.roles.filter((r) => r.group === g.code).map((r, i) => {
+                  const b = el('button', { type: 'button', class: r.code === 'ALUMNI' ? 'role alt' : 'role', 'aria-pressed': String(r.code === S.draft.onboarding_role) },
+                    el('span', { class: 'ic', 'aria-hidden': 'true' }, icon(r.code)), el('span', {}, el('strong', { text: r.label }), el('span', { text: r.description })))
+                  b.style.animationDelay = `${0.05 * i}s`
+                  b.addEventListener('click', () => {
+                    S.agreed = true
+                    done(r.code)
+                  })
+                  return b
+                }))))
+            return [...groups, consentNote]
+          })
+          if (v === BACK) return BACK
+          if (v !== S.draft.onboarding_role) {
+            const keep = new Set(cfg.roles.find((r) => r.code === v).fields.map((f) => f.key))
+            S.draft.category_profile = Object.fromEntries(Object.entries(S.draft.category_profile).filter(([k]) => keep.has(k)))
+            if (cfg.roles.find((r) => r.code === v).organization !== 'required') S.draft.claimed_organization = ''
+            S.draft.onboarding_role = v
+          }
+          reply(`${ICONS[v] || ''} ${role().label}`)
+          stepper()
+          await say(`Great — as ${/^[AEIOU]/i.test(role().label) ? 'an' : 'a'} ${role().label}, I'll only ask what's relevant to you.`)
+        }
+
+        async function stepYou() {
+          setStage(1)
+          await say('First, who are you and how can we reach you?')
+          const v = await formCard('About you', [
+            { key: 'full_name', label: 'Full name', type: 'text', required: true, max: 120, autocomplete: 'name', placeholder: 'e.g. Priya Sundar' },
+            { key: 'email', label: role().email_label.replace(/^your /, '').replace(/^\w/, (c) => c.toUpperCase()), type: 'email', required: true, max: 254, autocomplete: 'email', placeholder: 'name@company.com' },
+            // The account password is chosen here, before the email code (once the email is verified it was
+            // already sent and is not asked again). It works only after an administrator approves.
+            ...(S.verified ? [] : [
+              { key: 'password', label: 'Create a password', type: 'password', required: true, max: 256, autocomplete: 'new-password', placeholder: 'At least 8 characters' },
+              { key: 'password_confirmation', label: 'Confirm password', type: 'password', required: true, max: 256, autocomplete: 'new-password', placeholder: 'Type it again', match: 'password' },
+            ]),
+            { key: 'platforms', label: 'Which APEX platforms do you want to use?', type: 'platforms', required: true, options: cfg.platforms || [] },
+          ], { full_name: S.draft.full_name, email: S.draft.email, platforms: S.draft.platforms, password: S.password, password_confirmation: S.password },
+          { extra: S.verified ? '' : "I'll send a code to confirm your email. Your password works once your request is approved." })
+          if (v === BACK) return BACK
+          S.draft.full_name = v.full_name
+          if (!S.verified) {
+            S.draft.email = v.email.toLowerCase()
+            S.password = v.password // kept only in this page's memory until it is sent once, over HTTPS in production
+          }
+          S.draft.platforms = v.platforms
+          reply(S.draft.full_name, `${S.draft.email} · ${platformNames(S.draft.platforms)}`)
+          await say(`Nice to meet you, ${firstName()}! 👋`)
+        }
+
+        async function stepCard(i) {
+          setStage(2 + i)
+          const r = role()
+          const card = r.steps[i]
+          await say(card.intro)
+          const fields = card.fields.map((k) => (k === '_org'
+            ? { key: '_org', label: 'Organisation', type: 'text', required: true, max: 200, autocomplete: 'organization', placeholder: 'Your organisation' }
+            : fieldOf(k))).filter(Boolean)
+          const values = { ...S.draft.category_profile, _org: S.draft.claimed_organization }
+          const v = await formCard(card.title, fields, values, { extra: card.fields.includes('_org') ? 'Organisation details are verified by an administrator.' : '' })
+          if (v === BACK) return BACK
+          for (const f of fields) {
+            const val = v[f.key]
+            if (f.key === '_org') S.draft.claimed_organization = val || ''
+            else if (val === '' || val === undefined) delete S.draft.category_profile[f.key]
+            else S.draft.category_profile[f.key] = f.type === 'year' ? Number(val) : val
+          }
+          for (const f of r.fields) if (!applies(f)) delete S.draft.category_profile[f.key]
+          const shown = fields.filter((f) => f.key === '_org' || applies(f)).map((f) => (f.key === '_org' ? S.draft.claimed_organization : S.draft.category_profile[f.key])).filter((x) => x !== undefined && x !== '')
+          reply(card.title, shown.slice(0, 3).map((x) => (typeof x === 'string' && /^[a-z0-9_]+$/.test(x) ? human(x) : String(x))).join(' · '))
+          await say(i === 0 ? ack(r) : `Perfect, ${firstName()} — that's everything I need.`)
+        }
+
+        function ack(r) {
+          const p = S.draft.category_profile
+          const org = S.draft.claimed_organization
+          if (r.code === 'INTERN') return `${p.degree} at ${p.institution} — a great foundation. Just one more card.`
+          if (r.code === 'ALUMNI') return `Welcome back, ${firstName()}! Great to reconnect with a former ${p.previous_designation}. One more card.`
+          if (r.code === 'INDUSTRY_PARTNER') return `Thank you — ${p.designation} at ${org}. One more card about the partnership.`
+          return `Thank you, ${p.official_designation} at ${org}. One more card and we're done.`
+        }
+
+        function isComplete() {
+          const r = role()
+          const d = S.draft
+          if (!r || !d.full_name || !d.email || !(d.platforms || []).length) return false
+          if (r.organization === 'required' && !d.claimed_organization) return false
+          return r.fields.every((f) => !f.required || !applies(f) || (d.category_profile[f.key] !== undefined && d.category_profile[f.key] !== ''))
+        }
+
+        const FLOW = [stepRole, stepYou, () => stepCard(0), () => stepCard(1)]
+        async function run(from = 0) {
+          let i = from
+          while (i < FLOW.length) {
+            const out = await FLOW[i]()
+            if (out === BACK) {
+              i = Math.max(0, i - 1)
+              note(`Going back to: ${['your role', 'about you', role()?.steps[0].title, role()?.steps[1].title][i]}`)
+              continue
+            }
+            // After an edit from the review, go back to it once everything required is answered (a new
+            // role still walks through its own cards first).
+            if (S.returnToReview && isComplete()) {
+              S.returnToReview = false
+              return review()
+            }
+            i += 1
+          }
+          return review()
+        }
+        $('back').addEventListener('click', () => {
+          if (!$('back').disabled && pending) pending()
+        })
+
+        async function review() {
+          setStage(4)
+          const r = role()
+          const d = S.draft
+          await say(`All set, ${firstName()}! ✨ Here's your request. Would you like to review and confirm your information?`)
+          const v = await widget('Review and confirm', (done) => {
+            const section = (title, edit, rows) =>
+              el('div', {},
+                el('h4', {}, el('span', { text: title }), edit !== null ? el('button', { type: 'button', class: 'tiny', text: 'Edit', 'aria-label': `Edit ${title.toLowerCase()}`, onclick: () => done({ edit }) }) : null),
+                el('dl', {}, ...rows.filter(([, val]) => val !== undefined && val !== null && val !== '').map(([k, val]) => el('div', {}, el('dt', { text: k }), el('dd', { text: String(val) })))))
+            const fmt = (f) => (f.type === 'enum' ? human(d.category_profile[f.key]) : d.category_profile[f.key])
+            const cardRows = (card) => card.fields.map((k) => (k === '_org' ? ['Organisation', d.claimed_organization] : fieldOf(k) && applies(fieldOf(k)) && d.category_profile[k] !== undefined ? [fieldOf(k).label, fmt(fieldOf(k))] : null)).filter(Boolean)
+            const go = el('button', { type: 'button', class: 'primary', 'data-focus': true, text: 'Confirm and Submit' })
+            const err = el('div', { class: 'err', role: 'alert' })
+            go.addEventListener('click', () => done({ confirm: true, err, go }))
+            return [
+              el('div', { class: 'summary' },
+                section('Selected role', 0, [['Role', `${ICONS[r.code] || ''} ${r.label}`]]),
+                section('Personal information', 1, [['Full name', d.full_name], ['Email', d.email + (S.verified ? ' ✓ verified' : '')], ['Password', S.password || S.verified ? '•••••••• (set)' : ''], ['APEX platforms', platformNames(d.platforms)]]),
+                section(r.steps[0].title, 2, cardRows(r.steps[0])),
+                section(r.steps[1].title, 3, cardRows(r.steps[1]))),
+              err,
+              el('div', { class: 'actions' }, el('span', { class: 'hint', text: 'Nothing is granted until an administrator approves your request.' }), go),
+            ]
+          })
+          if (v === BACK) {
+            note(`Going back to: ${r.steps[1].title}`)
+            S.returnToReview = false
+            return run(3)
+          }
+          if (v.edit !== undefined) {
+            if (v.edit === 1 && S.verified) note('Your email is already verified; to change it, restart onboarding.')
+            S.returnToReview = true
+            note('Editing your answers…')
+            return run(v.edit)
+          }
+          reply('Confirm and Submit')
+          const body = {
+            full_name: d.full_name, claimed_organization: d.claimed_organization || null, onboarding_role: d.onboarding_role,
+            category_profile: d.category_profile, interest_codes: [], interest_other: null, preferences: { ...browserPrefs(), platforms: d.platforms || [] },
+          }
+          thinking(true)
+          const res = S.verified
+            ? await api('update', body)
+            : await api('start', { ...body, email: d.email, password: S.password, password_confirmation: S.password, adult_confirmed: S.agreed, consent_accepted: S.agreed, consent_version: cfg.consent?.version })
+          thinking(false)
+          if (!S.verified && (res.status === 202 || res.status === 200)) S.password = '' // sent once; the server keeps only a hash
+          if (res.status === 202 || res.status === 200) {
+            if (S.verified) return submit()
+            S.code = res.data
+            return codeStep(true)
+          }
+          const fields = res.data?.details?.fields
+          if (fields && Object.keys(fields).length) {
+            const key = Object.keys(fields)[0]
+            await say(`One detail needs attention: ${fields[key]}`)
+            S.returnToReview = true
+            const idx = key === 'onboarding_role' ? 0 : key === 'full_name' || key === 'email' ? 1 : role().steps[0].fields.includes(key) || key === 'claimed_organization' ? 2 : 3
+            return run(idx)
+          }
+          return handleError(res)
+        }
+
+        function browserPrefs() {
+          try {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+            return tz ? { timezone: tz } : {}
+          } catch {
+            return {}
+          }
+        }
+
+        async function codeStep(fresh) {
+          setStage(5)
+          const view = S.code || {}
+          await say(fresh
+            ? `Almost there! ${view.message || 'If this address can continue, we have sent the next steps by email.'} Enter the 6-digit code sent to ${S.draft.email}.`
+            : 'Welcome back! Enter the 6-digit code from your email to continue.')
+          return widget('Verify your email', (done) => {
+            const boxes = Array.from({ length: 6 }, (_, i) => el('input', { type: 'text', inputmode: 'numeric', maxlength: '1', 'aria-label': `Digit ${i + 1}`, autocomplete: i === 0 ? 'one-time-code' : 'off', placeholder: ' ', 'data-focus': i === 0 ? true : null }))
+            const meta = el('p', { class: 'otp-meta', id: 'code-hint' })
+            const err = el('div', { class: 'err', role: 'alert', style: 'text-align:center' })
+            const resend = el('button', { type: 'button', class: 'ghost' })
+            const otp = el('div', { class: 'otp', role: 'group', 'aria-label': 'Verification code', 'aria-describedby': 'code-hint' }, ...boxes)
+            const update = () => {
+              const wait = Math.max(0, Math.ceil((Date.parse(view.resend_available_at || 0) - Date.now()) / 1000))
+              resend.disabled = wait > 0 || view.sends_remaining === 0
+              resend.textContent = wait > 0 ? `Resend code in ${wait}s` : 'Resend code'
+              const exp = view.code_expires_at ? new Date(view.code_expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null
+              meta.textContent = [exp ? `Expires at ${exp}.` : '', typeof view.attempts_remaining === 'number' ? `${view.attempts_remaining} attempts remaining.` : ''].join(' ')
+            }
+            update()
+            const timer = setInterval(() => (document.body.contains(resend) ? update() : clearInterval(timer)), 1000)
+            let busy = false
+            const clear = () => boxes.forEach((b) => (b.value = ''))
+            const submitCode = async () => {
+              const code = boxes.map((b) => b.value).join('')
+              if (code.length !== 6 || busy) return
+              busy = true
+              thinking(true)
+              const r = await api('verify', { code })
+              thinking(false)
+              clear() // never kept on the page, never shown in the conversation
+              busy = false
+              if (r.status === 200) {
+                done()
+                reply('Email verified ✓')
+                S.verified = true
+                applyDraft(r.data.draft)
+                return submit()
+              }
+              if (typeof r.data?.details?.attempts_remaining === 'number') view.attempts_remaining = r.data.details.attempts_remaining
+              update()
+              otp.style.animation = 'shake 0.35s'
+              setTimeout(() => (otp.style.animation = ''), 400)
+              boxes[0].focus()
+              if (r.data?.details?.code === 'RESTART') return done(), handleError(r)
+              err.textContent = r.data?.error || 'That code did not work.'
+            }
+            boxes.forEach((b, i) => {
+              b.addEventListener('input', () => {
+                const digits = b.value.replace(/\D/g, '')
+                if (digits.length > 1) {
+                  // A pasted or autofilled code fills every box.
+                  digits.slice(0, 6).split('').forEach((d, j) => boxes[j] && (boxes[j].value = d))
+                  boxes[Math.min(5, digits.length - 1)].focus()
+                } else {
+                  b.value = digits
+                  if (digits && boxes[i + 1]) boxes[i + 1].focus()
+                }
+                err.textContent = ''
+                if (boxes.every((x) => x.value)) submitCode()
+              })
+              b.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !b.value && boxes[i - 1]) boxes[i - 1].focus()
+              })
+            })
+            resend.addEventListener('click', async () => {
+              resend.disabled = true
+              const r = await api('resend', {})
+              if (r.status === 202) {
+                Object.assign(view, r.data)
+                err.textContent = ''
+                meta.textContent = r.data.message
+                setTimeout(update, 2500)
+              } else err.textContent = r.data?.error || 'Could not resend.'
+            })
+            return [otp, meta, err, el('div', { class: 'actions' }, resend, el('button', { type: 'button', class: 'ghost', text: 'Edit my details', onclick: () => (done(), review()) }))]
+          })
+        }
+
+        async function submit() {
+          thinking(true)
+          const r = await api('complete', {})
+          thinking(false)
+          if (r.status === 200) return finished(true)
+          return handleError(r)
+        }
+
+        function doneMark() {
+          const ns = 'http://www.w3.org/2000/svg'
+          const s = document.createElementNS(ns, 'svg')
+          s.setAttribute('class', 'done-mark')
+          s.setAttribute('viewBox', '0 0 64 64')
+          s.setAttribute('aria-hidden', 'true')
+          const c = document.createElementNS(ns, 'circle')
+          for (const [k, v] of Object.entries({ cx: 32, cy: 32, r: 29, fill: 'none', stroke: '#0d9488', 'stroke-width': 3.5 })) c.setAttribute(k, v)
+          const p = document.createElementNS(ns, 'path')
+          for (const [k, v] of Object.entries({ d: 'M19 33l9 9 17-18', fill: 'none', stroke: '#0d9488', 'stroke-width': 4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })) p.setAttribute(k, v)
+          s.append(c, p)
+          return s
+        }
+        function confetti() {
+          if (reduced) return
+          const box = el('div', { class: 'confetti', 'aria-hidden': 'true' })
+          const colours = ['#0d9488', '#06b6d4', '#7c3aed', '#22c55e', '#f59e0b']
+          for (let i = 0; i < 60; i += 1) {
+            const p = el('i')
+            p.style.left = `${Math.random() * 100}%`
+            p.style.background = colours[i % colours.length]
+            p.style.animationDelay = `${Math.random() * 0.35}s`
+            box.append(p)
+          }
+          document.body.append(box)
+          setTimeout(() => box.remove(), 2300)
+        }
+
+        async function finished(justNow) {
+          S.submitted = true
+          setStage(6)
+          if (justNow) confetti()
+          await say(justNow
+            ? 'Your onboarding request has been submitted successfully. Your information will be reviewed by the appropriate administrator. You will receive an update once your account is approved.'
+            : 'Your onboarding request has been submitted and is waiting for review by an administrator.')
+          return widget('What happens next', () => [
+            doneMark(),
+            el('div', { class: 'summary' }, el('dl', {},
+              el('div', {}, el('dt', { text: '1. Review' }), el('dd', { text: 'An administrator checks your details.' })),
+              el('div', {}, el('dt', { text: '2. Invitation' }), el('dd', { text: 'If approved, you receive an email with a link to set your password.' })),
+              el('div', {}, el('dt', { text: '3. Sign in' }), el('dd', { text: 'Sign in to APEX with your email and new password.' })))),
+            el('div', { class: 'actions' },
+              el('button', { type: 'button', class: 'ghost', text: 'Start a new request', onclick: restart }),
+              el('a', { class: 'primary', style: 'text-decoration:none;padding:9px 16px;border-radius:11px', href: app.sign_in_url, text: 'Go to APEX sign-in' })),
+          ])
+        }
+
+        async function info(question) {
+          setStage(4)
+          S.submitted = true
+          await say('An administrator has a question about your request:')
+          await say(question || '')
+          const v = await formCard('Your answer', [{ key: 'answer', label: 'Answer', type: 'longtext', required: true, max: 2000 }], {}, { submitLabel: 'Send answer' })
+          if (v === BACK) return
+          reply(v.answer)
+          const r = await api('respond', { response: v.answer })
+          if (r.status === 200) return finished(true)
+          return handleError(r)
+        }
+
+        async function handleError(r) {
+          const code = r.data?.details?.code
+          if (code === 'ACCOUNT_EXISTS') {
+            await say(`${r.data.error} You can sign in to APEX with your existing account.`)
+            return widget('Sign in', () => el('div', { class: 'actions' }, el('span'), el('a', { class: 'primary', style: 'text-decoration:none;padding:9px 16px;border-radius:11px', href: app.sign_in_url, text: 'Go to APEX sign-in' })))
+          }
+          await say(r.data?.error || 'Something went wrong. Please try again.')
+          return widget('Start again', () => el('div', { class: 'actions' }, el('span'), el('button', { type: 'button', class: 'primary', text: 'Start again', onclick: restart })))
+        }
+
+        function applyDraft(d) {
+          if (!d) return
+          const profile = { ...(d.category_profile || {}) }
+          delete profile.schema_version
+          delete profile.onboarding_role
+          S.draft = { full_name: d.full_name || '', email: d.email || '', onboarding_role: d.onboarding_role || '', claimed_organization: d.claimed_organization || '', category_profile: profile, platforms: d.preferences?.platforms || [] }
+          live()
+          stepper()
+        }
+
+        async function restart() {
+          await api('restart', {})
+          location.replace('/')
+        }
+        $('restart').addEventListener('click', () => {
+          if (S.submitted || confirm('Restart onboarding? Your answers on this page will be cleared.')) restart()
+        })
+
+        /* ------------------------------------------------------------ start -- */
+        async function boot() {
+          stepper()
+          try {
+            const r = await fetch('/app-config.json', { cache: 'no-store' })
+            if (r.ok) app = await r.json()
+          } catch {
+            /* defaults */
+          }
+          $('signin-link').href = app.sign_in_url
+          const c = await api('config')
+          if (c.status !== 200 || !c.data.enabled) {
+            $('status-text').textContent = 'Offline'
+            await say('Onboarding is not available right now. Please try again later, or sign in if you already have an account.')
+            return
+          }
+          cfg = c.data
+          $('status').classList.remove('off')
+          $('status-text').textContent = 'Online'
+          const params = new URLSearchParams(location.search)
+          const respondToken = params.get('respond')
+          if (respondToken) {
+            history.replaceState(null, '', '/') // the one-time token leaves the address bar at once
+            const r = await api('exchange', { token: respondToken })
+            if (r.status === 200) return info(r.data.info_request)
+            await say('This link is invalid or has expired.')
+            return widget('Start again', () => el('div', { class: 'actions' }, el('span'), el('button', { type: 'button', class: 'primary', text: 'Start a new request', onclick: restart })))
+          }
+          const st = await api('status')
+          const s = st.status === 200 ? st.data : {}
+          if (s.state === 'CODE_SENT') {
+            S.code = s
+            return codeStep(false)
+          }
+          if (s.state === 'EMAIL_VERIFIED') {
+            S.verified = true
+            S.agreed = true
+            applyDraft(s.draft)
+            return review()
+          }
+          if (s.state === 'INFO_REQUESTED') return info(s.info_request)
+          if (s.state === 'PENDING_APPROVAL') return finished(false)
+          return run(0)
+        }
+        /* ----------------------------------------------------- space scene -- */
+        ;(function space() {
+          const canvas = $('space')
+          const ctx = canvas.getContext('2d')
+          let w = 0
+          let h = 0
+          let dpr = 1
+          let mx = 0
+          let my = 0
+          const stars = []
+          const shooting = []
+          function size() {
+            dpr = Math.min(window.devicePixelRatio || 1, 2)
+            w = window.innerWidth
+            h = window.innerHeight
+            canvas.width = w * dpr
+            canvas.height = h * dpr
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+            stars.length = 0
+            const n = Math.round((w * h) / 4200)
+            for (let i = 0; i < n; i += 1) stars.push({ x: Math.random() * w, y: Math.random() * h, z: Math.random() * 0.9 + 0.1, t: Math.random() * Math.PI * 2, hue: Math.random() < 0.15 ? 280 : Math.random() < 0.3 ? 190 : 220 })
+          }
+          size()
+          window.addEventListener('resize', size)
+          window.addEventListener('pointermove', (e) => {
+            mx = e.clientX / w - 0.5
+            my = e.clientY / h - 0.5
+            // Parallax for the planet and props, by depth.
+            for (const n of document.querySelectorAll('[data-depth]')) {
+              const d = Number(n.dataset.depth)
+              n.style.setProperty('--px', `${(-mx * d).toFixed(1)}px`)
+              n.style.setProperty('--py', `${(-my * d).toFixed(1)}px`)
+            }
+            // Panels lean slightly toward the pointer.
+            if (!reduced) {
+              for (const c of document.querySelectorAll('.card')) {
+                const r = c.getBoundingClientRect()
+                const cx = (e.clientX - (r.left + r.width / 2)) / window.innerWidth
+                const cy = (e.clientY - (r.top + r.height / 2)) / window.innerHeight
+                c.style.setProperty('--ry', `${(cx * 5).toFixed(2)}deg`)
+                c.style.setProperty('--rx', `${(-cy * 5).toFixed(2)}deg`)
+              }
+            }
+          })
+          function draw(time) {
+            ctx.clearRect(0, 0, w, h)
+            for (const s of stars) {
+              const x = (s.x - mx * 40 * s.z + w) % w
+              const y = (s.y - my * 30 * s.z + h) % h
+              const tw = reduced ? 1 : 0.55 + 0.45 * Math.sin(time / 900 + s.t)
+              ctx.fillStyle = `hsla(${s.hue}, 90%, ${70 + s.z * 25}%, ${(0.35 + s.z * 0.6) * tw})`
+              ctx.beginPath()
+              ctx.arc(x, y, s.z * 1.5, 0, Math.PI * 2)
+              ctx.fill()
+            }
+            if (!reduced && Math.random() < 0.006 && shooting.length < 2) shooting.push({ x: Math.random() * w * 0.7, y: Math.random() * h * 0.35, life: 1 })
+            for (let i = shooting.length - 1; i >= 0; i -= 1) {
+              const s = shooting[i]
+              const g = ctx.createLinearGradient(s.x, s.y, s.x - 120, s.y - 50)
+              g.addColorStop(0, `rgba(165, 243, 252, ${s.life})`)
+              g.addColorStop(1, 'rgba(165, 243, 252, 0)')
+              ctx.strokeStyle = g
+              ctx.lineWidth = 1.6
+              ctx.beginPath()
+              ctx.moveTo(s.x, s.y)
+              ctx.lineTo(s.x - 120, s.y - 50)
+              ctx.stroke()
+              s.x += 9
+              s.y += 3.75
+              s.life -= 0.018
+              if (s.life <= 0) shooting.splice(i, 1)
+            }
+            wave(time)
+            if (!reduced) requestAnimationFrame(draw)
+          }
+          // The live panel's sound wave: livelier while the assistant is thinking.
+          const wa = $('wave-a')
+          const wb = $('wave-b')
+          function wave(time) {
+            if (!wa) return
+            const busy = $('assistant').classList.contains('thinking')
+            const amp = busy ? 13 : 5
+            const path = (phase, k) => {
+              let d = 'M0 17'
+              for (let x = 0; x <= 300; x += 6) {
+                const env = Math.sin((x / 300) * Math.PI)
+                d += ` L${x} ${(17 + Math.sin(x / 14 + time / (busy ? 120 : 380) + phase) * amp * env * k).toFixed(1)}`
+              }
+              return d
+            }
+            wa.setAttribute('d', path(0, 1))
+            wb.setAttribute('d', path(2, 0.7))
+          }
+          requestAnimationFrame(draw)
+        })()
+
+        boot()
+      })()
+    </script>
+  </body>
+</html>

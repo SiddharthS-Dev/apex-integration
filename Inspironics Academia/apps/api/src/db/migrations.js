@@ -306,6 +306,96 @@ const CORE_MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_link_challenges_user ON link_challenges(core_user_id, created_at)
     `,
   },
+  {
+    // Use Case 007 (stakeholder onboarding, slice O1; docs/implementation/ONBOARDING_PLAN.md §3). One row per
+    // registration request. No user, session, role or membership exists before approval. Secrets are only
+    // digests (code: HMAC-SHA256 bound to id and generation; tokens: SHA-256) plus a temporary scrypt
+    // credential hash, and the CHECKs below force all of them to be cleared once a request is closed.
+    // registration_decoys stands in for a request when the address already has an account or a request
+    // under review, so the public flow (status, verify, resend) behaves the same and reveals nothing; it
+    // keeps only an HMAC of the address. Additive: no existing table is altered. Rolled back with the identity tables (core/rollback.js).
+    id: '011_registration_requests',
+    sql: () => `
+      CREATE TABLE IF NOT EXISTS registration_requests (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL CHECK (length(email) BETWEEN 3 AND 254 AND email = lower(email)),
+        full_name TEXT NOT NULL CHECK (length(full_name) BETWEEN 1 AND 120),
+        claimed_organization TEXT CHECK (claimed_organization IS NULL OR length(claimed_organization) <= 200),
+        primary_category_code TEXT NOT NULL CHECK (primary_category_code IN ('STUDENT_LEARNER', 'INTERNSHIP_CANDIDATE', 'ALUMNI_MEMBER', 'INDUSTRY_PROFESSIONAL', 'EXECUTIVE_LEADER')),
+        category_profile TEXT NOT NULL DEFAULT '{}',
+        profile_schema_version INTEGER NOT NULL DEFAULT 1 CHECK (profile_schema_version >= 1),
+        interest_codes TEXT NOT NULL DEFAULT '[]',
+        interest_other TEXT CHECK (interest_other IS NULL OR length(interest_other) <= 200),
+        preferences TEXT NOT NULL DEFAULT '{}',
+        consent_version TEXT NOT NULL CHECK (length(consent_version) BETWEEN 1 AND 100),
+        consent_accepted_at TEXT NOT NULL,
+        adult_confirmed_at TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('CODE_SENT', 'EMAIL_VERIFIED', 'PENDING_APPROVAL', 'INFO_REQUESTED', 'APPROVED', 'REJECTED', 'EXPIRED', 'SUPERSEDED')),
+        email_verified_at TEXT,
+        submitted_at TEXT,
+        code_digest TEXT,
+        code_generation INTEGER NOT NULL DEFAULT 0 CHECK (code_generation >= 0),
+        code_expires_at TEXT,
+        last_code_sent_at TEXT,
+        failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_attempts >= 0),
+        sends INTEGER NOT NULL DEFAULT 0 CHECK (sends >= 0),
+        credential_hash TEXT,
+        resume_token_hash TEXT,
+        resume_token_expires_at TEXT,
+        respond_token_hash TEXT,
+        respond_token_expires_at TEXT,
+        ai_recommendation TEXT,
+        ai_recommendation_source TEXT CHECK (ai_recommendation_source IS NULL OR ai_recommendation_source IN ('ai', 'rules')),
+        ai_model TEXT,
+        ai_schema_version INTEGER,
+        info_request TEXT CHECK (info_request IS NULL OR length(info_request) <= 2000),
+        info_requested_at TEXT,
+        info_requested_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        info_response TEXT CHECK (info_response IS NULL OR length(info_response) <= 2000),
+        info_responded_at TEXT,
+        decided_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        decision_reason TEXT CHECK (decision_reason IS NULL OR length(decision_reason) <= 1000),
+        decision_message TEXT CHECK (decision_message IS NULL OR length(decision_message) <= 2000),
+        internal_note TEXT CHECK (internal_note IS NULL OR length(internal_note) <= 2000),
+        decided_at TEXT,
+        approved_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        approved_category_code TEXT CHECK (approved_category_code IS NULL OR approved_category_code IN ('STUDENT_LEARNER', 'INTERNSHIP_CANDIDATE', 'ALUMNI_MEMBER', 'INDUSTRY_PROFESSIONAL', 'EXECUTIVE_LEADER')),
+        approved_roles TEXT,
+        closed_at TEXT,
+        orientation_completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        retention_due_at TEXT,
+        CHECK (status NOT IN ('APPROVED', 'REJECTED', 'EXPIRED', 'SUPERSEDED') OR (credential_hash IS NULL AND code_digest IS NULL AND resume_token_hash IS NULL AND respond_token_hash IS NULL AND closed_at IS NOT NULL)),
+        CHECK (status NOT IN ('PENDING_APPROVAL', 'INFO_REQUESTED') OR (email_verified_at IS NOT NULL AND submitted_at IS NOT NULL AND credential_hash IS NOT NULL)),
+        CHECK (status <> 'CODE_SENT' OR (code_digest IS NOT NULL AND code_expires_at IS NOT NULL)),
+        CHECK (status <> 'INFO_REQUESTED' OR info_request IS NOT NULL),
+        CHECK (status NOT IN ('APPROVED', 'REJECTED') OR decided_at IS NOT NULL),
+        CHECK (status <> 'REJECTED' OR decision_reason IS NOT NULL),
+        CHECK (status <> 'APPROVED' OR approved_category_code IS NOT NULL),
+        CHECK (resume_token_hash IS NULL OR resume_token_expires_at IS NOT NULL),
+        CHECK (respond_token_hash IS NULL OR respond_token_expires_at IS NOT NULL)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_registration_requests_open_email ON registration_requests(email) WHERE status IN ('CODE_SENT', 'EMAIL_VERIFIED', 'PENDING_APPROVAL', 'INFO_REQUESTED');
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_registration_requests_resume ON registration_requests(resume_token_hash) WHERE resume_token_hash IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_registration_requests_respond ON registration_requests(respond_token_hash) WHERE respond_token_hash IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_registration_requests_status ON registration_requests(status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_registration_requests_category ON registration_requests(primary_category_code, created_at);
+      CREATE INDEX IF NOT EXISTS idx_registration_requests_email ON registration_requests(email, created_at);
+      CREATE INDEX IF NOT EXISTS idx_registration_requests_approved_user ON registration_requests(approved_user_id);
+      CREATE TABLE IF NOT EXISTS registration_decoys (
+        token_hash TEXT PRIMARY KEY,
+        email_digest TEXT NOT NULL,
+        failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_attempts >= 0),
+        sends INTEGER NOT NULL DEFAULT 1 CHECK (sends >= 0),
+        last_code_sent_at TEXT NOT NULL,
+        code_expires_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_registration_decoys_email ON registration_decoys(email_digest, created_at)
+    `,
+  },
 ];
 
 async function existingColumns(db, table) {

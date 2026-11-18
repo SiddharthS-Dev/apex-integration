@@ -853,6 +853,17 @@ async function dispatch(req, res) {
 
   if (pathname === '/link' || pathname === '/link.html' || pathname.startsWith('/auth/link/')) return handleLink(req, res, pathname, session)
 
+  // The admin console (access requests from the onboarding assistant). A page only: it reads and
+  // decides through the Core API, which allows platform administrators alone (default deny), so the
+  // gateway needs no role knowledge here. Signed-in sessions only (checked above); strict CSP.
+  if (pathname === '/admin' || pathname === '/admin.html') {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'Use GET.' }, { Allow: 'GET' })
+    if (pathname === '/admin.html') return redirect(res, '/admin')
+    const file = path.join(PUBLIC, 'admin.html')
+    if (sendFile(res, file, { headers: { 'Content-Security-Policy': linkCsp(file), 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY' } })) return
+    return sendNotFound(res)
+  }
+
   // Before projectFor(): '/vault/api' is inside the '/vault' mount, and must
   // reach the API server rather than the SPA.
   const apiProject = apiFor(pathname)

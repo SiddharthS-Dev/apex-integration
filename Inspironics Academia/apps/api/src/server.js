@@ -19,7 +19,7 @@ import { get as getEntity, list as listEntities, update as updateEntity } from '
 import { lessonLockName } from './pipeline/util.js';
 import { createUser, findUserByEmail } from './repo/users.js';
 import { hashPassword, validatePassword } from './auth/passwords.js';
-import { onUserCreated } from './core/index.js';
+import { onUserCreated, sweepOnboarding } from './core/index.js';
 
 // Temp files of this process and its children (FFmpeg, SQLite) go to TEMP_PROCESSING_DIR when set.
 const tempInfo = setupProcessTemp();
@@ -96,6 +96,12 @@ sessionSweep.unref();
 
 const lessonSweep = setInterval(() => releaseInterruptedLessons().catch(() => {}), 5 * 60_000);
 lessonSweep.unref();
+
+// Onboarding housekeeping (Use Case 007): expired drafts and decoys, one-time secrets in sent email
+// bodies, and closed requests past the configured retention period. Runs whatever the flags say.
+const onboardingSweep = setInterval(() => sweepOnboarding(db).catch((err) => log.warn('onboarding.sweep_failed', { error: err.message })), 3600_000);
+onboardingSweep.unref();
+sweepOnboarding(db).catch((err) => log.warn('onboarding.sweep_failed', { error: err.message }));
 
 async function shutdown(signal) {
   log.info('api.shutdown', { signal });

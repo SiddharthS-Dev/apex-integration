@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
-import { Building2, KeyRound, Link2, ScrollText, Users } from 'lucide-react';
+import { Building2, Inbox, KeyRound, Link2, ScrollText, Users } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PageHeader from '@/components/PageHeader';
 import { CoreUnavailable } from '@/components/core/CoreNotice';
@@ -7,9 +7,10 @@ import PeopleTab from '@/components/core/PeopleTab';
 import OrganisationsTab from '@/components/core/OrganisationsTab';
 import LinksTab from '@/components/core/LinksTab';
 import AuditTab from '@/components/core/AuditTab';
+import RegistrationsTab from '@/components/core/RegistrationsTab';
 import { coreAvailable } from '@/lib/core';
 
-const TABS = ['people', 'organisations', 'links', 'audit'];
+const TABS = ['people', 'requests', 'organisations', 'links', 'audit'];
 
 // People & access (APEX Core, R1): who someone is across the APEX apps, which organisations they belong
 // to, which scoped roles they hold, which app accounts are linked to them, and the audit trail.
@@ -35,11 +36,13 @@ export default function AdminAccess() {
         <Tabs value={tab} onValueChange={(v) => update({ tab: v })}>
           <TabsList className="mb-6 flex-wrap h-auto">
             <TabsTrigger value="people"><Users className="w-4 h-4" /> People</TabsTrigger>
+            <TabsTrigger value="requests"><Inbox className="w-4 h-4" /> Access requests</TabsTrigger>
             <TabsTrigger value="organisations"><Building2 className="w-4 h-4" /> Organisations</TabsTrigger>
             <TabsTrigger value="links"><Link2 className="w-4 h-4" /> Account links</TabsTrigger>
             <TabsTrigger value="audit"><ScrollText className="w-4 h-4" /> Audit log</TabsTrigger>
           </TabsList>
           <TabsContent value="people"><PeopleTab selectedId={userId} onSelect={(id) => update({ user: id })} /></TabsContent>
+          <TabsContent value="requests"><RegistrationsTab /></TabsContent>
           <TabsContent value="organisations"><OrganisationsTab /></TabsContent>
           <TabsContent value="links"><LinksTab /></TabsContent>
           <TabsContent value="audit"><AuditTab /></TabsContent>

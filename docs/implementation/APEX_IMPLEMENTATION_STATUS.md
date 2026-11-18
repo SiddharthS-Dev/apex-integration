@@ -25,7 +25,8 @@ Baseline: `docs/APEX_MASTER_PLAN.md`. Updated: 2026-11-14.
 | Use Case 004: map existing users | Tooling done and tested; **real accounts not linked (open)** | R1 report §8 |
 | Use Cases 005, 006, 010, 012 | Implemented, tested | R1 report §7 |
 | Use Case 039 (staging part) | Private staging readiness externally verified; not deployed | R1 report §4 |
-| Use Cases 007, 008, 009, 011, 013 | Held or outside the authorised R1 scope | R1 report §1 |
+| Use Case 007: enterprise onboarding (six roles) | **Phase 3 implemented and tested 2026-11-17; running locally (onboarding app :5180, shared Core :4177); not committed or deployed.** Postgres run pending CI | `docs/implementation/ONBOARDING_HANDOVER.md` |
+| Use Cases 008, 009, 011, 013 | Held or outside the authorised R1 scope | R1 report §1 |
 | Use Cases 014–041 | Not started | — |
 
 ## Open decisions (founder)

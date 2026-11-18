@@ -125,6 +125,10 @@ DEC-007, DEC-008, DEC-009 and DEC-013 were approved by the founder on 2026-11-14
 | DEC-011 | External name for the Academy | Four variants in the code | One name, applied in R1 navigation | R1 navigation copy |
 | DEC-012 | Who staffs mentor, assessor and publication-reviewer roles | — | Nominate by R3 | R3 |
 | DEC-013 | How are Inspironics employees represented? | Staff role / out of scope / separate persona | **Approved 2026-11-14 (founder):** Inspironics organisation membership plus an explicit Staff role; staff may also hold learner, mentor, assessor or administrator assignments; employment never grants privileged access automatically | — (unblocked R1) |
+| DEC-014 | Onboarding vs the registration hold | Build flags-off / enable / keep hold | **Approved 2026-11-16 (founder):** build fully; flags off; production blocked until an approved consent version exists | — |
+| DEC-015 | Applicant age | Adults only / no gate | **Approved 2026-11-16 (founder):** adults only (18+ attestation, no age stored) | — |
+| DEC-016 | Consent notice before legal approval | Draft in development and staging / none | **Approved 2026-11-16 (founder):** marked DRAFT in development and staging only | Production enablement |
+| DEC-017 | Sequencing | R1 extension / R2 / separate | **Approved 2026-11-16 (founder):** R1 extension (Use Case 007), slices O1 to O4 | — |
 
 ---
 

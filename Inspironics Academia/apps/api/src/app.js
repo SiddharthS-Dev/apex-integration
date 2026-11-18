@@ -13,7 +13,7 @@ import syncRoutes from './sync/routes.js';
 import notifyRoutes from './notify/routes.js';
 import meetingRoutes from './meetings/routes.js';
 import studioRoutes from './studio/routes.js';
-import { coreRoutes } from './core/index.js';
+import { coreRoutes, onboardingConfig, onboardingRoutes } from './core/index.js';
 import { renderingAvailable } from './media/video/renderer.js';
 import { emailConfigured, emailProvider } from './notify/mailer.js';
 import { metrics } from './http/metrics.js';
@@ -47,6 +47,7 @@ export function createApp() {
     video_render_enabled: renderingAvailable(),
     dropbox_configured: dropboxConfigured(),
     registration_open: config.allowRegistration,
+    onboarding_enabled: onboardingConfig().enabled && onboardingConfig().selfRegistration,
     google_enabled: false,
     max_upload_mb: config.maxUploadMb,
     email_enabled: emailConfigured(),
@@ -66,6 +67,7 @@ export function createApp() {
   app.use('/api/notifications', notifyRoutes);
   app.use('/api/studio', studioRoutes);
   app.use('/api/core', coreRoutes); // APEX Core identity (R1)
+  app.use('/api/onboarding', onboardingRoutes); // stakeholder onboarding (Use Case 007), flags default off
 
   app.use('/api', notFoundHandler);
   app.use(errorHandler);

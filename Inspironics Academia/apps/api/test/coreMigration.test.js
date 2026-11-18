@@ -11,8 +11,8 @@ import { startHarness } from './helpers/coreHarness.js';
 // (and the break-glass CLI) work on a disposable database.
 const run = promisify(execFile);
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const R1 = ['008_core_identity', '009_user_session_epochs', '010_link_challenges', 'core_identity_backfill'];
-const CORE_TABLES = ['organizations', 'organization_memberships', 'role_assignments', 'identity_links', 'external_identities', 'audit_events', 'user_session_epochs', 'link_challenges'];
+const R1 = ['008_core_identity', '009_user_session_epochs', '010_link_challenges', '011_registration_requests', 'core_identity_backfill'];
+const CORE_TABLES = ['organizations', 'organization_memberships', 'role_assignments', 'identity_links', 'external_identities', 'audit_events', 'user_session_epochs', 'link_challenges', 'registration_requests', 'registration_decoys'];
 
 // The harness migrates fully; this test needs a pre-R1 file, so it rolls back first and then builds
 // the pre-R1 data. (A second check below builds pre-R1 straight from migrate({ exclude }).)
@@ -105,7 +105,7 @@ test('re-running the migration and the backfill is a no-op', async () => {
 
 test('rollback drops the R1 tables and records, leaving pre-R1 data intact; migrating again works', async () => {
   const r = await rollbackIdentity(db);
-  assert.equal(r.recordsRemoved, 4);
+  assert.equal(r.recordsRemoved, 5);
   assert.deepEqual(await tables(), preTables);
   const post = await snapshot(preTables);
   for (const t of preTables) assert.deepEqual(post[t], pre[t], `${t} identical to pre-R1`);
@@ -156,7 +156,7 @@ test('rollback CLI refuses without --yes, and rolls back with it', async () => {
   assert.ok((await tables()).includes('role_assignments'));
   const yes = await cli('rollback-identity.js', ['--yes']);
   assert.equal(yes.code, 0, yes.stderr);
-  assert.match(yes.stdout, /"records_removed":4/);
+  assert.match(yes.stdout, /"records_removed":5/);
   assert.ok(!(await tables()).some((t) => CORE_TABLES.includes(t)));
   // users.role changed by the break-glass grant stays (it is valid pre-R1 data); nothing else moved.
   const post = await snapshot(preTables.filter((t) => t !== 'users' && t !== 'schema_migrations'));

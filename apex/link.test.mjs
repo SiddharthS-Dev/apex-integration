@@ -413,6 +413,29 @@ test('rate limits: 5 starts and 10 completes per 15 minutes per address; per Cor
   }
 })
 
+test('admin console page: signed-in only, strict CSP covering its inline scripts, GET only', async () => {
+  const gw = await gateway('admin', { APEX_IDENTITY_MODE: 'off' })
+  try {
+    const out = await gw.get('/admin', { sub: null, headers: { Accept: 'text/html' } })
+    assert.ok([302, 303].includes(out.status), 'signed out: sent to the sign-in page')
+    assert.match(out.headers.get('location') || '', /^\/login\?next=/)
+    const page = await gw.get('/admin')
+    assert.equal(page.status, 200)
+    const csp = page.headers.get('content-security-policy') || ''
+    assert.match(csp, /script-src 'self' 'sha256-/)
+    assert.match(csp, /frame-ancestors 'none'/)
+    assert.doesNotMatch(csp, /unsafe-eval|script-src[^;]*unsafe-inline/)
+    const html = await page.text()
+    const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => `'sha256-${crypto.createHash('sha256').update(m[1].replace(/\r\n?/g, '\n'), 'utf8').digest('base64')}'`)
+    assert.ok(hashes.length >= 2 && hashes.every((h) => csp.includes(h)), 'every inline script is allowed by hash')
+    assert.doesNotMatch(html, /\son[a-z]+="/i, 'no inline event handlers (they would be blocked)')
+    assert.equal((await gw.get('/admin.html')).headers.get('location'), '/admin')
+    assert.equal((await gw.post('/admin', {})).status, 405)
+  } finally {
+    await gw.close()
+  }
+})
+
 test('the proof helpers: bound to the app, the challenge and 60 s', () => {
   const own = signingKey(store, 'showcase')
   const keys = parseKeys(keysFor(store, 'showcase'))

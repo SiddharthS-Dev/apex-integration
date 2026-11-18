@@ -143,7 +143,7 @@ jobs:
         run: npm ci && npm run migrate
 
   core-postgres:
-    name: Postgres mode (Core migrations incl. 008, identity rollback drill; Showcase migrations)
+    name: Postgres mode (Core migrations incl. 008–011, identity rollback drill; Showcase migrations)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -159,7 +159,7 @@ jobs:
       PGPASSWORD: ci
       CORE_DB: postgres://postgres:ci@localhost:5432/core_ci
       SHOWCASE_DB: postgres://postgres:ci@localhost:5432/showcase_ci
-      CORE_TABLES: "'organizations','organization_memberships','role_assignments','identity_links','external_identities','audit_events','user_session_epochs','link_challenges'"
+      CORE_TABLES: "'organizations','organization_memberships','role_assignments','identity_links','external_identities','audit_events','user_session_epochs','link_challenges','registration_requests','registration_decoys'"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -175,10 +175,10 @@ jobs:
         run: |
           node --disable-warning=ExperimentalWarning src/db/migrate-cli.js
           node --disable-warning=ExperimentalWarning src/db/migrate-cli.js
-      - name: R1 migrations (008, 009, 010) and core_identity_backfill recorded, eight Core tables, Inspironics organisation
+      - name: R1 migrations (008, 009, 010, 011) and core_identity_backfill recorded, ten Core tables, Inspironics organisation
         run: |
-          test "$(psql -d core_ci -tAc "SELECT count(*) FROM schema_migrations WHERE id IN ('008_core_identity','009_user_session_epochs','010_link_challenges','core_identity_backfill')")" = 4
-          test "$(psql -d core_ci -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ($CORE_TABLES)")" = 8
+          test "$(psql -d core_ci -tAc "SELECT count(*) FROM schema_migrations WHERE id IN ('008_core_identity','009_user_session_epochs','010_link_challenges','011_registration_requests','core_identity_backfill')")" = 5
+          test "$(psql -d core_ci -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ($CORE_TABLES)")" = 10
           test "$(psql -d core_ci -tAc "SELECT count(*) FROM organizations WHERE slug='inspironics' AND kind='internal'")" = 1
       - name: Identity rollback drill (core:rollback-identity on this throwaway database), then re-apply
         working-directory: 'Inspironics Academia/apps/api'
@@ -187,10 +187,10 @@ jobs:
           users_before="$(psql -d core_ci -tAc 'SELECT count(*) FROM users')"
           node src/core/cli/rollback-identity.js --yes
           test "$(psql -d core_ci -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ($CORE_TABLES)")" = 0
-          test "$(psql -d core_ci -tAc "SELECT count(*) FROM schema_migrations WHERE id IN ('008_core_identity','009_user_session_epochs','010_link_challenges','core_identity_backfill')")" = 0
+          test "$(psql -d core_ci -tAc "SELECT count(*) FROM schema_migrations WHERE id IN ('008_core_identity','009_user_session_epochs','010_link_challenges','011_registration_requests','core_identity_backfill')")" = 0
           test "$(psql -d core_ci -tAc 'SELECT count(*) FROM users')" = "$users_before"
           node --disable-warning=ExperimentalWarning src/db/migrate-cli.js
-          test "$(psql -d core_ci -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ($CORE_TABLES)")" = 8
+          test "$(psql -d core_ci -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ($CORE_TABLES)")" = 10
       - name: Install (Showcase)
         working-directory: inspironics-innovation-showcase
         run: npm ci

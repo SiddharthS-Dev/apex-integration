@@ -5,6 +5,9 @@ import { provisionNewUser, setLegacyRole } from './roles.js';
 import { insertAuditEvent } from './audit.js';
 
 export { default as coreRoutes } from './routes.js';
+export { default as onboardingRoutes } from './onboarding/routes.js';
+export { sweepOnboarding } from './onboarding/service.js';
+export { onboardingConfig } from './onboarding/config.js';
 export { coreIdentityBackfill } from './backfill.js';
 export { rollbackIdentity, CORE_IDENTITY_TABLES, CORE_IDENTITY_RECORDS } from './rollback.js';
 export { grantAdminBreakGlass } from './roles.js';
