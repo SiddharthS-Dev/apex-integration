@@ -208,6 +208,7 @@ const MIME = {
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
   '.pdf': 'application/pdf',
+  '.mp4': 'video/mp4',
   '.map': 'application/json; charset=utf-8',
 }
 
@@ -1018,6 +1019,12 @@ async function dispatch(req, res) {
   if (pathname === '/') {
     if (sendFile(res, path.join(PUBLIC, 'index.html'))) return
     return sendNotFound(res)
+  }
+
+  if (pathname.startsWith('/demo/')) {
+    const demoDir = path.join(ROOT, 'demo video')
+    const file = path.join(demoDir, pathname.slice(6))
+    if (within(demoDir, file) && sendFile(res, file)) return
   }
 
   const asset = path.join(PUBLIC, pathname.replace(/^\/+/, ''))
