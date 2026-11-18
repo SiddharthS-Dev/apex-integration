@@ -37,6 +37,9 @@ COPY apps/api/scripts apps/api/scripts
 COPY apps/web/public/data/showcase.json apps/web/public/data/showcase.json
 
 RUN mkdir -p /data && chown -R node:node /data
+# The runtime never calls npm, npx, corepack or yarn. Remove them: they carry their own
+# dependency trees (the image scan's only HIGH findings) and are tools an attacker could use.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \n    /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 VOLUME ["/data"]
 
 USER node

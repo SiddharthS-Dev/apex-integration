@@ -40,44 +40,51 @@ jobs:
           node --test staging.test.mjs
 
   # ---------------------------------------------------------------- security scanning --
-  # Free, open-source scanners; no account or token needed. Non-blocking for their first runs
-  # (continue-on-error), like the postgres job: promote each to required once it is green, and add
-  # any accepted false positive to .gitleaks.toml / .semgrepignore / .trivyignore with a reason.
+  # Free, open-source scanners; no account or token needed. All are blocking. An accepted false
+  # positive goes in .gitleaks.toml / .semgrepignore / .trivyignore.yaml / deploy/staging/zap-rules.tsv,
+  # scoped as narrowly as possible and with a reason. Triage and fix timelines: SECURITY.md.
 
   secret-scan:
     name: Secret scanning (gitleaks, full history)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - name: gitleaks
+      - name: gitleaks (findings are printed and reported with the secret value redacted)
         run: |
+          mkdir -p reports && chmod 777 reports
           docker run --rm -v "$PWD:/repo" --entrypoint sh ghcr.io/gitleaks/gitleaks:v8.21.2 -c \
-            'git config --global --add safe.directory /repo && gitleaks detect --source /repo --config /repo/.gitleaks.toml --redact --no-banner --exit-code 1'
+            'git config --global --add safe.directory /repo && gitleaks detect --source /repo --config /repo/.gitleaks.toml --redact --verbose --no-banner --report-format sarif --report-path /repo/reports/gitleaks.sarif --exit-code 1'
+      - name: Keep the gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: gitleaks-report, path: reports/, if-no-files-found: ignore, retention-days: 14 }
 
   sast:
     name: Static analysis (Semgrep OSS rules)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: semgrep (JavaScript, Node.js, Express, React; ERROR severity fails)
+      - name: semgrep (JavaScript incl. Express, Node.js, React, OWASP Top 10; ERROR severity fails)
         run: |
+          mkdir -p reports && chmod 777 reports
           docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep:1.95.0 semgrep scan --metrics=off \
-            --config p/javascript --config p/nodejs --config p/express --config p/react \
-            --severity ERROR --error
+            --config p/javascript --config p/nodejs --config p/react --config p/owasp-top-ten \
+            --severity ERROR --error --sarif-output=reports/semgrep.sarif
+      - name: Keep the Semgrep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: semgrep-report, path: reports/, if-no-files-found: ignore, retention-days: 14 }
 
   iac-scan:
     name: Dockerfile and Compose misconfiguration (Trivy config)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: trivy config
         run: |
-          docker run --rm -v "$PWD:/repo" aquasec/trivy:0.57.1 config --severity HIGH,CRITICAL --exit-code 1 \
-            --skip-dirs /repo/inspironics-innovation-showcase/legacy /repo
+          docker run --rm -v "$PWD:/repo" -w /repo aquasec/trivy:0.57.1 config --severity HIGH,CRITICAL --exit-code 1 \
+            --ignorefile .trivyignore.yaml --skip-dirs inspironics-innovation-showcase/legacy .
 
   academia:
     name: Inspironics Academia
@@ -271,7 +278,6 @@ jobs:
       - name: Build the four images and start the stack (waits for every healthcheck)
         run: $COMPOSE up -d --build --wait --wait-timeout 600
       - name: Container image scan (Trivy; HIGH/CRITICAL with a fix available)
-        continue-on-error: true  # promote to blocking once the base images are clean
         run: |
           TAG="$(grep '^APEX_IMAGE_TAG=' deploy/staging/.env.staging | cut -d= -f2)"
           status=0
@@ -282,13 +288,14 @@ jobs:
           exit $status
       - name: Smoke test through the gateway (health, sign-in, assertions, forged headers, sign-out)
         run: node deploy/staging/smoke.mjs gateway
-      - name: Dynamic scan (OWASP ZAP baseline, unauthenticated, against the gateway)
-        continue-on-error: true  # passive baseline; promote once the first report is triaged
+      - name: Dynamic scan (OWASP ZAP baseline, passive, against the gateway)
+        # Rules marked FAIL in deploy/staging/zap-rules.tsv fail the build; the others are reported.
         run: |
           PORT="$(grep '^APEX_STAGING_PORT=' deploy/staging/.env.staging | cut -d= -f2)"
-          mkdir -p zap && chmod 777 zap
-          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" zaproxy/zaproxy:2.15.0 \
-            zap-baseline.py -t "http://127.0.0.1:${PORT:-4173}/login" -I -r zap-report.html -J zap-report.json
+          mkdir -p zap && chmod 777 zap && cp deploy/staging/zap-rules.tsv zap/
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" zaproxy/zap-stable:2.15.0 \
+            zap-baseline.py -t "http://127.0.0.1:${PORT:-4173}/login" -c zap-rules.tsv -I \
+            -r zap-report.html -J zap-report.json
       - name: Keep the ZAP report
         if: always()
         uses: actions/upload-artifact@v4

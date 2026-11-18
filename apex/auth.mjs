@@ -59,13 +59,32 @@ const SECURE_ATTR = COOKIE_SECURE ? '; Secure' : ''
  */
 function loadSecret() {
   const file = (process.env.APEX_SESSION_SECRET_FILE || '').trim() || path.join(HERE, '.session-secret')
-  try {
-    const existing = fs.readFileSync(file, 'utf8').trim()
-    if (existing.length >= 32) return existing
-  } catch {
-    /* first run */
+  const read = () => {
+    try {
+      const existing = fs.readFileSync(file, 'utf8').trim()
+      return existing.length >= 32 ? existing : null
+    } catch {
+      return null // first run
+    }
   }
+  const existing = read()
+  if (existing) return existing
   const fresh = crypto.randomBytes(32).toString('base64url')
+  // Create it exclusively: when two processes start at once (parallel test files, a restart
+  // overlapping the old process), the loser must adopt the winner's secret, not overwrite it and
+  // leave the winner signing with a key that no longer exists on disk.
+  try {
+    fs.writeFileSync(file, fresh, { mode: 0o600, flag: 'wx' })
+    return fresh
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+  }
+  for (let i = 0; i < 50; i += 1) {
+    const theirs = read() // empty or short while the other process's write is in flight
+    if (theirs) return theirs
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+  }
+  // Still too short to be a key (truncated or hand-edited): replace it, as before.
   fs.writeFileSync(file, fresh, { mode: 0o600 })
   return fresh
 }
