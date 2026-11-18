@@ -129,7 +129,7 @@ const jar = { admin: '', learner: '' };
 async function call(who, method, url, body) {
   const res = await realFetch(`${base}/api${url}`, {
     method,
-    headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(jar[who] ? { Cookie: jar[who] } : {}) },
+    headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(jar[who] ? { Cookie: jar[who], Origin: base } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
     redirect: 'manual',
   });

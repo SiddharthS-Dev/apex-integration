@@ -17,9 +17,20 @@ import { closeStaleRuns } from './sync/log.js';
 import { isLocked } from './db/locks.js';
 import { get as getEntity, list as listEntities, update as updateEntity } from './repo/entities.js';
 import { lessonLockName } from './pipeline/util.js';
-import { createUser, findUserByEmail } from './repo/users.js';
+import { createUser, findUserByEmail, purgeLoginHistory } from './repo/users.js';
 import { hashPassword, validatePassword } from './auth/passwords.js';
 import { onUserCreated, sweepOnboarding } from './core/index.js';
+import { BOOTSTRAP_ADMIN_MIN_PRODUCTION, startupProblems } from './startupChecks.js';
+
+// Configuration that would be unsafe stops a production server before it opens a database or listens.
+{
+  const { errors, warnings } = startupProblems(process.env, config);
+  for (const w of warnings) log.warn('config.warning', { problem: w });
+  if (errors.length && config.isProduction) {
+    for (const e of errors) log.error('config.invalid', { problem: e });
+    process.exit(1);
+  }
+}
 
 // Temp files of this process and its children (FFmpeg, SQLite) go to TEMP_PROCESSING_DIR when set.
 const tempInfo = setupProcessTemp();
@@ -27,6 +38,7 @@ const tempInfo = setupProcessTemp();
 const db = await getDb();
 await migrate(db);
 await purgeExpiredSessions();
+await purgeLoginHistory(config.loginHistoryRetentionDays);
 await bootstrapAdmin();
 
 // BOOTSTRAP_ADMIN_EMAIL + BOOTSTRAP_ADMIN_PASSWORD create the administrator at startup, so the account
@@ -36,7 +48,8 @@ async function bootstrapAdmin() {
   const email = config.bootstrapAdminEmail;
   const password = config.bootstrapAdminPassword;
   if (!email || !password || (await findUserByEmail(email))) return;
-  const problem = validatePassword(password);
+  const problem = validatePassword(password)
+    || (config.isProduction && password.length < BOOTSTRAP_ADMIN_MIN_PRODUCTION ? `In production the password must be at least ${BOOTSTRAP_ADMIN_MIN_PRODUCTION} characters` : null);
   if (problem) return log.warn('auth.bootstrap_admin_refused', { reason: problem });
   const user = await createUser({ email, fullName: config.bootstrapAdminName, role: 'admin', passwordHash: await hashPassword(password) });
   await onUserCreated(user); // Inspironics membership + staff + platform_admin (R1, ADR 0004)
@@ -91,7 +104,12 @@ startJobWorker().catch((err) => log.error('jobs.worker_start_failed', { error: e
 startStorageMaintenance();
 startBatchResumer(); // restarts course batches stopped by the AI provider's daily quota
 
-const sessionSweep = setInterval(() => purgeExpiredSessions().catch(() => {}), 3600_000);
+const sessionSweep = setInterval(() => {
+  purgeExpiredSessions().catch(() => {});
+  purgeLoginHistory(config.loginHistoryRetentionDays)
+    .then((n) => n && log.info('auth.login_history_purged', { rows: n }))
+    .catch((err) => log.warn('auth.login_history_purge_failed', { error: err.message }));
+}, 3600_000);
 sessionSweep.unref();
 
 const lessonSweep = setInterval(() => releaseInterruptedLessons().catch(() => {}), 5 * 60_000);

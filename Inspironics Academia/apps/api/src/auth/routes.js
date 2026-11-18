@@ -8,9 +8,10 @@ import { rateLimit } from '../http/rateLimit.js';
 import {
   countUsers, createUser, findUserByEmail, findUserById, loginHistory, publicUser, recordLogin, updateUser,
 } from '../repo/users.js';
-import { hashPassword, randomToken, sha256, validatePassword, verifyPassword } from './passwords.js';
+import { hashPassword, needsRehash, randomToken, sha256, validatePassword, verifyPassword } from './passwords.js';
 import { createSession, destroySession, destroyUserSessions, requireAdmin, requireUser } from './sessions.js';
 import { clearFailures, lockedFor, noteFailure } from './lockout.js';
+import { findUsablePasswordLink, markPasswordLinkUsed } from './passwordLinks.js';
 import { emailConfigured } from '../notify/mailer.js';
 import { sendAccountEmail } from '../notify/index.js';
 import { onUserCreated } from '../core/index.js';
@@ -72,7 +73,10 @@ router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
     throw unauthorized('Invalid email or password');
   }
   clearFailures(email);
-  await updateUser(user.id, { last_login_at: new Date().toISOString() });
+  const patch = { last_login_at: new Date().toISOString() };
+  // Transparent upgrade of an older, cheaper hash, while the plaintext is in hand.
+  if (needsRehash(user.password_hash)) patch.password_hash = await hashPassword(password);
+  await updateUser(user.id, patch);
   await createSession(res, user, req);
   res.json({ user: publicUser(user) });
 }));
@@ -138,12 +142,14 @@ router.post('/reset-password-request', sensitiveLimiter, asyncHandler(async (req
 router.post('/reset-password', sensitiveLimiter, asyncHandler(async (req, res) => {
   const { resetToken, newPassword } = req.body || {};
   if (!resetToken) throw badRequest('Missing reset token');
-  const [row] = await db().query('SELECT * FROM password_resets WHERE token_hash = ?', [sha256(resetToken)]);
-  if (!row || row.used_at || row.expires_at < new Date().toISOString()) throw badRequest('This reset link is invalid or has expired');
+  const row = await findUsablePasswordLink(db(), resetToken);
+  if (!row) throw badRequest('This reset link is invalid or has expired');
   const pwErr = validatePassword(newPassword);
   if (pwErr) throw badRequest(pwErr);
-  await updateUser(row.user_id, { password_hash: await hashPassword(newPassword) });
-  await db().run('UPDATE password_resets SET used_at = ? WHERE token_hash = ?', [new Date().toISOString(), row.token_hash]);
+  const passwordHash = await hashPassword(newPassword);
+  // Claim the link atomically before changing anything: of two concurrent redemptions only one wins.
+  if (!(await markPasswordLinkUsed(db(), row.token_hash))) throw badRequest('This reset link is invalid or has expired');
+  await updateUser(row.user_id, { password_hash: passwordHash });
   await destroyUserSessions(row.user_id);
   res.json({ ok: true });
 }));

@@ -11,6 +11,7 @@ import { insertAuditEvent } from '../audit.js';
 import { isUniqueViolation } from '../roles.js';
 import { onboardingConfig } from './config.js';
 import { sendOnboardingEmail } from './emails.js';
+import { ACCOUNT_SECRET_KINDS } from '../../notify/mailer.js';
 import { scheduleReview, rulesRecommendation } from './review.js';
 
 // Public stakeholder-onboarding flow (Use Case 007; plan §4, prompt §7–§8). Server-enforced states:
@@ -571,6 +572,13 @@ export async function sweepOnboarding(db, cfg = onboardingConfig()) {
       WHERE kind IN (?, ?) AND text_body <> '[removed: one-time secret]' AND (status = 'sent' OR created_at < ?)`,
     [...SECRET_KINDS, dayAgo],
   );
+  // Account reset/invite links (live one-time secrets): blanked once delivered or finally failed, at the next sweep.
+  const accountKinds = [...ACCOUNT_SECRET_KINDS];
+  const accountBlanked = (await db.run(
+    `UPDATE email_outbox SET text_body = '[removed: one-time secret]', html_body = NULL
+      WHERE kind IN (${accountKinds.map(() => '?').join(', ')}) AND text_body <> '[removed: one-time secret]' AND status IN ('sent', 'failed')`,
+    accountKinds,
+  )).changes;
   let purged = 0;
   if (cfg.retentionDays) {
     purged = (await db.run(
@@ -578,7 +586,7 @@ export async function sweepOnboarding(db, cfg = onboardingConfig()) {
       [at],
     )).changes;
   }
-  const result = { expired: expired.changes, decoys_removed: decoys.changes, secret_emails_blanked: blanked.changes, purged };
+  const result = { expired: expired.changes, decoys_removed: decoys.changes, secret_emails_blanked: blanked.changes + accountBlanked, purged };
   if (Object.values(result).some(Boolean)) log.info('onboarding.sweep', result);
   return result;
 }

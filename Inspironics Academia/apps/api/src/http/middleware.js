@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { HttpError } from '../lib/errors.js';
 import { log } from '../lib/logger.js';
 import { metrics } from './metrics.js';
+import { SESSION_COOKIE } from '@academy/shared';
 
 export function securityHeaders(_req, res, next) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -32,13 +33,33 @@ export function cors(req, res, next) {
 }
 
 // Cookie-authenticated state-changing requests must come from our own origin (CSRF defence in depth
-// on top of SameSite=Lax).
+// on top of SameSite=Lax). Browsers send Origin on every cross-origin write, so a present Origin (or,
+// failing that, Referer) that is not ours is refused. A write that carries the session cookie but
+// neither header is refused too: nothing proves it came from our pages. Cookie-less writes (sign-in,
+// the gateway's service calls, onboarding's token-header steps) have no session to ride on and pass,
+// as does a header-less sign-out (the gateway signs each app out server-side with only its cookie).
+// The Host-derived origin is believed only for loopback hosts: the standalone Vite dev proxy keeps
+// the browser's Host (changeOrigin: false) on whatever local port it runs; a public Host header is
+// attacker-chosen (DNS rebinding) and is never trusted.
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const refererOrigin = (ref) => {
+  try { return ref ? new URL(ref).origin : null; } catch { return null; }
+};
+
 export function originCheck(req, _res, next) {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
-  const origin = req.get('origin');
-  if (!origin) return next();
-  const allowed = new Set([config.appOrigin, config.apiOrigin, `${req.protocol}://${req.get('host')}`]);
-  if (!allowed.has(origin)) return next(new HttpError(403, 'Cross-origin request rejected'));
+  if (SAFE_METHODS.has(req.method)) return next();
+  const origin = req.get('origin') || refererOrigin(req.get('referer'));
+  if (origin) {
+    const allowed = new Set([config.appOrigin, config.apiOrigin]);
+    const host = req.get('host') || '';
+    if (LOOPBACK_HOST.test(host)) allowed.add(`${req.protocol}://${host}`);
+    if (!allowed.has(origin)) return next(new HttpError(403, 'Cross-origin request rejected'));
+    return next();
+  }
+  if (req.cookies?.[SESSION_COOKIE] && !/\/auth\/logout$/.test(req.path)) {
+    return next(new HttpError(403, 'Request rejected: it carries no Origin or Referer'));
+  }
   next();
 }
 
