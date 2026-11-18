@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { serviceWorkerPlugin } from './scripts/serviceWorker.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 // The 235 infographics already live in ./inspironics/{thumbs,full}. Rather than
@@ -71,7 +72,7 @@ export default defineConfig(({ mode }) => {
   return {
     // Every asset URL and the router basename derive from this one value.
     base,
-    plugins: [react(), inspironicsImages(base)],
+    plugins: [react(), inspironicsImages(base), serviceWorkerPlugin()],
     // Mirrors the `imports` map in package.json. Both exist on purpose: the
     // package.json form is what Node (and therefore the unit tests) resolves,
     // this is what Vite resolves, and they must not drift.

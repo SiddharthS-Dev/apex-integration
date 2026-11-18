@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Loader2, Mail, Lock, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
-import { isLocalMode } from '@/api/base44Client';
+import { isLocalMode } from '@/api/backendClient';
 import { DEMO_CREDENTIALS } from '@/api/localClient';
 import { Button, Input, Label } from '@/components/ui';
 
@@ -200,7 +200,7 @@ function LoginForm() {
           <div className="rounded-lg border border-border bg-secondary/40 p-3 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">Running on the local backend</p>
             <p className="mt-1">
-              No Base44 app is configured, so a seeded catalog and demo accounts are in use.
+              No API server is configured, so a seeded catalog and demo accounts are in use.
             </p>
             <div className="mt-2 flex gap-2">
               <button type="button" onClick={() => fillDemo('admin')} className="rounded bg-secondary px-2 py-1 hover:text-foreground">

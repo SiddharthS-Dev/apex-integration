@@ -5,10 +5,22 @@
  */
 import { FOLDER_REQUIRED, SyncBusyError } from './pipeline.js'
 
-export function startScheduler({ config, sync, log }) {
+export function startScheduler({ config, sync, store, log }) {
+  // Daily cache retention runs whether or not scheduled sync is on.
+  const sweep = async () => {
+    try {
+      const removed = await store?.purgeOlderThan?.(config.objectCacheTtlHours)
+      if (removed) log.info('Preview cache retention', { removed, olderThanHours: config.objectCacheTtlHours })
+    } catch (error) {
+      log.warn('Preview cache retention failed', { error: error.message })
+    }
+  }
+  const retention = store ? setInterval(sweep, 24 * 3600_000) : null
+  retention?.unref()
+
   if (!config.sync.enabled) {
-    log.info('Scheduled sync is disabled (SYNC_ENABLED=false)')
-    return { stop() {} }
+    log.info('Scheduled sync is disabled (SYNC_ENABLED=false); daily cache retention still runs')
+    return { stop() { if (retention) clearInterval(retention) } }
   }
 
   const tick = async (trigger) => {
@@ -37,6 +49,7 @@ export function startScheduler({ config, sync, log }) {
     nextRunAt: () => new Date(next).toISOString(),
     stop() {
       clearInterval(timer)
+      if (retention) clearInterval(retention)
       if (startup) clearTimeout(startup)
     },
   }

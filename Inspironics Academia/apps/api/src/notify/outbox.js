@@ -27,7 +27,7 @@ export async function enqueueEmail({ userId, to, kind, subject, text, html, dedu
 
 async function sendOne(row) {
   try {
-    await sendMail({ to: row.to_email, subject: row.subject, text: row.text_body, html: row.html_body });
+    await sendMail({ to: row.to_email, subject: row.subject, text: row.text_body, html: row.html_body, kind: row.kind });
     await db().run("UPDATE email_outbox SET status = 'sent', attempts = attempts + 1, sent_at = ?, last_error = NULL WHERE id = ?", [nowIso(), row.id]);
     return true;
   } catch (err) {

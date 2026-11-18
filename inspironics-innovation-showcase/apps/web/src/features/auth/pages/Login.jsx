@@ -16,6 +16,17 @@ function LoginForm() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
+  // the guest button shows only once the server says guest access is on (it is off by default)
+  const [guestEnabled, setGuestEnabled] = useState(false)
+  useEffect(() => {
+    let live = true
+    Promise.resolve(api.getConfig?.())
+      .then((config) => live && setGuestEnabled(config?.guestEnabled === true))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
 
   const land = (session) => {
     setSession(session)
@@ -44,7 +55,7 @@ function LoginForm() {
     <AuthShell
       eyebrow="Secure access"
       title="Sign in to the showcase"
-      sub="The innovation library is gated — sign in, or continue as a guest to browse."
+      sub={guestEnabled ? 'The innovation library is gated — sign in, or continue as a guest to browse.' : 'The innovation library is gated — sign in to browse.'}
       footer={
         <>
           No account?{' '}
@@ -93,22 +104,24 @@ function LoginForm() {
 
       <div className="space-y-3">
         <GoogleButton onSession={land} onError={setError} />
-        <button
-          type="button"
-          onClick={async () => {
-            setBusy(true)
-            setError('')
-            try {
-              land(await api.guest())
-            } catch (err) {
-              setError(err.message)
-              setBusy(false)
-            }
-          }}
-          className="w-full py-2 text-center text-[12px] text-muted underline underline-offset-4 transition hover:text-cyan-glow"
-        >
-          Continue as guest
-        </button>
+        {guestEnabled && (
+          <button
+            type="button"
+            onClick={async () => {
+              setBusy(true)
+              setError('')
+              try {
+                land(await api.guest())
+              } catch (err) {
+                setError(err.message)
+                setBusy(false)
+              }
+            }}
+            className="w-full py-2 text-center text-[12px] text-muted underline underline-offset-4 transition hover:text-cyan-glow"
+          >
+            Continue as guest
+          </button>
+        )}
       </div>
     </AuthShell>
   )

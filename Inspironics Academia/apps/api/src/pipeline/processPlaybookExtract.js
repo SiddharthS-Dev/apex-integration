@@ -1,6 +1,7 @@
 import { chapterChanges, openRecertifications } from '@academy/shared';
-import { aiEnabled, invokeLLM } from '../ai/claude.js';
-import { loadPlaybookBytes } from '../files/playbookSource.js';
+import { aiEnabled, invokeLLM } from '../ai/index.js';
+import { loadPlaybookBytes, parseFileRef } from '../files/playbookSource.js';
+import { recordGeneration } from '../usage/log.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { log as defaultLog } from '../lib/logger.js';
 import { entities } from '../repo/entities.js';
@@ -262,13 +263,30 @@ export default async function processPlaybookExtract(payload = {}, ctx = {}) {
   if (!playbookId) throw badRequest('playbook_id is required');
   const playbook = await entities.Playbook.get(playbookId);
   if (!playbook) throw notFound('Playbook not found');
-  return withPlaybookLock(playbookId, () => run(playbook, log));
+  // The same Dropbox revision is not downloaded and extracted twice: its chapters are reused unless
+  // the caller forces a re-extraction (force: true). The file id + revision identify the source —
+  // never the file name.
+  const force = payload?.force === true || payload?.force === 'true';
+  if (!force && await alreadyExtracted(playbook)) {
+    await recordGeneration({ kind: 'process', provider: 'dropbox', model: 'extract', status: 'reused', ref_type: 'playbook', ref_id: playbookId });
+    return { ok: true, stage: 'extract', playbook_id: playbookId, skipped: true, reason: 'This revision was already extracted — pass force: true to extract it again.', chapter_count: playbook.chapter_count || 0 };
+  }
+  // ai: false = extract without AI (the Dropbox sync default: no paid calls without an explicit action).
+  return withPlaybookLock(playbookId, () => run(playbook, log, { ai: payload?.ai !== false }));
 }
 
-async function run(playbook, log) {
+/** True when the playbook's current source revision was extracted and its chapters are there. */
+export async function alreadyExtracted(playbook) {
+  const rev = playbook.revision || playbook.content_hash;
+  if (!rev || playbook.extracted_revision !== rev) return false;
+  if (!['processed', 'needs_review', 'published'].includes(playbook.status)) return false;
+  return (await entities.Chapter.count({ playbook_id: playbook.id })) > 0;
+}
+
+async function run(playbook, log, { ai = true } = {}) {
   const playbookId = playbook.id;
   const sr = entities;
-  const useAI = aiEnabled();
+  const useAI = ai && aiEnabled();
   try {
     if (!playbook.file_url) throw pipelineError('Playbook has no file_url');
     await sr.Playbook.update(playbookId, { status: 'processing', progress: 15, error: '' });
@@ -286,7 +304,11 @@ async function run(playbook, log) {
     // 2. Table of contents ------------------------------------------------------------------
     let toc = [];
     let tocMeta = EMPTY_META;
-    if (playbook.toc_summary && String(playbook.toc_summary).trim()) toc = parseTocSummary(String(playbook.toc_summary));
+    // A supplied table of contents guides a first extraction. After that, toc_summary is this
+    // pipeline's own output, so feeding it back would repeat a wrong result on every re-extraction.
+    if (!Number(playbook.chapter_count) && playbook.toc_summary && String(playbook.toc_summary).trim()) {
+      toc = parseTocSummary(String(playbook.toc_summary));
+    }
     if (!toc.length && useAI) {
       try {
         ({ toc, meta: tocMeta } = await fetchTocViaLLM(text));
@@ -399,10 +421,13 @@ async function run(playbook, log) {
       toc_summary: tocSummary,
       file_name: playbook.file_name || '',
       file_size: playbook.file_size || 0,
+      source_revision: playbook.revision || '',
+      content_hash: playbook.content_hash || '',
       chapters_snapshot: JSON.stringify(records.map((r) => ({ number: r.number, title: r.title, summary: r.summary, content: r.content }))),
     });
 
-    await sr.Playbook.update(playbookId, { status: 'processed', error: '' });
+    await sr.Playbook.update(playbookId, { status: 'processed', error: '', extracted_revision: playbook.revision || playbook.content_hash || '', extracted_at: new Date().toISOString() });
+    await recordGeneration({ kind: 'process', provider: parseFileRef(playbook.file_url).kind, model: 'extract', status: 'ok', characters: text.length, ref_type: 'playbook', ref_id: playbookId });
     return { ok: true, stage: 'extract', playbook_id: playbookId, chapter_count: records.length, changes, recertification };
   } catch (e) {
     const message = errMsg(e);

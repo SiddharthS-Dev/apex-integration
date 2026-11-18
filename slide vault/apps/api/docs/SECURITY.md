@@ -99,10 +99,15 @@ that is a convenience — a client check is advice, a server check is policy.
 | Run a sync, read sync logs and the audit trail | ✓ | |
 | Rename files, mint direct download links | ✓ | |
 | Metrics, detailed health | ✓ | |
+| Change a user's role, set a temporary password (revokes their sessions) | ✓ | |
 | Read the library, open a presentation | ✓ | ✓ |
 
 `POST /api/auth/register` always creates a plain user. Roles are granted
-deliberately, never self-service.
+deliberately, never self-service. An admin grants or removes the admin role with
+`PATCH /api/users/:id`; the server refuses any change that would leave no
+active administrator. There is no emailed password reset: an admin sets a
+temporary password (`POST /api/users/:id/password`), which signs that user out
+everywhere. Both actions are audited.
 
 ## Input validation
 

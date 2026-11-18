@@ -246,6 +246,131 @@
         justify-content: flex-end;
         gap: 14px;
       }
+      /* approvals bell: pending access requests (reviewers only) */
+      .approvals {
+        position: relative;
+      }
+      .approvals__bell {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        border: 1px solid var(--border-2);
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+      .approvals__bell:hover {
+        border-color: var(--cyan);
+        box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.12);
+      }
+      .approvals__bell:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 3px;
+      }
+      .approvals__bell svg {
+        width: 20px;
+        height: 20px;
+      }
+      .approvals__count {
+        position: absolute;
+        top: -7px;
+        right: -7px;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 5px;
+        border-radius: 6px;
+        background: var(--rose);
+        color: #fff;
+        font-size: 0.7rem;
+        font-weight: 700;
+        line-height: 20px;
+        text-align: center;
+        box-shadow: 0 0 0 2px var(--surface-solid);
+      }
+      .approvals__panel {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        z-index: 40;
+        width: min(340px, calc(100vw - 32px));
+        padding: 14px;
+        border: 1px solid var(--border-2);
+        border-radius: 12px;
+        background: var(--surface-solid);
+        box-shadow: var(--shadow);
+        color: var(--text);
+        font-size: 0.86rem;
+      }
+      .approvals__head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .approvals__head span {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+      .approvals__list {
+        list-style: none;
+        margin: 0 0 12px;
+        padding: 0;
+        max-height: 260px;
+        overflow-y: auto;
+      }
+      .approvals__list li {
+        display: grid;
+        gap: 2px;
+        padding: 8px 0;
+        border-top: 1px solid var(--border);
+      }
+      .approvals__list li:first-child {
+        border-top: 0;
+      }
+      .approvals__name {
+        font-weight: 600;
+      }
+      .approvals__meta {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+      .approvals__tag {
+        display: inline-block;
+        margin-right: 6px;
+        padding: 1px 6px;
+        border-radius: 5px;
+        background: rgba(124, 58, 237, 0.12);
+        color: var(--purple);
+        font-size: 0.72rem;
+        font-weight: 700;
+      }
+      .approvals__empty {
+        color: var(--muted);
+        padding: 6px 0;
+      }
+      .approvals__open {
+        display: block;
+        padding: 9px 12px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--cyan), var(--purple));
+        color: #fff;
+        font-weight: 700;
+        text-align: center;
+        text-decoration: none;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
       .account {
         position: relative;
         display: inline-flex;
@@ -348,6 +473,49 @@
         color: var(--text);
         font-weight: 600;
         word-break: break-all;
+      }
+      .menu__link {
+        color: var(--text);
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .menu__link:focus-visible {
+        outline: 2px solid currentColor;
+        outline-offset: 2px;
+      }
+      .menu__admin {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, var(--cyan), var(--purple));
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      .menu__admin svg {
+        flex: none;
+        width: 18px;
+        height: 18px;
+      }
+      .menu__admin small {
+        font-weight: 600;
+        opacity: 0.9;
+      }
+      .menu__admin:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 2px;
+      }
+      .approvals__item {
+        cursor: pointer;
+        border-radius: 6px;
+      }
+      .approvals__item:hover,
+      .approvals__item:focus-visible {
+        background: rgba(6, 182, 212, 0.08);
+        outline: none;
       }
       .menu p {
         margin: 12px 0 0;
@@ -652,6 +820,15 @@
         background: var(--rose);
       }
       /* --------------------------------------------------------- cards -- */
+      /* Fewer platforms chosen at onboarding: the remaining cards share the row (wide screens only). */
+      @media (min-width: 1241px) {
+        .grid[data-count='1'] {
+          grid-template-columns: minmax(0, 560px);
+        }
+        .grid[data-count='2'] {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
       .grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1383,6 +1560,20 @@
 
 
         <div class="top-right">
+          <!-- Access requests waiting for approval. Shown only to someone the Core lets review them
+               (the Core API answers 403 to everyone else, and the bell stays hidden). -->
+          <div class="approvals" id="approvals" hidden>
+            <button class="approvals__bell" id="approvals-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="approvals-panel" title="Access requests waiting for approval">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg>
+              <span class="approvals__count" id="approvals-count" hidden></span>
+              <span class="sr-only" id="approvals-label">Access requests</span>
+            </button>
+            <div class="approvals__panel" id="approvals-panel" hidden>
+              <div class="approvals__head"><strong>Access requests</strong><span id="approvals-summary"></span></div>
+              <ul class="approvals__list" id="approvals-list"></ul>
+              <a class="approvals__open" href="/admin">Open the admin console</a>
+            </div>
+          </div>
           <div class="account" id="account" hidden>
             <button class="account__who" id="account-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu">
               <span class="account__avatar" id="avatar" aria-hidden="true"></span>
@@ -1397,6 +1588,11 @@
               Signed in as
               <strong id="menu-email"></strong>
               <p id="menu-session">One session covers Apex and every platform it opened. Sign out ends them all.</p>
+              <p id="menu-admin" hidden><a class="menu__admin" href="/admin">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" /></svg>
+                <span>Admin console<small id="menu-admin-count"></small></span>
+              </a></p>
+              <p><a class="menu__link" href="/link">Link your Showcase and SlidesVault accounts</a></p>
             </div>
           </div>
 
@@ -1651,6 +1847,91 @@
         } catch {
           return null
         }
+      }
+
+      /* ------------------------------------------- platforms you chose -- */
+      /*
+       * People who joined through the onboarding assistant chose their APEX platforms, and the approver
+       * confirmed them (Core /me "platforms"; null = show everything, as for administrators). Only those
+       * cards are shown. This is a display choice: the gateway still opens a platform only where the
+       * person has an account there.
+       */
+      const CARD_OF = { showcase: 'showcase', slidesvault: 'vault', academia: 'academia' }
+      me.then(async (who) => {
+        if (!who) return
+        const core = await json('/academia/api/core/me')
+        const chosen = Array.isArray(core?.platforms) && core.platforms.length ? new Set(core.platforms.map((p) => CARD_OF[p])) : null
+        if (!chosen) return
+        const grid = document.getElementById('projects')
+        let shown = 0
+        for (const card of grid.querySelectorAll('[data-app]')) {
+          const keep = chosen.has(card.dataset.app)
+          card.hidden = !keep
+          if (keep) shown++
+        }
+        grid.dataset.count = String(shown)
+      })
+
+      /* --------------------------------------------- approvals bell -- */
+      /*
+       * Pending access requests from the onboarding assistant. The Core decides who may see them
+       * (registration.review: platform admins); for anyone else the request fails and the bell stays
+       * hidden. Names are written with textContent only. Refreshes every 60 seconds.
+       */
+      async function loadApprovals() {
+        const rows = await json('/academia/api/core/registrations?status=reviewable')
+        const box = document.getElementById('approvals')
+        const menuAdmin = document.getElementById('menu-admin')
+        if (!Array.isArray(rows)) { box.hidden = true; menuAdmin.hidden = true; return }
+        box.hidden = false
+        menuAdmin.hidden = false
+        document.getElementById('menu-admin-count').textContent = rows.length ? ` · ${rows.length} waiting` : ''
+        const pending = rows.filter((r) => r.status === 'PENDING_APPROVAL').length
+        const count = document.getElementById('approvals-count')
+        count.textContent = rows.length > 99 ? '99+' : String(rows.length)
+        count.hidden = rows.length === 0
+        document.getElementById('approvals-label').textContent = `${rows.length} access request${rows.length === 1 ? '' : 's'} waiting`
+        document.getElementById('approvals-summary').textContent = rows.length
+          ? `${pending} to approve${rows.length - pending ? `, ${rows.length - pending} waiting for an answer` : ''}`
+          : 'Nothing waiting'
+        const list = document.getElementById('approvals-list')
+        list.replaceChildren()
+        if (!rows.length) {
+          const li = document.createElement('li')
+          li.className = 'approvals__empty'
+          li.textContent = 'No access requests are waiting.'
+          list.append(li)
+          return
+        }
+        for (const r of rows.slice(0, 20)) {
+          const li = document.createElement('li')
+          li.className = 'approvals__item'
+          li.tabIndex = 0
+          const open = () => location.assign(`/admin?request=${encodeURIComponent(r.id)}`)
+          li.addEventListener('click', open)
+          li.addEventListener('keydown', (e) => { if (e.key === 'Enter') open() })
+          const name = document.createElement('span')
+          name.className = 'approvals__name'
+          name.textContent = r.full_name || r.email || 'Applicant'
+          const meta = document.createElement('span')
+          meta.className = 'approvals__meta'
+          const tag = document.createElement('span')
+          tag.className = 'approvals__tag'
+          tag.textContent = r.role_label || 'Request'
+          const when = r.submitted_at || r.created_at
+          meta.append(tag, document.createTextNode(`${r.status === 'INFO_REQUESTED' ? 'Waiting for applicant · ' : ''}${when ? ago(when) : ''}`))
+          li.append(name, meta)
+          list.append(li)
+        }
+      }
+      {
+        const toggle = document.getElementById('approvals-toggle')
+        const panel = document.getElementById('approvals-panel')
+        const setOpen = (open) => { panel.hidden = !open; toggle.setAttribute('aria-expanded', String(open)) }
+        toggle.addEventListener('click', (e) => { e.stopPropagation(); const open = panel.hidden; setOpen(open); if (open) loadApprovals() })
+        document.addEventListener('click', (e) => { if (!panel.hidden && !e.target.closest('#approvals')) setOpen(false) })
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) { setOpen(false); toggle.focus() } })
+        me.then((who) => { if (who) { loadApprovals(); setInterval(() => { if (!document.hidden) loadApprovals() }, 60_000) } })
       }
 
       const fmt = (n) => Number(n).toLocaleString()

@@ -158,4 +158,25 @@ CREATE TABLE app_locks (
 );
 `,
   },
+  {
+    /**
+     * The Apex (Core) user a local account belongs to, for identity assertion
+     * (R1 identity contract §4.4). Nullable: every existing account keeps NULL
+     * and keeps working exactly as before. Unique where set (both SQLite and
+     * Postgres allow any number of NULLs in a unique index).
+     *
+     * Rollback: `rollbackMigration(db, '002_core_user_id')` in db/migrate.js
+     * runs `down` and removes the schema_migrations row. It drops only this
+     * column and its index; no pre-R1 data lives in them.
+     */
+    id: '002_core_user_id',
+    sql: `
+ALTER TABLE users ADD COLUMN core_user_id TEXT;
+CREATE UNIQUE INDEX users_core_user_id ON users(core_user_id);
+`,
+    down: `
+DROP INDEX IF EXISTS users_core_user_id;
+ALTER TABLE users DROP COLUMN core_user_id;
+`,
+  },
 ]

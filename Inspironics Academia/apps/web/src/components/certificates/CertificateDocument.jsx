@@ -1,13 +1,28 @@
-import { forwardRef } from 'react';
+import { forwardRef, useMemo } from 'react';
 import { format } from 'date-fns';
+import qrcode from 'qrcode-generator';
 import { GraduationCap } from 'lucide-react';
 import { Image } from '@/components/ui/image';
+
+// The verification QR code is drawn in the browser (a data: URL), so the verification link is never
+// sent to a third-party QR service and the image is same-origin for the PDF export (html2canvas).
+function verificationQr(url) {
+  if (!url) return '';
+  try {
+    const code = qrcode(0, 'M'); // 0 = smallest version that fits
+    code.addData(url);
+    code.make();
+    return code.createDataURL(8, 2);
+  } catch {
+    return '';
+  }
+}
 
 // Printable landscape certificate. The "paper" intentionally stays white in dark mode
 // so the on-screen preview matches the printed / PDF output.
 const CertificateDocument = forwardRef(function CertificateDocument({ certificate, learnerName, verifyUrl }, ref) {
   const date = certificate.completion_date || certificate.created_date;
-  const qr = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}`;
+  const qr = useMemo(() => verificationQr(verifyUrl), [verifyUrl]);
 
   return (
     <div ref={ref} className="certificate-sheet relative w-full aspect-[297/210] bg-white text-slate-900 p-[3%] shadow-xl rounded-sm overflow-hidden">
@@ -38,7 +53,7 @@ const CertificateDocument = forwardRef(function CertificateDocument({ certificat
             <div className="mt-2 font-mono text-[10px] sm:text-xs text-slate-500 break-all">ID: {certificate.certificate_id}</div>
           </div>
           <div className="flex justify-center">
-            <Image src={qr} alt="Verification QR code" crossOrigin="anonymous" className="w-20 h-20 sm:w-28 sm:h-28" />
+            <Image src={qr} alt="Verification QR code" loading="eager" className="w-20 h-20 sm:w-28 sm:h-28 [image-rendering:pixelated]" />
           </div>
           <div className="text-right">
             <div className="font-serif italic text-base sm:text-lg text-indigo-700">Inspironics</div>

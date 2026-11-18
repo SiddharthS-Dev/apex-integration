@@ -84,9 +84,9 @@ export default function AboutSection({ stats, heroItem }) {
             We build the nervous system for physical infrastructure.
           </h2>
           <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted sm:text-base">
-            Every plate in this showcase is a working answer to the same question: how do you make a building, a plant, a
+            Every plate in this showcase is a proposed answer to the same question: how do you make a building, a plant, a
             campus or a city legible enough to run itself? Sensing, connectivity, twins and agentic decisioning — designed
-            as one stack, deployed as products, and proven across energy, agriculture, hospitality, healthcare,
+            as one stack, packaged as products, and intended for energy, agriculture, hospitality, healthcare,
             manufacturing and data centres.
           </p>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted">

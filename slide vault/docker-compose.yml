@@ -9,12 +9,17 @@
 #       share the connection, the catalog and the advisory locks, so exactly
 #       one of them syncs at a time and exactly one refreshes the token.
 #
-# Secrets come from apps/api/.env, or from the orchestrator.
+# Secrets come from a .env file beside this one (compose reads it for the
+# ${...} values below), or from the orchestrator. The postgres profile also
+# needs POSTGRES_PASSWORD; there is deliberately no default, and the postgres
+# image refuses to initialise without one.
 # None of them belong in this file.
 
 services:
   api:
-    build: ./apps/api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     image: slidesvault-api
     restart: unless-stopped
     ports:
@@ -54,15 +59,19 @@ services:
   # ----------------------------------------------------- multi-instance --
   api-pg:
     profiles: ['postgres']
-    build: ./apps/api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     image: slidesvault-api
     restart: unless-stopped
     # Several replicas share one Postgres; the advisory locks in the database
     # keep them from syncing or refreshing on top of each other.
     deploy:
       replicas: ${API_REPLICAS:-2}
-    ports:
-      - '${PORT:-4000}:4000'
+    # No fixed host port: two replicas cannot both bind it. Put the load balancer (or reverse proxy)
+    # on the compose network in front of them and route it to api-pg:4000.
+    expose:
+      - '4000'
     environment:
       NODE_ENV: production
       PORT: 4000
@@ -72,7 +81,7 @@ services:
       TRUST_PROXY: '1'
 
       DB_DRIVER: postgres
-      DATABASE_URL: postgres://slidesvault:${POSTGRES_PASSWORD:-slidesvault}@postgres:5432/slidesvault
+      DATABASE_URL: postgres://slidesvault:${POSTGRES_PASSWORD:-}@postgres:5432/slidesvault
       OBJECT_STORE_DIR: /data/objects
 
       DROPBOX_APP_KEY: ${DROPBOX_APP_KEY:?set DROPBOX_APP_KEY}
@@ -95,7 +104,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: slidesvault
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slidesvault}
+      # No default: a well-known database password is not a safe fallback.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: slidesvault
     volumes:
       - slidesvault-pg:/var/lib/postgresql/data

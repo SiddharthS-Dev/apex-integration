@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MotionConfig } from 'framer-motion';
 import { AuthProvider } from '@/lib/AuthContext';
 import ProtectedRoute, { AuthLoading, PublicOnlyRoute } from '@/components/ProtectedRoute';
 import ScrollToTop from '@/components/ScrollToTop';
@@ -28,56 +29,60 @@ const queryClient = new QueryClient({
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      {/*
-        Mounted at '/vault/' by the Apex gateway, or '/' standalone. The router
-        takes its basename from the same `base` that rewrites the asset URLs, so
-        neither has to hard-code the mount point.
-      */}
-      <BrowserRouter basename={import.meta.env.BASE_URL}>
-        <AuthProvider>
-          <ScrollToTop />
-          <Suspense fallback={<AuthLoading />}>
-            <Routes>
-              {/* Public */}
-              <Route
-                path="/login"
-                element={
-                  <PublicOnlyRoute>
-                    <Login />
-                  </PublicOnlyRoute>
-                }
-              />
-              <Route
-                path="/register"
-                element={
-                  <PublicOnlyRoute>
-                    <Register />
-                  </PublicOnlyRoute>
-                }
-              />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
+    // reducedMotion="user": when the OS asks for reduced motion, framer-motion
+    // drops transform and layout animations app-wide (opacity fades remain).
+    <MotionConfig reducedMotion="user">
+      <QueryClientProvider client={queryClient}>
+        {/*
+          Mounted at '/vault/' by the Apex gateway, or '/' standalone. The router
+          takes its basename from the same `base` that rewrites the asset URLs, so
+          neither has to hard-code the mount point.
+        */}
+        <BrowserRouter basename={import.meta.env.BASE_URL}>
+          <AuthProvider>
+            <ScrollToTop />
+            <Suspense fallback={<AuthLoading />}>
+              <Routes>
+                {/* Public */}
+                <Route
+                  path="/login"
+                  element={
+                    <PublicOnlyRoute>
+                      <Login />
+                    </PublicOnlyRoute>
+                  }
+                />
+                <Route
+                  path="/register"
+                  element={
+                    <PublicOnlyRoute>
+                      <Register />
+                    </PublicOnlyRoute>
+                  }
+                />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
 
-              {/* Authenticated */}
-              <Route element={<ProtectedRoute />}>
-                <Route element={<Layout />}>
-                  <Route index element={<Home />} />
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/library" element={<Library />} />
-                  <Route path="/presentation/:id" element={<PresentationViewer />} />
-                  <Route path="/offline" element={<OfflineLibrary />} />
-                  <Route path="/admin" element={<Admin />} />
-                  <Route path="/dropbox-settings" element={<DropboxSettings />} />
-                  <Route path="/user-manual" element={<UserManual />} />
+                {/* Authenticated */}
+                <Route element={<ProtectedRoute />}>
+                  <Route element={<Layout />}>
+                    <Route index element={<Home />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/library" element={<Library />} />
+                    <Route path="/presentation/:id" element={<PresentationViewer />} />
+                    <Route path="/offline" element={<OfflineLibrary />} />
+                    <Route path="/admin" element={<Admin />} />
+                    <Route path="/dropbox-settings" element={<DropboxSettings />} />
+                    <Route path="/user-manual" element={<UserManual />} />
+                  </Route>
                 </Route>
-              </Route>
 
-              <Route path="*" element={<PageNotFound />} />
-            </Routes>
-          </Suspense>
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+                <Route path="*" element={<PageNotFound />} />
+              </Routes>
+            </Suspense>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </MotionConfig>
   );
 }

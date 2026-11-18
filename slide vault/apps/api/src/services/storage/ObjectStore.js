@@ -72,9 +72,15 @@ export class ObjectStore {
     // Write to a temp file and rename: a reader must never see a half-written
     // thumbnail, and two syncs racing on the same key must not interleave.
     const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
-    await fsp.writeFile(temporary, buffer);
-    await fsp.rename(temporary, target);
-    return this.urlFor(key);
+    try {
+      await fsp.writeFile(temporary, buffer);
+      await fsp.rename(temporary, target);
+      return this.urlFor(key);
+    } catch (error) {
+      // A failed write (disk full, permissions) must not leave a partial file behind.
+      await fsp.rm(temporary, { force: true }).catch(() => {});
+      throw error;
+    }
   }
 
   /** Streams a response body to disk without buffering it. */

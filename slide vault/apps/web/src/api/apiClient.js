@@ -1,5 +1,5 @@
 /**
- * Backend adapter for the SlidesVault API server (`server/`).
+ * Backend adapter for the SlidesVault API server (`apps/api`).
  *
  * Selected by setting `VITE_API_BASE_URL`. It presents exactly the interface
  * the rest of the app already consumes — entities, functions, auth,
@@ -60,6 +60,7 @@ async function call(path, { method = 'GET', body, signal } = {}) {
 
 const get = (path) => call(path);
 const post = (path, body = {}) => call(path, { method: 'POST', body });
+const patch = (path, body = {}) => call(path, { method: 'PATCH', body });
 
 /** A path on the API, made absolute so it works from the app's own origin. */
 const absolute = (path) => (path?.startsWith('/') ? `${BASE}${path}` : path ?? '');
@@ -156,7 +157,18 @@ const entities = {
     get: readOnly('User'),
     create: readOnly('User'),
     bulkCreate: readOnly('User'),
-    update: readOnly('User'),
+    /**
+     * Admin-only, and only the role: the server accepts nothing else here, so
+     * any other field is refused before it is sent rather than silently dropped.
+     */
+    async update(id, data = {}) {
+      const fields = Object.keys(data);
+      if (fields.length !== 1 || fields[0] !== 'role') {
+        throw new Error("Only a user's role can be changed from the app.");
+      }
+      const { user } = await patch(`/api/users/${encodeURIComponent(id)}`, { role: data.role });
+      return user;
+    },
     delete: readOnly('User'),
   },
 };
@@ -193,7 +205,7 @@ const functions = {
       case 'logs':
         return get(`/api/dropbox/sync/logs${query({ limit: payload.limit })}`);
       case 'audit':
-        return get(`/api/dropbox/audit${query({ limit: payload.limit })}`);
+        return get(`/api/dropbox/audit${query({ limit: payload.limit, offset: payload.offset })}`);
       case 'status':
       default:
         return get('/api/dropbox/status');
@@ -263,6 +275,15 @@ const functions = {
     });
     return { reply: result.reply, picks: (result.picks ?? []).map(withAbsoluteUrls) };
   },
+
+  /**
+   * An administrator sets a temporary password for someone who has forgotten
+   * theirs. The server signs that person out everywhere.
+   */
+  setUserPassword: (payload = {}) =>
+    post(`/api/users/${encodeURIComponent(payload.user_id ?? payload.id)}/password`, {
+      password: payload.password,
+    }),
 
   // Sign-in is already recorded server-side by the login endpoint; this exists
   // so the shared call site keeps working.
@@ -336,8 +357,10 @@ const auth = {
     return new Promise(() => {});
   },
 
-  // The OTP and password-reset flows belong to an identity provider; this
-  // backend deliberately does not implement them.
+  // The OTP and emailed password-reset flows belong to an identity provider;
+  // this backend deliberately does not implement them. A forgotten password is
+  // reset by an administrator (functions.setUserPassword), and the forgot-
+  // password screen says so instead of calling these.
   sendOtp: () => {
     throw new Error('One-time codes are not configured for this backend.');
   },

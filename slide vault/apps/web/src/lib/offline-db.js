@@ -2,9 +2,11 @@
  * IndexedDB wrapper backing the offline-first experience.
  *
  * Two stores:
- *   files    — the encrypted-at-rest-by-the-browser blob for each downloaded
- *              presentation, keyed by presentation id. Never written to disk as
- *              a loose file, so downloads stay inside the app sandbox.
+ *   files    — the downloaded presentation as a plain Blob in IndexedDB, keyed
+ *              by presentation id. It is not encrypted by this app (whatever
+ *              protection it has is the OS/browser profile's), and it is
+ *              readable through the browser's developer tools; it is simply
+ *              never saved as a loose file in the Downloads folder.
  *   activity — per-user reading state: bookmarks, progress, favourites, views.
  */
 

@@ -1,12 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import { api } from '@/api/client';
-import { useAuth } from '@/lib/AuthContext';
 import LoadingState from '@/components/LoadingState';
 import QuizRunner from '@/components/QuizRunner';
 
-export default function LessonQuizTab({ lesson, courseId }) {
-  const { user } = useAuth();
+export default function LessonQuizTab({ lesson }) {
   const queryClient = useQueryClient();
   const { data: questions = [], isLoading } = useQuery({
     queryKey: ['lesson-questions', lesson.id],
@@ -16,18 +13,10 @@ export default function LessonQuizTab({ lesson, courseId }) {
       ),
   });
 
-  const handleComplete = async (r) => {
-    try {
-      await api.entities.QuizAttempt.create({
-        user_id: user.id, course_id: courseId, module_id: lesson.module_id, lesson_id: lesson.id,
-        type: 'lesson', score: r.score, total: r.total, percentage: r.percentage, passed: r.passed,
-      });
-      queryClient.invalidateQueries({ queryKey: ['attempts'] });
-    } catch (e) {
-      toast.error(e?.message || 'Could not save quiz attempt');
-    }
-  };
+  // The server grades the answers and records the attempt; the questions arrive without answers.
+  const grade = async (answers) => (await api.functions.invoke('submitQuiz', { type: 'lesson', lesson_id: lesson.id, answers })).data;
+  const handleComplete = () => queryClient.invalidateQueries({ queryKey: ['attempts'] });
 
   if (isLoading) return <LoadingState label="Loading quiz…" />;
-  return <QuizRunner questions={questions} title="Lesson quiz" onComplete={handleComplete} />;
+  return <QuizRunner questions={questions} title="Lesson quiz" grade={grade} onComplete={handleComplete} />;
 }

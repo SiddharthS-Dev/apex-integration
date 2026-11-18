@@ -33,7 +33,7 @@ export default function Register() {
     <AuthShell
       eyebrow="Create account"
       title="Join the showcase"
-      sub="We'll send a six-digit code to confirm your email."
+      sub="You confirm your email with a six-digit code. This server does not send email yet — the code is shown here in the demo build, otherwise ask an administrator for it."
       footer={
         <>
           Already registered?{' '}

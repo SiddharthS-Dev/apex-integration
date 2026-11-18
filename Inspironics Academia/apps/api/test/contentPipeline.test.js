@@ -6,12 +6,12 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import JSZip from 'jszip';
 
-// The playbook → course pipeline end to end, with the AI answered by a local stand-in for Base44:
+// The playbook → course pipeline end to end, with the AI answered by a local stand-in for the Gemini API:
 // extract chapters from a DOCX course book, design the course, write lesson content and build
 // assessments. The fake AI misbehaves the way real models do (skips a chapter, numbers its modules,
 // returns malformed quiz questions) so the safeguards are exercised too. No real network.
 
-// ---- fake Base44 AI -------------------------------------------------------------------------
+// ---- fake the AI provider -------------------------------------------------------------------------
 
 const calls = [];
 const behaviour = { designEmpty: false, lessonEmptyScript: false, examFails: false };
@@ -36,7 +36,17 @@ function designAnswer(prompt) {
   };
 }
 
-function lessonAnswer() {
+// A script built from the source chapter's own vocabulary (as a grounded answer would be), varied
+// so the automatic quality check sees neither repetition nor invented content.
+function groundedScript(prompt) {
+  const source = (/SOURCE CHAPTER TEXT[^"]*"""([\s\S]*?)"""/.exec(prompt) || [])[1] || '';
+  const vocab = [...new Set((source.toLowerCase().match(/[a-z]{7,}/g) || []))].slice(0, 40);
+  const v = vocab.length ? vocab : ['playbook'];
+  // Each sentence carries a short unique marker (p0, p1…), too short to count as vocabulary.
+  return Array.from({ length: 70 }, (_, i) => `Part p${i} relates ${v[i % v.length]} q${i} to ${v[(i * 7 + 3) % v.length]} r${i}.`).join(' ');
+}
+
+function lessonAnswer(prompt = '') {
   if (behaviour.lessonEmptyScript) return { video_title: 'x', teaching_script: '  ', mcqs: [], flashcards: [] };
   const mcq = (n, extra = {}) => ({
     question_text: `Question ${n}?`, options: ['Alpha', 'Beta', 'Gamma', 'Delta'], correct_answer: 'Beta',
@@ -44,10 +54,10 @@ function lessonAnswer() {
   });
   return {
     video_title: 'Learning the essentials',
-    teaching_script: 'Welcome. Today we learn the essentials, step by step.',
+    teaching_script: `Welcome. Today we learn the essentials, step by step. ${groundedScript(prompt)}`,
     summary: 'A short summary.',
     examples: ['Example one.', 'Example two.'],
-    key_points: ['- Point one', 'Point two'],
+    key_points: ['- Point one', 'Point two', 'Point three'],
     mcqs: [mcq(1), mcq(2), mcq(3), mcq(4), mcq(5, { difficulty: 'weird', cognitive_level: 'weird' }), mcq(6, { correct_answer: 'Not an option' }), mcq(7)],
     flashcards: [
       ...[1, 2, 3, 4, 5].map((n) => ({ front: `Term ${n}`, back: `Meaning ${n}.`, difficulty: 'basic', source_section: 'first' })),
@@ -81,7 +91,7 @@ function answer(prompt) {
     return { title: 'AI Engineering Course Book', author: '', version: '2.0', organization: 'Inspironics', chapters: Array.from({ length: n }, (_, index) => ({ index, summary: `Summary of chapter ${index + 1}.`, corrected_title: '' })) };
   }
   if (prompt.includes('senior instructional designer')) return designAnswer(prompt);
-  if (prompt.includes('recording a video lesson')) return lessonAnswer();
+  if (prompt.includes('recording a video lesson')) return lessonAnswer(prompt);
   if (prompt.includes('certification exam author')) return examAnswer(prompt);
   return {};
 }
@@ -91,12 +101,13 @@ const ai = http.createServer((req, res) => {
   req.on('data', (c) => { raw += c; });
   req.on('end', () => {
     const body = JSON.parse(raw || '{}');
-    const prompt = String(body.prompt || '');
+    // Gemini generateContent: the system prompt and the user prompt arrive separately.
+    const prompt = [body.systemInstruction?.parts?.[0]?.text, body.contents?.[0]?.parts?.at(-1)?.text].filter(Boolean).join('\n\n');
     calls.push(prompt);
     const out = answer(prompt);
-    if (out === null) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ message: 'model overloaded' })); }
+    if (out === null) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: { message: 'model overloaded' } })); }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify(out));
+    return res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(out) }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50 } }));
   });
 });
 await new Promise((r) => ai.listen(0, '127.0.0.1', r));
@@ -104,8 +115,8 @@ await new Promise((r) => ai.listen(0, '127.0.0.1', r));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'academy-content-'));
 Object.assign(process.env, {
   DATA_DIR: dir, SQLITE_PATH: path.join(dir, 'test.db'), DATABASE_URL: '', LOG_LEVEL: 'error',
-  AI_ENABLED: 'true', AI_PROVIDER: 'base44', BASE44_APP_ID: 'app-test', BASE44_EMAIL: '', BASE44_PASSWORD: '',
-  BASE44_SERVER_URL: `http://127.0.0.1:${ai.address().port}/`, MEDIA_PROVIDER: 'none',
+  AI_ENABLED: 'true', AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'test-key', GEMINI_MODEL: 'gemini-test',
+  GEMINI_BASE_URL: `http://127.0.0.1:${ai.address().port}/v1beta`, MEDIA_PROVIDER: 'none', ENABLE_CONTENT_CACHE: 'false',
 });
 
 const { getDb, closeDb } = await import('../src/db/index.js');
@@ -291,7 +302,7 @@ test('lesson content: script, takeaways, valid quiz questions and flashcards are
   assert.equal(saved.status, 'pending_review');
   assert.equal(saved.video_title, 'Learning the essentials');
   assert.match(saved.teaching_script, /Welcome/);
-  assert.equal(saved.key_points, '- Point one\n- Point two');
+  assert.equal(saved.key_points, '- Point one\n- Point two\n- Point three');
   assert.equal(saved.examples, '- Example one.\n- Example two.');
 
   const prompt = calls.findLast((p) => p.includes('recording a video lesson'));
@@ -312,7 +323,9 @@ test('lesson content: an empty script fails and the lesson goes back to pending'
   const [, second] = await entities.Lesson.filter({ module_id: (await firstLesson()).module_id });
   behaviour.lessonEmptyScript = true;
   try {
-    await assert.rejects(generateLessonContent({ lesson_id: second.id }), /no teaching script/);
+    // Incomplete answer (empty script, missing fields): rejected by the structure check or the
+    // script check, retried once, then failed with the reason.
+    await assert.rejects(generateLessonContent({ lesson_id: second.id }), /no teaching script|unexpected format/);
     assert.equal((await entities.Lesson.get(second.id)).status, 'pending');
   } finally {
     behaviour.lessonEmptyScript = false;

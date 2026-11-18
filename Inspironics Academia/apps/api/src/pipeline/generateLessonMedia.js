@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { aiEnabled, invokeLLM } from '../ai/claude.js';
+import { aiEnabled, invokeLLM } from '../ai/index.js';
 import { config } from '../config.js';
 import { objectKey, putObject } from '../files/objectStore.js';
 import { HttpError, badRequest, notFound } from '../lib/errors.js';
@@ -27,7 +27,6 @@ import { asHttpError, errMsg, withLessonLock } from './util.js';
 const MAX_NARRATION_CHARS = 5000;
 const CHARS_PER_SCENE = 600; // ≈ 35–45 s of speech
 const ATTEMPTS = 2;
-const VOICE = 'storm';
 const CLIP_CONCURRENCY = 3;
 
 async function withRetry(label, fn, log, attempts = ATTEMPTS) {
@@ -37,6 +36,8 @@ async function withRetry(label, fn, log, attempts = ATTEMPTS) {
       return await fn();
     } catch (e) {
       lastErr = e;
+      // A limit or exhausted credits will not pass on a retry: stop at once.
+      if (e?.code === 'usage_limit' || e?.status === 429 || e?.details?.upstreamStatus === 402) throw e;
       log.warn('pipeline.media.attempt_failed', { kind: label, attempt: i, of: attempts, error: errMsg(e) });
       if (i < attempts) await new Promise((r) => setTimeout(r, 1500 * i));
     }
@@ -210,7 +211,7 @@ async function store(lessonId, kind, res) {
 
 /** Narration for every part, joined into one MP3; returns its URL and each part's time span. */
 async function narrate(lessonId, segments, log) {
-  const results = await mapPool(segments, 4, (text, i) => withRetry(`audio ${i + 1}`, () => generateNarration({ text, voice: VOICE }), log));
+  const results = await mapPool(segments, 4, (text, i) => withRetry(`audio ${i + 1}`, () => generateNarration({ text }), log));
   const failed = results.find((r) => !r.ok);
   if (failed) throw failed.error;
   const parts = results.map((r) => r.value);

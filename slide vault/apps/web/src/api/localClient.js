@@ -1,14 +1,14 @@
 /**
- * Local backend used when no Base44 app id is configured.
+ * Local demo backend (VITE_DEMO_MODE=true, no API server).
  *
- * It implements the same surface the app consumes from the Base44 SDK
+ * It implements the same surface the app consumes from the SlidesVault API
  * (entities, auth, functions, integrations) on top of localStorage, so the
  * whole product — search, analytics, RBAC, offline downloads, the copilot —
- * is explorable without any cloud credentials. Point VITE_BASE44_APP_ID at a
- * real app and every call in this file is replaced by the real SDK.
+ * is explorable without any server. Set VITE_API_BASE_URL to use the real API.
  */
 import { buildSeedPresentations, buildSeedAnalytics, buildSeedUsers } from './seed';
 import { DOMAIN_NAMES, DOMAINS } from '@/lib/domains';
+import { localDateKey } from '@/lib/utils';
 
 const NS = 'slidesvault';
 const DEMO_PASSWORD = 'slidesvault';
@@ -307,8 +307,9 @@ async function requireAdmin() {
   return user;
 }
 
+// The demo backend runs in the browser, so "today" is the viewer's local day.
 function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey();
 }
 
 function viewsInLastDays(breakdown = [], days) {
@@ -524,7 +525,7 @@ const functions = {
         return {
           data: {
             error:
-              'Dropbox OAuth needs a deployed backend. Configure VITE_BASE44_APP_ID and deploy base44/functions/dropboxAuth, then register the redirect URI shown above.',
+              'Dropbox OAuth needs the SlidesVault API server. Set VITE_API_BASE_URL, connect Dropbox there, and register the redirect URI shown above.',
           },
         };
       case 'test':
@@ -552,6 +553,9 @@ const functions = {
       case 'revoke':
         if (config) await DropboxConfig.update(config.id, { connection_status: 'disconnected', refresh_token: '' });
         return { data: { ok: true } };
+      case 'audit':
+        // The demo keeps no audit trail; the API server does.
+        return { data: { events: [], limit: payload.limit ?? 50, offset: payload.offset ?? 0 } };
       default:
         return { data: sanitized(config) };
     }
@@ -596,6 +600,16 @@ const functions = {
         log_id: log.id,
       },
     };
+  },
+
+  /** Demo counterpart of the admin "Set temporary password" action. */
+  async setUserPassword({ user_id, id, password } = {}) {
+    await requireAdmin();
+    const target = table('User', buildSeedUsers).find((u) => u.id === (user_id ?? id));
+    if (!target) throw new Error('No such user.');
+    if (String(password ?? '').length < 10) throw new Error('A temporary password needs at least 10 characters.');
+    setCredential(target.email, password);
+    return { data: { ok: true, sessions_revoked: true } };
   },
 
   async renameUntitledPresentations() {

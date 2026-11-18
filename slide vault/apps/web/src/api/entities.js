@@ -1,4 +1,4 @@
-import { getClient } from './base44Client';
+import { getClient } from './backendClient';
 
 /** Wraps one entity so every method resolves the backend client lazily. */
 function entityProxy(name) {

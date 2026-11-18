@@ -9,8 +9,8 @@ const FEATURES = [
   },
   {
     icon: Video,
-    title: 'AI video lessons',
-    body: 'Instructor-style explainers with narration, key points, examples and flashcards.',
+    title: 'Narrated slide videos',
+    body: 'Lessons rendered as slide videos with optional voice-over, plus key points, examples and flashcards.',
     box: 'bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300',
   },
   {

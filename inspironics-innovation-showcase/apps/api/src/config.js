@@ -9,6 +9,10 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ISSUER, parseIdentityMode, parseKeys, parseTrustedSources } from './lib/apexIdentity.js'
+
+/** This application's audience in Apex identity assertions. Fixed: a different value would accept another app's assertions. */
+export const IDENTITY_AUDIENCE = 'showcase'
 
 const API_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -94,6 +98,8 @@ export function loadConfig(env = process.env) {
       sqlitePath: fromRoot(str(env.SQLITE_PATH, 'data/app.db')),
     },
     objectStoreDir: fromRoot(str(env.OBJECT_STORE_DIR, 'data/objects')),
+    /** Cached previews/thumbnails unused for this long are removed by the daily sweep (they are re-fetched on demand). */
+    objectCacheTtlHours: int(env.OBJECT_CACHE_TTL_HOURS, 336, { min: 1 }),
 
     /** 32 bytes, hex or base64. Encrypts the Dropbox refresh token at rest. */
     encryptionKey: str(env.ENCRYPTION_KEY),
@@ -106,7 +112,11 @@ export function loadConfig(env = process.env) {
       /** COOKIE_SECURE=false said out loud — the only way production runs on plain http. */
       cookieInsecureExplicit: bool(env.COOKIE_SECURE, null) === false,
       allowRegistration: bool(env.ALLOW_REGISTRATION, true),
-      guestEnabled: bool(env.GUEST_ENABLED, true),
+      /** The shared, anonymous guest identity. Off unless GUEST_ENABLED=true. */
+      guestEnabled: bool(env.GUEST_ENABLED, false),
+      /** Consecutive failed sign-ins (within the lockout window) before an account is locked for that window. */
+      loginMaxFailures: int(env.LOGIN_MAX_FAILURES, 10, { min: 1, max: 1000 }),
+      loginLockoutMinutes: 15,
       /**
        * Registration/reset codes are returned in the response instead of mailed.
        * Off unless EXPOSE_DEV_CODES=true, never in production, never for an admin's reset.
@@ -140,6 +150,9 @@ export function loadConfig(env = process.env) {
       onStartup: bool(env.SYNC_ON_STARTUP, false),
       concurrency: int(env.SYNC_CONCURRENCY, 8, { min: 1, max: 32 }),
       maxExtractMb: int(env.MAX_EXTRACT_MB, 150, { min: 1 }),
+      /** Zip-bomb guard: decompressed bytes read from one archive (.pptx) and its entry count. */
+      maxUnzipMb: int(env.MAX_UNZIP_MB, 50, { min: 1 }),
+      maxZipEntries: int(env.MAX_ZIP_ENTRIES, 5000, { min: 1 }),
       /** Lock lease; renewed by a heartbeat while a run is alive. */
       lockTtlSeconds: int(env.SYNC_LOCK_TTL_SECONDS, 120, { min: 30 }),
       seedPath: fromRoot(str(env.SEED_PATH, '../web/public/data/showcase.json')),
@@ -151,6 +164,13 @@ export function loadConfig(env = process.env) {
       claudeSkillsSince: since(env.CLAUDE_SKILLS_SINCE, '2026-10-07T00:00:00.000Z'),
     },
 
+    /**
+     * Apex identity assertion (X-Apex-Identity from the gateway). 'off' unless
+     * APEX_IDENTITY_MODE says optional|required; anything else is a startup
+     * error and runs as 'required', so a typo never switches the check off.
+     */
+    identity: identityConfig(env),
+
     ai: {
       enabled: bool(env.AI_ENABLED, false) && !!str(env.ANTHROPIC_API_KEY),
       requested: bool(env.AI_ENABLED, false),
@@ -161,6 +181,22 @@ export function loadConfig(env = process.env) {
 
   config.problems = validate(config)
   return config
+}
+
+function identityConfig(env) {
+  const parsed = parseIdentityMode(env.APEX_IDENTITY_MODE, 'off')
+  const sources = parseTrustedSources(str(env.APEX_IDENTITY_TRUSTED_SOURCES, 'loopback'))
+  return {
+    mode: parsed ?? 'required',
+    modeInvalid: parsed === null,
+    issuer: str(env.APEX_IDENTITY_ISSUER, ISSUER),
+    audience: IDENTITY_AUDIENCE,
+    audienceMismatch: !!str(env.APEX_IDENTITY_AUDIENCE) && str(env.APEX_IDENTITY_AUDIENCE) !== IDENTITY_AUDIENCE,
+    keys: parseKeys(str(env.APEX_IDENTITY_KEYS)),
+    /** The kid this app signs its account-ownership proofs with (APEX_IDENTITY_KID); else the last key listed. */
+    kid: str(env.APEX_IDENTITY_KID),
+    trustedSources: sources,
+  }
 }
 
 /** Dropbox paths are '' for the root, otherwise '/lower/or/Mixed' with no trailing slash. */
@@ -184,5 +220,10 @@ function validate(c) {
   need(c.dropbox.appKey && c.dropbox.appSecret, 'warn', 'DROPBOX_APP_KEY / DROPBOX_APP_SECRET are not set — Dropbox cannot be connected.')
   need(!c.ai.requested || c.ai.apiKey, 'warn', 'AI_ENABLED is true but ANTHROPIC_API_KEY is empty — AI stays off.')
   need(!c.isProd || c.publicUrl.startsWith('https://') || c.publicUrl.includes('localhost'), 'warn', 'PUBLIC_API_URL is not https.')
+  const id = c.identity
+  need(!id.modeInvalid, 'error', 'APEX_IDENTITY_MODE must be off, optional or required — running as required until it is fixed.')
+  need(id.mode === 'off' || id.keys.size > 0, 'error', 'APEX_IDENTITY_MODE is on but APEX_IDENTITY_KEYS holds no usable key — every assertion will be refused.')
+  need(!id.audienceMismatch, 'error', `APEX_IDENTITY_AUDIENCE must be "${IDENTITY_AUDIENCE}" for this app.`)
+  need(!id.trustedSources.invalid.length, 'error', `APEX_IDENTITY_TRUSTED_SOURCES has entries that are not an IP, a CIDR or "loopback": ${id.trustedSources.invalid.join(', ')}`)
   return problems
 }

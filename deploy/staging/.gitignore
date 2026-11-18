@@ -1,0 +1,4 @@
+# Real staging secrets, written by generate-secrets.mjs. Never committed.
+.env.staging
+.env.staging.*
+!.env.staging.example

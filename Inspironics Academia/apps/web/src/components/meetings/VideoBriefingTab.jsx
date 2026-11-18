@@ -7,6 +7,7 @@ import EmptyState from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
 import { parseScenes } from '@/components/lesson/scenes';
 import SpokenBriefingPlayer from '@/components/meetings/SpokenBriefingPlayer';
+import RenderedVideoPanel from '@/components/studio/RenderedVideoPanel';
 import { useInvalidateMeetings } from '@/lib/meetings';
 
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -17,7 +18,8 @@ const when = (iso) => {
 
 // The meeting's video briefing: an animated teacher walks the team through the purpose, what was
 // discussed and decided, the requirements and — above all — who has to do what by when, with slides
-// and subtitles in step with the narration. Admins generate (and regenerate) it with Base44 media.
+// and subtitles in step with the narration. Admins generate (and regenerate) it with the configured
+// AI and voice providers, and can render it as an MP4 to download or share.
 export default function VideoBriefingTab({ meeting, isAdmin }) {
   const refresh = useInvalidateMeetings();
   const [busy, setBusy] = useState(false);
@@ -89,9 +91,18 @@ export default function VideoBriefingTab({ meeting, isAdmin }) {
         {!recorded && isAdmin && (
           <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>No recorded voice-over{meeting.briefing_error ? ` — ${meeting.briefing_error}` : ''}. The browser reads the briefing aloud instead; regenerate once media credits are available for the Base44 voice.</span>
+            <span>No recorded voice-over{meeting.briefing_error ? ` — ${meeting.briefing_error}` : ''}. The browser reads the briefing aloud instead; regenerate once a voice provider is configured (Rendering the MP4 records the voice-over scene by scene).</span>
           </p>
         )}
+        <RenderedVideoPanel
+          target={{ type: 'meeting', id: meeting.id }}
+          fn="renderMeetingVideo"
+          payload={{ meeting_id: meeting.id }}
+          title={`${meeting.title} - briefing`}
+          isAdmin={isAdmin}
+          onRendered={refresh}
+          video={{ url: meeting.briefing_video_url, thumbnail: meeting.briefing_thumbnail_url, vtt: meeting.briefing_subtitles_url, srt: meeting.briefing_srt_url, seconds: meeting.briefing_video_seconds, renderedAt: meeting.briefing_video_rendered_at }}
+        />
         <p className="text-xs text-muted-foreground">
           {meeting.briefing_generated_at && <>Generated {when(meeting.briefing_generated_at)}</>}
           {meeting.briefing_method === 'notes' && ' · written from the meeting notes'}

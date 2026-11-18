@@ -12,7 +12,7 @@ import { requestMetrics } from './lib/metrics.js'
 import { loadSession } from './middleware/auth.js'
 import { cors, originGuard, rateLimit, securityHeaders } from './middleware/security.js'
 import { adminRoutes } from './routes/admin.js'
-import { authRoutes } from './routes/auth.js'
+import { apexLinkRoutes, authRoutes, createLoginGuards } from './routes/auth.js'
 import { dropboxRoutes } from './routes/dropbox.js'
 import { entityRoutes } from './routes/entities.js'
 
@@ -30,7 +30,7 @@ export function createApp(deps) {
   app.use(cookieParser())
   app.use('/api', originGuard(config))
   app.use('/api', rateLimit({ windowMs: 60_000, max: config.isProd ? 1200 : 20_000, bucket: 'api', metrics }))
-  app.use('/api', loadSession({ config, repos }))
+  app.use('/api', loadSession({ config, repos, log }))
 
   app.get('/api/health', async (req, res) => {
     let db = 'ok'
@@ -42,7 +42,10 @@ export function createApp(deps) {
     res.status(db === 'ok' ? 200 : 503).json({ ok: db === 'ok', db, time: new Date().toISOString() })
   })
 
-  app.use('/api/auth', authRoutes(deps))
+  // one sign-in limiter and lockout for the password sign-in and the Apex ownership check
+  const loginGuards = createLoginGuards(deps)
+  app.use('/api/auth', authRoutes({ ...deps, loginGuards }))
+  app.use('/api/apex', apexLinkRoutes({ ...deps, loginGuards }))
   app.use('/api/dropbox', dropboxRoutes(deps))
   app.use('/api/entities', entityRoutes(deps))
   app.use('/api/admin', adminRoutes(deps))

@@ -32,6 +32,11 @@ export async function destroySession(req, res) {
 export async function destroyUserSessions(userId, exceptTokenHash) {
   if (exceptTokenHash) await db().run('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', [userId, exceptTokenHash]);
   else await db().run('DELETE FROM sessions WHERE user_id = ?', [userId]);
+  // Apex gateway sessions issued before now are revoked at their next resolve (security review L1).
+  await db().run(
+    'INSERT INTO user_session_epochs (user_id, valid_after) VALUES (?, ?) ON CONFLICT (user_id) DO UPDATE SET valid_after = excluded.valid_after',
+    [userId, new Date().toISOString()],
+  );
 }
 
 export async function purgeExpiredSessions() {

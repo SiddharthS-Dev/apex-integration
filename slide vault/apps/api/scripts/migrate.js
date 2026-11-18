@@ -8,10 +8,21 @@
  */
 import { config, validateConfig } from '../src/config/index.js';
 import { createDatabase } from '../src/db/index.js';
+import { rollbackMigration } from '../src/db/migrations.js';
 import { createLogger } from '../src/util/logger.js';
+import { defaultDbRefusal } from '../src/db/safety.js';
 
 const cfg = config();
 const logger = createLogger({ level: cfg.logLevel });
+
+// Say what is about to be migrated, and refuse the real database unless it is asked for by name.
+const sqlite = cfg.db.driver !== 'postgres';
+console.log(sqlite ? `Migration target: sqlite ${cfg.db.file}` : 'Migration target: postgres (DATABASE_URL)');
+const refusal = sqlite ? defaultDbRefusal(cfg.db.file) : null;
+if (refusal) {
+  console.error(refusal);
+  process.exit(2);
+}
 
 const { errors } = validateConfig(cfg);
 if (errors.length) {
@@ -21,4 +32,12 @@ if (errors.length) {
 
 const db = await createDatabase(cfg, logger);
 logger.info('Migrations applied', { driver: cfg.db.driver });
+
+// npm run migrate -- --rollback 005_core_user_id   reverts the latest migration (see docs/SCHEMA.md)
+const at = process.argv.indexOf('--rollback');
+if (at > 0) {
+  const id = process.argv[at + 1];
+  const done = await rollbackMigration(db, id, logger);
+  logger.info(done ? 'Migration rolled back' : 'Migration was not applied; nothing to roll back', { migration: id });
+}
 await db.close();

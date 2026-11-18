@@ -272,3 +272,48 @@ test('analytics are for administrators only', async () => {
     assert.ok(Array.isArray((await res.json()).logins))
   })
 })
+
+test('Google sign-in drops the password someone set on the unverified account first (pre-hijack)', async () => {
+  const h = await createHarness({ env: { EXPOSE_DEV_CODES: 'true' } })
+  try {
+    const victim = 'demo.user@inspironics.net' // the identity the development-only Google demo returns
+    const attacker = h.client()
+    assert.equal((await attacker.json('POST', '/api/auth/register', { email: victim, password: 'attacker-pw1', name: 'x' })).status, 201)
+
+    const google = await h.client().json('POST', '/api/auth/google', { demo: true })
+    assert.equal(google.status, 200)
+    assert.equal(google.body.session.user.email, victim)
+
+    const login = await h.client().json('POST', '/api/auth/login', { email: victim, password: 'attacker-pw1' })
+    assert.equal(login.status, 401, 'the pre-set password no longer signs in')
+    const stored = await h.services.repos.users.findByEmail(victim)
+    assert.equal(stored.verified ? true : false, true)
+    assert.equal(stored.password_hash ?? null, null)
+  } finally {
+    await h.close()
+  }
+})
+
+test('Google sign-in keeps the password of an account that was already verified', async () => {
+  const h = await createHarness()
+  try {
+    const owner = await h.signIn('demo.user@inspironics.net')
+    assert.ok(owner.user.verified)
+    assert.equal((await h.client().json('POST', '/api/auth/google', { demo: true })).status, 200)
+    const login = await h.client().json('POST', '/api/auth/login', { email: 'demo.user@inspironics.net', password: 'Passw0rd1' })
+    assert.equal(login.status, 200)
+  } finally {
+    await h.close()
+  }
+})
+
+test('no public endpoint reveals whether a code is pending for an email', async () => {
+  const h = await createHarness({ env: { EXPOSE_DEV_CODES: 'true' } })
+  try {
+    await h.client().json('POST', '/api/auth/register', { email: 'someone@x.io', password: 'abcdefg1', name: 'S' })
+    const res = await h.client().get('/api/auth/pending?email=someone%40x.io')
+    assert.equal(res.status, 404)
+  } finally {
+    await h.close()
+  }
+})

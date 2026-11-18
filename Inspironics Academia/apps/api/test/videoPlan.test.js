@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import {
   LAYOUT_NAMES, STORYBOARD_SCHEMA, VIDEO_STRUCTURES, codeIn, normalizeSlide, storyboardPrompt, structureFor, verbatimIn,
 } from '../src/pipeline/videoPlan.js';
-import { strictSchema } from '../src/ai/claude.js';
+import { requireAllFields } from '../src/ai/schema.js';
 
 // A playbook chapter in the shape the extractor stores: headings, rules, a procedure, a table, config.
 const CHAPTER = `3.1 Severity Levels
@@ -107,9 +107,9 @@ test('the slide prompt carries the chapter, the lesson structure and one part pe
 });
 
 test('the storyboard schema is valid for structured outputs', () => {
-  const strict = strictSchema(STORYBOARD_SCHEMA);
+  const strict = requireAllFields(STORYBOARD_SCHEMA);
   const scene = strict.properties.scenes.items;
-  assert.equal(scene.additionalProperties, false);
-  assert.equal(scene.properties.table.additionalProperties, false);
+  assert.deepEqual(scene.required, ['title', 'layout', 'source_ref', 'points'], 'its own required list is kept');
+  assert.ok(Array.isArray(scene.properties.table.required));
   assert.deepEqual(scene.properties.layout.enum, LAYOUT_NAMES);
 });

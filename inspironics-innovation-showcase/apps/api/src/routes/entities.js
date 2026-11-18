@@ -5,7 +5,7 @@
  *   GET   /plates/count         { total } — public, for the Apex dashboard's tile
  *   GET   /plates/:id
  *   POST  /plates/:id/events    view / download / favourite / offline (guests: view only)
- *   POST  /plates/:id/describe  write a synced plate's content with the model, once
+ *   POST  /plates/:id/describe  write a synced plate's content with the model, once (members only)
  *   PATCH /plates/:id           admin correction of title or classification
  *   GET   /analytics            admin dashboard aggregates
  *   GET   /sync-logs            admin
@@ -14,7 +14,7 @@
 import express from 'express'
 import { CATEGORY_NAMES, PRODUCTS, ROLES, TECHS } from '@inspironics/shared'
 import { HttpError, badRequest, intParam, notFound, route } from '../lib/http.js'
-import { requireAdmin, requireAuth } from '../middleware/auth.js'
+import { requireAdmin, requireAuth, requireMember } from '../middleware/auth.js'
 import { rateLimit } from '../middleware/security.js'
 import { EVENT_KINDS, toPlate } from '../repos/files.js'
 
@@ -98,7 +98,8 @@ export function entityRoutes({ config, repos, sync, metrics }) {
 
   r.post(
     '/plates/:id/describe',
-    requireAuth,
+    // calls the paid model: a signed-in person only, never the shared guest identity
+    requireMember,
     describeLimiter,
     route(async (req, res) => {
       const row = await repos.files.get(req.params.id)

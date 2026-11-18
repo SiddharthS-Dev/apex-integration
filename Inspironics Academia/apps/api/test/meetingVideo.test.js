@@ -6,8 +6,9 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 
 // The meeting video briefing: the AI writes a teacher-style deck from the meeting notes, every open
-// action item is guaranteed to be in it, each scene is voiced (Base44 GenerateSpeech) and the parts
-// are joined into one narration track with slides and subtitles timed to it. Base44 is a local fake.
+// action item is guaranteed to be in it, each scene is voiced (Google Cloud TTS) and the parts are
+// joined into one narration track with slides and subtitles timed to it. The AI (Gemini API) is a local
+// fake and Google TTS is mocked at fetch; nothing is paid for.
 
 const fakeMp3 = (frames) => Buffer.concat(Array.from({ length: frames }, () => { const f = Buffer.alloc(417); f[0] = 0xff; f[1] = 0xfb; f[2] = 0x90; return f; }));
 
@@ -26,34 +27,36 @@ function deck() {
   return { scenes };
 }
 
-const base44 = http.createServer((req, res) => {
+const aiServer = http.createServer((req, res) => {
   let raw = '';
   req.on('data', (c) => { raw += c; });
   req.on('end', () => {
     const body = JSON.parse(raw || '{}');
     const send = (status, data) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
-    if (req.url.endsWith('/InvokeLLM')) { prompts.push(body.prompt); return send(200, deck()); }
-    if (req.url.endsWith('/GenerateSpeech')) {
-      if (behaviour.speechFails) return send(500, { message: 'speech engine down' });
-      spoken.push(body.text);
-      return send(200, { url: `https://media.base44.com/speech-${spoken.length}.mp3` });
+    if (req.url.endsWith(':generateContent')) {
+      prompts.push(body.contents[0].parts.at(-1).text);
+      return send(200, { candidates: [{ content: { parts: [{ text: JSON.stringify(deck()) }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 80 } });
     }
     return send(404, {});
   });
 });
-await new Promise((r) => base44.listen(0, '127.0.0.1', r));
+await new Promise((r) => aiServer.listen(0, '127.0.0.1', r));
 
-// Base44 answers with a public media URL; the provider downloads it.
+// Google Cloud Text-to-Speech, mocked at fetch: base64 MP3 in audioContent.
 const realFetch = globalThis.fetch;
-globalThis.fetch = async (url, init) => (String(url).startsWith('https://media.base44.com/')
-  ? new Response(fakeMp3(40), { status: 200, headers: { 'Content-Type': 'audio/mpeg' } })
-  : realFetch(url, init));
+globalThis.fetch = async (url, init) => {
+  if (String(url) !== 'https://texttospeech.googleapis.com/v1/text:synthesize') return realFetch(url, init);
+  if (behaviour.speechFails) return new Response(JSON.stringify({ error: { message: 'speech engine down' } }), { status: 400 });
+  spoken.push(JSON.parse(init.body).input.text);
+  return new Response(JSON.stringify({ audioContent: fakeMp3(40).toString('base64') }), { status: 200 });
+};
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'academy-meeting-video-'));
 Object.assign(process.env, {
   DATA_DIR: dir, SQLITE_PATH: path.join(dir, 'test.db'), DATABASE_URL: '', LOG_LEVEL: 'error',
-  AI_ENABLED: 'true', AI_PROVIDER: 'base44', MEDIA_PROVIDER: 'base44', BASE44_APP_ID: 'app-test', BASE44_EMAIL: '', BASE44_PASSWORD: '',
-  BASE44_SERVER_URL: `http://127.0.0.1:${base44.address().port}/`,
+  AI_ENABLED: 'true', AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'test-key', GEMINI_MODEL: 'gemini-test',
+  GEMINI_BASE_URL: `http://127.0.0.1:${aiServer.address().port}/v1beta`, ENABLE_CONTENT_CACHE: 'false',
+  MEDIA_PROVIDER: 'google', GOOGLE_TTS_API_KEY: 'test-key', ENABLE_AUDIO_CACHE: 'false',
 });
 
 const { getDb, closeDb } = await import('../src/db/index.js');
@@ -113,7 +116,7 @@ before(async () => {
 
 after(async () => {
   globalThis.fetch = realFetch;
-  base44.close();
+  aiServer.close();
   server?.close();
   await closeDb();
   fs.rmSync(dir, { recursive: true, force: true });
@@ -184,18 +187,18 @@ test('an unusable AI answer falls back to the notes-based briefing', async () =>
   }
 });
 
-test('without a recorded voice (e.g. no Base44 credits) the briefing is still made, for the browser to read aloud', async () => {
+test('without a recorded voice (e.g. the voice provider fails) the briefing is still made, for the browser to read aloud', async () => {
   behaviour.speechFails = true;
   try {
     const out = await generateMeetingVideo({ meeting_id: meeting.id });
     assert.equal(out.voice, 'browser');
-    assert.match(out.voice_error, /GenerateSpeech/);
+    assert.match(out.voice_error, /Google Text-to-Speech error \(400\): speech engine down/);
     assert.equal(out.audio_url, null);
     const m = await entities.Meeting.get(meeting.id);
     assert.equal(m.briefing_status, 'ready');
     assert.equal(m.briefing_voice, 'browser');
     assert.equal(m.briefing_audio_url, '');
-    assert.match(m.briefing_error, /GenerateSpeech/, 'the reason is kept as a note');
+    assert.match(m.briefing_error, /speech engine down/, 'the reason is kept as a note');
     const scenes = JSON.parse(m.briefing_scenes);
     assert.equal(scenes[0].start, 0);
     for (let i = 1; i < scenes.length; i++) assert.equal(scenes[i].start, scenes[i - 1].end, 'estimated timings follow each other');

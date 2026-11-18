@@ -80,6 +80,29 @@ docs/              architecture, security, API, schema, deployment, troubleshoot
 - **Nothing is hardcoded.** The account comes from OAuth, the folder from an
   admin's choice, the credentials from the environment.
 
+## Apex identity assertion (R1)
+
+Behind the Apex gateway the API can take its user from the gateway's signed
+`X-Apex-Identity` header (`APEX_IDENTITY_MODE`, set by `apex/run.mjs`; default
+`off`, which changes nothing):
+
+- `optional` — a valid assertion is that user; a present-but-invalid one is
+  `401`; no header falls back to the session cookie.
+- `required` — every `/api` route except `/api/health` and the routes public
+  today (`/api/auth/config`, `/api/auth/me`, `/api/auth/logout`,
+  `/api/dropbox/oauth/callback`) needs a valid assertion; `/api/auth/login`,
+  `/register`, `/google/start` and `/google/callback` answer `403`.
+
+`src/http/apexIdentity.js` is a byte-for-byte copy of the gateway's
+`apex/identity.mjs` (a test fails if they drift). It verifies format, key id,
+signature, issuer, audience `slidesvault`, expiry, and that the TCP peer is in
+`APEX_IDENTITY_TRUSTED_SOURCES` (default `loopback`). The local account is the
+linked one (`app_user_id`), else the one with that `core_user_id`, else a new
+passwordless one — never an existing account matched by email. Roles apply per
+request and are never stored: `platform_admin` or `app_admin` for `slidesvault`
+is `admin`, any other role `user`, none `403`. Schema: migration
+`005_core_user_id` ([SCHEMA.md](docs/SCHEMA.md)).
+
 ## Tests
 
 ```bash

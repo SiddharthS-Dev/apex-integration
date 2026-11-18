@@ -29,8 +29,18 @@ export class SyncScheduler {
   }
 
   start() {
+    // Retention runs daily whether or not scheduled sync is on: sync logs, audit rows, expired OAuth
+    // state and cached previews all have a bounded lifetime (spec §78), and a library synced by hand
+    // must not grow its preview cache forever.
+    if (!this.#retention) {
+      this.#retention = setInterval(() => {
+        this.retention?.().catch?.(() => {});
+      }, 24 * 3600_000);
+      this.#retention.unref?.();
+    }
+
     if (!this.enabled) {
-      this.logger?.info?.('Scheduled sync is disabled (DROPBOX_SYNC_ENABLED=false).');
+      this.logger?.info?.('Scheduled sync is disabled (DROPBOX_SYNC_ENABLED=false); daily retention still runs.');
       return this;
     }
     if (this.#timer) return this;
@@ -42,13 +52,6 @@ export class SyncScheduler {
     // Never hold the process open for a timer — a shutdown should not wait up
     // to 30 minutes for the next tick.
     this.#timer.unref?.();
-
-    // Retention runs daily: sync logs, audit rows, expired OAuth state and
-    // cached previews all have a bounded lifetime (spec §78).
-    this.#retention = setInterval(() => {
-      this.retention?.().catch?.(() => {});
-    }, 24 * 3600_000);
-    this.#retention.unref?.();
 
     this.logger?.info?.('Scheduled sync started', { intervalMinutes: this.config.sync.intervalMinutes });
 

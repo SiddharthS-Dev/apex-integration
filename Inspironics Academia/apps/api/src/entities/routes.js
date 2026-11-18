@@ -1,5 +1,5 @@
 import express from 'express';
-import { AUDIENCE_KEYS, ENTITIES, UNCLASSIFIED, matchesQuery, onCoursePublished, ruleFor, ruleToQuery } from '@academy/shared';
+import { AUDIENCE_KEYS, ENTITIES, UNCLASSIFIED, matchesQuery, onCoursePublished, ruleFor, ruleToQuery, withoutAnswers } from '@academy/shared';
 import { asyncHandler, badRequest, forbidden, notFound } from '../lib/errors.js';
 import * as repo from '../repo/entities.js';
 import { deleteUser, findUserById, listUsers, publicUser, updateUser } from '../repo/users.js';
@@ -10,6 +10,7 @@ import { store } from '../repo/store.js';
 import { ignoreDropboxIds, removePlaybooks } from '../pipeline/deletePlaybooks.js';
 import { classificationPatch, propagateCategory } from '../pipeline/classifyPlaybooks.js';
 import { createScope } from './categoryScope.js';
+import { auditUserAdmin, setUserRole } from '../core/index.js';
 
 // Generic entity REST API with row-level security enforced server-side from the shared RLS rules.
 //   GET    /api/entities/:name?q=<json>&sort=&limit=&skip=
@@ -85,16 +86,25 @@ userRouter.patch('/:id', asyncHandler(async (req, res) => {
     if (!AUDIENCE_KEYS.includes(req.body.audience)) throw badRequest(`audience must be one of: ${AUDIENCE_KEYS.join(', ')}`);
     patch.audience = req.body.audience;
   }
-  const user = await updateUser(req.params.id, patch);
+  if (!(await findUserById(req.params.id))) throw notFound();
+  // users.role and the Core platform_admin assignment change together, in one transaction (R1 §1).
+  if (patch.role !== undefined) await setUserRole(req.params.id, patch.role, { actorUserId: req.user.id, ip: req.ip });
+  const { role: _role, ...rest } = patch;
+  const user = await updateUser(req.params.id, rest);
   if (!user) throw notFound();
   if (patch.disabled) await destroyUserSessions(user.id);
+  if (patch.disabled !== undefined) {
+    await auditUserAdmin(patch.disabled ? 'user.disabled' : 'user.enabled', { actorUserId: req.user.id, targetId: user.id, ip: req.ip });
+  }
   res.json(publicUser(user));
 }));
 
 userRouter.delete('/:id', asyncHandler(async (req, res) => {
   if (req.user?.role !== 'admin') throw forbidden();
   if (req.params.id === req.user.id) throw badRequest('You cannot delete your own account');
-  await deleteUser(req.params.id);
+  const existed = await findUserById(req.params.id);
+  await deleteUser(req.params.id); // Core rows owned by the user go with it (ON DELETE CASCADE)
+  if (existed) await auditUserAdmin('user.deleted', { actorUserId: req.user.id, targetId: req.params.id, ip: req.ip });
   res.json({ success: true });
 }));
 
@@ -112,7 +122,8 @@ router.get('/:name', asyncHandler(async (req, res) => {
   const query = parseQuery(req.query.q);
   const parts = [query, ...(rule === true ? [] : [rule]), ...(scope ? [scope] : [])];
   const combined = parts.length === 1 ? query : { $and: parts };
-  res.json(await repo.list(name, { query: combined, sort: req.query.sort, limit: req.query.limit, skip: req.query.skip }));
+  const rows = await repo.list(name, { query: combined, sort: req.query.sort, limit: req.query.limit, skip: req.query.skip });
+  res.json(rows.map(forReader(name, req.user)));
 }));
 
 router.get('/:name/:id', asyncHandler(async (req, res) => {
@@ -121,14 +132,36 @@ router.get('/:name/:id', asyncHandler(async (req, res) => {
   if (!record || !allowed(record, access(name, 'read', req.user))) throw notFound(`${name} not found`);
   const scope = await createScope(req.user)(name);
   if (scope && !matchesQuery(record, scope)) throw notFound(`${name} not found`);
-  res.json(record);
+  res.json(forReader(name, req.user)(record));
 }));
+
+// Results only the server may record: the final test is graded by submitFinalTest, which writes the
+// final attempt and the progress fields below. A learner may write the rest of their own progress
+// (lessons done, chapter tests), but not claim a final-test pass the admin dashboards would trust.
+// (Quiz attempts themselves are written only by the server: QuizAttempt create/update/delete are
+// admin-only in the entity rules; submitQuiz and submitFinalTest record them.)
+// field -> how its value compares (writing back the unchanged value, as a full-record save does, is fine)
+const setOf = (v) => JSON.stringify([...new Set(Array.isArray(v) ? v.map(String) : [])].sort());
+const SERVER_OWNED = { CourseProgress: { final_score: (v) => Number(v) || 0, final_passed: (v) => !!v, completed_chapters: setOf } };
+function guardServerOwned(name, data, user, existing = null) {
+  if (user?.role === 'admin' || !data || typeof data !== 'object') return;
+  for (const [field, norm] of Object.entries(SERVER_OWNED[name] || {})) {
+    if (field in data && norm(data[field]) !== norm(existing?.[field])) {
+      throw forbidden(`${field} is recorded by the server when a test is submitted`);
+    }
+  }
+}
+
+// Learners receive questions without their answers; the answers come back in the review of a
+// submitted attempt (submitQuiz, submitFinalTest). Admins see everything.
+const forReader = (name, user) => (record) => (name === 'Question' && user?.role !== 'admin' ? withoutAnswers(record) : record);
 
 async function createOne(name, body, user) {
   const rule = access(name, 'create', user);
   if (rule === false) throw forbidden(`Not allowed to create ${name}`);
   const data = repo.sanitize(name, body);
   if (!allowed(data, rule)) throw forbidden(`Not allowed to create this ${name}`);
+  guardServerOwned(name, data, user);
   return data;
 }
 
@@ -165,6 +198,7 @@ router.patch('/:name/:id', asyncHandler(async (req, res) => {
   if (!existing || !allowed(existing, access(name, 'read', req.user))) throw notFound(`${name} not found`);
   if (!allowed(existing, rule)) throw forbidden(`Not allowed to update this ${name}`);
   const body = await beforeUpdate(name, existing, req.body, req.user);
+  guardServerOwned(name, repo.sanitize(name, body, { partial: true }), req.user, existing);
   const merged = { ...existing, ...repo.sanitize(name, body, { partial: true }) };
   if (!allowed(merged, rule)) throw forbidden('Update would move the record outside your access');
   const updated = await repo.update(name, id, body);

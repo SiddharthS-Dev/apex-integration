@@ -2,6 +2,7 @@ import { DEFAULT_CATEGORIES, SYNC_DEFAULT_CATEGORY } from '@academy/shared';
 import { log } from '../lib/logger.js';
 import { create, list } from '../repo/entities.js';
 import { quote, tableName } from './schema.js';
+import { coreIdentityBackfill } from '../core/index.js';
 
 // Data migrations: one-off changes to existing records, run after the entity tables are reconciled
 // and recorded in schema_migrations like the core ones. They only ever fill in what is missing —
@@ -27,6 +28,14 @@ const DATA_MIGRATIONS = [
       return { playbooks: playbooks.changes, courses: courses.changes };
     },
   },
+  {
+    // R1 (ADR 0004): the Inspironics organisation, and for every existing user an Inspironics membership
+    // with a staff (employee/leadership) or intern role, plus platform_admin (role admin) or learner
+    // (role user). Inserts only into the 008_core_identity tables; users is read, never written. One
+    // transaction; one audit event per user. Idempotent: nothing is inserted that already exists.
+    id: 'core_identity_backfill',
+    run: (db) => coreIdentityBackfill(db),
+  },
 ];
 
 /** Creates the standard categories that are missing (an admin may have edited the others). */
@@ -39,11 +48,11 @@ async function seedCategories() {
   }
 }
 
-export async function runDataMigrations(db) {
+export async function runDataMigrations(db, { exclude = new Set() } = {}) {
   await seedCategories();
   const applied = new Set((await db.query('SELECT id FROM schema_migrations')).map((r) => r.id));
   for (const m of DATA_MIGRATIONS) {
-    if (applied.has(m.id)) continue;
+    if (applied.has(m.id) || exclude.has(m.id)) continue;
     const result = await m.run(db);
     await db.run('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)', [m.id, new Date().toISOString()]);
     log.info('db.data_migration_applied', { id: m.id, ...result });

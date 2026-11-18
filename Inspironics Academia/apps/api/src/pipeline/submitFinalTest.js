@@ -1,4 +1,4 @@
-import { canSeeCategory, gradeFinalTest, issueCertificate, loadFinalTestPool } from '@academy/shared';
+import { canSeeCategory, gradeFinalTest, issueCertificate, loadFinalTestPool, reviewAnswers } from '@academy/shared';
 import { withLock } from '../db/locks.js';
 import { badRequest, conflict, notFound, unauthorized } from '../lib/errors.js';
 import { entities } from '../repo/entities.js';
@@ -38,7 +38,8 @@ export default async function submitFinalTest(payload = {}, ctx = {}) {
     { ttlMs: 60_000 },
   );
   if (!acquired) throw conflict('Your previous submission is still being saved — try again in a moment.');
-  return saved;
+  // The review (correct answers, explanations) is shown only after the attempt is recorded.
+  return { ...saved, answers: reviewAnswers(pool.questions, payload.answers) };
 }
 
 async function record(user, course, assessment, result) {

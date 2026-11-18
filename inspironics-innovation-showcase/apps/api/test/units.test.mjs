@@ -165,3 +165,33 @@ test("seed metadata needs the whole filename, and a camera-style name also needs
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('object cache: a failed write leaves no partial file, and the retention sweep removes only stale entries', async () => {
+  const { createObjectStore } = await import('../src/storage/objectStore.js')
+  const { existsSync, mkdirSync, readFileSync, readdirSync, utimesSync } = await import('node:fs')
+  const { createHash } = await import('node:crypto')
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'showcase-objects-'))
+  try {
+    const store = createObjectStore(dir)
+    await store.put('id:a', 'r1', 'thumb', Buffer.from('old'), 'image/jpeg')
+    await store.put('id:a', 'r2', 'thumb', Buffer.from('new'), 'image/jpeg')
+    // Age the first revision's object past the TTL, as if no one had asked for it in a month.
+    const old = new Date(Date.now() - 30 * 24 * 3600_000)
+    for (const f of readdirSync(dir).flatMap((s) => readdirSync(path.join(dir, s)).map((n) => path.join(dir, s, n)))) {
+      if (f.endsWith('.bin') && readFileSync(f, 'utf8') === 'old') utimesSync(f, old, old)
+    }
+    assert.equal(await store.purgeOlderThan(24 * 14), 1)
+    assert.equal(await store.get('id:a', 'r1', 'thumb'), null)
+    assert.equal((await store.get('id:a', 'r2', 'thumb')).data.toString(), 'new')
+    assert.equal(readdirSync(dir).flatMap((s) => readdirSync(path.join(dir, s))).filter((n) => n.endsWith('.json')).length, 1, 'metadata goes with its object')
+
+    // A write that fails (the target is a directory, so rename cannot replace it) leaves no .tmp behind.
+    const h = createHash('sha256').update('id:b\0r1\0thumb').digest('hex')
+    mkdirSync(path.join(dir, h.slice(0, 2), `${h}.bin`), { recursive: true })
+    await assert.rejects(store.put('id:b', 'r1', 'thumb', Buffer.from('x'), 'image/jpeg'))
+    assert.equal(readdirSync(path.join(dir, h.slice(0, 2))).filter((n) => n.endsWith('.tmp')).length, 0)
+    assert.ok(existsSync(dir))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Loader2, Mail, Lock, User as UserIcon, KeyRound } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
-import { isLocalMode } from '@/api/base44Client';
+import { isLocalMode } from '@/api/backendClient';
 import { Button, Input, Label } from '@/components/ui';
 import { AuthShell, FormError, GoogleButton } from '@/pages/Login';
 

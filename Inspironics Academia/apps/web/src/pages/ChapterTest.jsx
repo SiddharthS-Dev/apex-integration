@@ -11,7 +11,6 @@ import QuizRunner from '@/components/QuizRunner';
 import TestIntroCard from '@/components/quiz/TestIntroCard';
 import TestPageHeader from '@/components/quiz/TestPageHeader';
 import loadTestQuestions from '@/components/quiz/loadTestQuestions';
-import upsertProgress from '@/components/quiz/upsertProgress';
 
 async function loadChapterTest(moduleId) {
   const module = await api.entities.Module.get(moduleId);
@@ -53,24 +52,12 @@ export default function ChapterTest() {
   const passingScore = assessment?.passing_score ?? 70;
   const duration = assessment?.duration_minutes || undefined;
 
-  const handleComplete = async (r) => {
-    try {
-      await api.entities.QuizAttempt.create({
-        user_id: user.id, course_id: course.id, module_id: module.id, assessment_id: assessment?.id,
-        type: 'chapter', score: r.score, total: r.total, percentage: r.percentage, passed: r.passed,
-      });
-      if (r.passed) {
-        await upsertProgress({
-          userId: user.id, courseId: course.id,
-          patch: (p) => ({ completed_chapters: Array.from(new Set([...(p?.completed_chapters || []), module.id])) }),
-        });
-        toast.success('Chapter test passed!');
-      }
-      queryClient.invalidateQueries({ queryKey: ['progress'] });
-      queryClient.invalidateQueries({ queryKey: ['attempts'] });
-    } catch (e) {
-      toast.error(e?.message || 'Could not save your attempt');
-    }
+  // The server grades the answers, records the attempt and, on a pass, marks the chapter complete.
+  const grade = async (answers) => (await api.functions.invoke('submitQuiz', { type: 'chapter', module_id: module.id, answers })).data;
+  const handleComplete = (r) => {
+    if (r.passed) toast.success('Chapter test passed!');
+    queryClient.invalidateQueries({ queryKey: ['progress'] });
+    queryClient.invalidateQueries({ queryKey: ['attempts'] });
   };
 
   return (
@@ -79,7 +66,7 @@ export default function ChapterTest() {
         <TestPageHeader courseId={course.id} courseTitle={course.title} kicker="Chapter test" title={module.title} />
         {started ? (
           <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-            <QuizRunner questions={questions} title={assessment?.title || module.title} passingScore={passingScore} durationMinutes={duration} onComplete={handleComplete} />
+            <QuizRunner questions={questions} title={assessment?.title || module.title} passingScore={passingScore} durationMinutes={duration} grade={grade} onComplete={handleComplete} />
           </div>
         ) : (
           <TestIntroCard

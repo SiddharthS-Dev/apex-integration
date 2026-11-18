@@ -86,6 +86,53 @@ export function createHttpDriver() {
       playbookContentUrl: (playbookId, { download = false } = {}) => `${BASE}/api/playbooks/${playbookId}/content${download ? '?download=1' : ''}`,
     },
 
+    // AI Studio (admins): content generation, voice-over, video projects, render jobs, usage.
+    studio: {
+      config: () => request('GET', '/studio/config'),
+      generate: (body) => request('POST', '/studio/generate', { body }),
+      voices: (provider, language) => request('GET', '/studio/voices', { query: { provider, language } }),
+      voice: (body) => request('POST', '/studio/voice', { body }),
+      projects: () => request('GET', '/studio/projects'),
+      project: (id) => request('GET', `/studio/projects/${id}`),
+      createProject: (body) => request('POST', '/studio/projects', { body }),
+      createFromDocument: (file) => request('POST', '/studio/projects/from-document', {
+        raw: true,
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
+      }),
+      updateProject: (id, body) => request('PATCH', `/studio/projects/${id}`, { body }),
+      deleteProject: (id) => request('DELETE', `/studio/projects/${id}`),
+      uploadSceneImage: (id, sceneId, file) => request('POST', `/studio/projects/${id}/scenes/${sceneId}/image`, {
+        raw: true, body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      }),
+      removeSceneImage: (id, sceneId) => request('DELETE', `/studio/projects/${id}/scenes/${sceneId}/image`),
+      scenePreviewUrl: (id, sceneId, version = '') => `${BASE}/api/studio/projects/${id}/scenes/${sceneId}/preview.png?v=${encodeURIComponent(version)}`,
+      render: (id) => request('POST', `/studio/projects/${id}/render`),
+      rerenderScene: (id, sceneId) => request('POST', `/studio/projects/${id}/scenes/${sceneId}/rerender`),
+      jobs: (query = {}) => request('GET', '/studio/jobs', { query }),
+      job: (id) => request('GET', `/studio/jobs/${id}`),
+      cancelJob: (id) => request('POST', `/studio/jobs/${id}/cancel`),
+      retryJob: (id) => request('POST', `/studio/jobs/${id}/retry`),
+      history: (query = {}) => request('GET', '/studio/history', { query }),
+      usage: () => request('GET', '/studio/usage'),
+      setLimits: (body) => request('PUT', '/studio/limits', { body }),
+      // Dropbox documents: browsing is metadata only; bytes are fetched when a document is processed.
+      dropboxAccounts: () => request('GET', '/studio/dropbox/accounts'),
+      browseDropbox: (account, path = '') => request('GET', '/studio/dropbox/browse', { query: { account, path } }),
+      createFromDropbox: (body) => request('POST', '/studio/projects/from-dropbox', { body }),
+      // Storage: measured usage, safe clean-up (dry run by default) and where rendered videos go.
+      storage: (fresh = false) => request('GET', '/studio/storage', { query: fresh ? { fresh: 1 } : {} }),
+      storageOverview: () => request('GET', '/studio/storage/overview'),
+      cleanupStorage: (body) => request('POST', '/studio/storage/cleanup', { body }),
+      setOutput: (body) => request('PUT', '/studio/storage/output', { body }),
+      // Course content batches: lesson scripts, quizzes, flashcards, narration and videos for a course.
+      courses: () => request('GET', '/studio/courses'),
+      courseProgress: (id) => request('GET', `/studio/courses/${id}/progress`),
+      generateCourse: (id, body) => request('POST', `/studio/courses/${id}/generate`, { body }),
+      checkCourseQuality: (id, body = {}) => request('POST', `/studio/courses/${id}/quality-check`, { body }),
+      approvePassedLessons: (id, body = {}) => request('POST', `/studio/courses/${id}/approve-passed`, { body }),
+    },
+
     meetings: {
       // Creates the Meeting (status 'uploaded') from a Teams transcript; run processMeeting next.
       upload: (file) => request('POST', '/meetings/upload', {
@@ -133,6 +180,39 @@ export function createHttpDriver() {
     notifications: {
       emailStatus: () => request('GET', '/notifications/email/status'),
       sendTestEmail: (to) => request('POST', '/notifications/email/test', { body: { to } }),
+    },
+
+    // APEX Core identity (R1): people, organisations, scoped roles, reviewed identity links, audit log.
+    // Authorization is enforced by the API; these calls only carry what the admin screens ask for.
+    core: {
+      me: () => request('GET', '/core/me'),
+      users: (q = '') => request('GET', '/core/users', { query: { q } }),
+      user: (id) => request('GET', `/core/users/${encodeURIComponent(id)}`),
+      organizations: () => request('GET', '/core/organizations'),
+      createOrganization: (body) => request('POST', '/core/organizations', { body }),
+      members: (orgId) => request('GET', `/core/organizations/${encodeURIComponent(orgId)}/members`),
+      addMember: (orgId, body) => request('POST', `/core/organizations/${encodeURIComponent(orgId)}/members`, { body }),
+      endMembership: (id, body = {}) => request('POST', `/core/memberships/${encodeURIComponent(id)}/end`, { body }),
+      grantRole: (body) => request('POST', '/core/role-assignments', { body }),
+      revokeRole: (id, body) => request('POST', `/core/role-assignments/${encodeURIComponent(id)}/revoke`, { body }),
+      transitionRole: (id, body) => request('POST', `/core/role-assignments/${encodeURIComponent(id)}/transition`, { body }),
+      links: (status) => request('GET', '/core/identity-links', { query: { status } }),
+      proposeLink: (body) => request('POST', '/core/identity-links', { body }),
+      confirmLink: (id, body = {}) => request('POST', `/core/identity-links/${encodeURIComponent(id)}/confirm`, { body }),
+      rejectLink: (id, body) => request('POST', `/core/identity-links/${encodeURIComponent(id)}/reject`, { body }),
+      auditEvents: (query = {}) => request('GET', '/core/audit-events', { query }),
+      // Access requests (Use Case 007). Decisions are POSTs; the API re-checks every permission.
+      registrations: (query = {}) => request('GET', '/core/registrations', { query }),
+      registration: (id) => request('GET', `/core/registrations/${encodeURIComponent(id)}`),
+      approveRegistration: (id, body) => request('POST', `/core/registrations/${encodeURIComponent(id)}/approve`, { body }),
+      rejectRegistration: (id, body) => request('POST', `/core/registrations/${encodeURIComponent(id)}/reject`, { body }),
+      requestRegistrationInfo: (id, body) => request('POST', `/core/registrations/${encodeURIComponent(id)}/request-info`, { body }),
+    },
+
+    // Orientation for accounts approved through an access request (null for everyone else).
+    onboarding: {
+      orientation: () => request('GET', '/onboarding/orientation'),
+      completeOrientation: () => request('POST', '/onboarding/orientation/complete', { body: {} }),
     },
 
     system: {

@@ -1,0 +1,14 @@
+{
+  "name": "apex-onboarding",
+  "private": true,
+  "description": "APEX Enterprise Onboarding Assistant (Use Case 007): a separate app on its own port that relays to the portal's Academia Core API. Dependency-free.",
+  "type": "module",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env server.mjs",
+    "dev:onboarding": "node --env-file-if-exists=.env server.mjs",
+    "dev:portal": "cd .. && start.bat",
+    "dev:all": "start \"Apex portal\" cmd /c \"cd .. && start.bat\" && node --env-file-if-exists=.env server.mjs",
+    "test": "node --test server.test.mjs"
+  }
+}

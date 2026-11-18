@@ -281,7 +281,52 @@ export const MIGRATIONS = [
       `ALTER TABLE stored_file ADD COLUMN classified_by TEXT NOT NULL DEFAULT ''`,
     ],
   },
+  {
+    /**
+     * The Apex (Core) user a local account belongs to, for identity assertion
+     * (R1 identity contract §4.4). Nullable: every existing account keeps NULL
+     * and keeps working exactly as before. Unique where set — SQLite and
+     * Postgres both allow any number of NULLs in a unique index.
+     *
+     * Rollback: rollbackMigration(db, '005_core_user_id') (or
+     * `npm run migrate -- --rollback 005_core_user_id`) runs `down` and removes
+     * the schema_migrations row. It drops only this column and its index.
+     */
+    id: '005_core_user_id',
+    statements: [
+      `ALTER TABLE app_user ADD COLUMN core_user_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS uq_app_user_core_user_id ON app_user (core_user_id)`,
+    ],
+    down: [
+      `DROP INDEX IF EXISTS uq_app_user_core_user_id`,
+      `ALTER TABLE app_user DROP COLUMN core_user_id`,
+    ],
+  },
 ];
+
+/**
+ * Reverts one migration: runs its `down` statements and forgets it in
+ * schema_migrations, in one transaction. Only the most recently applied
+ * migration can be reverted, and only one that ships a `down`. Returns false
+ * when it was not applied.
+ */
+export async function rollbackMigration(db, id, logger) {
+  const index = MIGRATIONS.findIndex((migration) => migration.id === id);
+  const migration = MIGRATIONS[index];
+  if (!migration?.down) throw new Error(`Migration ${id} has no rollback.`);
+
+  const applied = new Set((await db.query('SELECT id FROM schema_migrations')).map((row) => row.id));
+  if (!applied.has(id)) return false;
+  const later = MIGRATIONS.slice(index + 1).filter((m) => applied.has(m.id));
+  if (later.length) throw new Error(`Roll back ${later.map((m) => m.id).join(', ')} first.`);
+
+  await db.transaction(async (tx) => {
+    for (const statement of migration.down) await tx.execute(statement);
+    await tx.execute('DELETE FROM schema_migrations WHERE id = ?', [id]);
+  });
+  logger?.info?.('Rolled back migration', { migration: id });
+  return true;
+}
 
 /** Applies every migration that has not been recorded yet. */
 export async function runMigrations(db, logger) {

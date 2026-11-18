@@ -1,0 +1,14 @@
+{
+ "voice": {"engine": "kokoro-onnx (Apache-2.0, local)", "voice": "af_heart", "speed": 0.95},
+ "scenes": [
+  {"id": "open", "text": "Inspironics Apex. One workspace, connecting enterprise applications."},
+  {"id": "intro", "text": "Apex is the shared entry point for the Inspironics products. Instead of separate addresses, teams open one workspace and reach connected applications from there: the Innovation Showcase, SlidesVault, and Inspironics Academia."},
+  {"id": "login", "text": "Access starts at the Apex sign-in page. The user enters an email address and password, and the page lists each application it is opening as part of signing in."},
+  {"id": "dashboard", "text": "After signing in, the home dashboard presents each platform as a card, with a description and a live status. Here, the Showcase and Academia are ready, while SlidesVault shows that it needs a sign-in. A quick-search palette, opened with Control and K, lists pages and projects that users can jump to from the keyboard."},
+  {"id": "showcase", "text": "The Innovation Showcase opens in the same window. Its landing page introduces a library of architecture plates, command decks, and value frameworks for connected infrastructure. Further down, a three-dimensional model of the estate brings the ecosystem into view."},
+  {"id": "academia", "text": "Inspironics Academia opens with its own learning workspace. The home page introduces engineering playbooks turned into courses. The course catalog lists the available courses, the playbooks page lists the source playbooks, and a tests page lists the available assessments."},
+  {"id": "limits", "text": "Two limitations were visible during this recording. SlidesVault was unavailable: its service returned errors and the platform asked for a fresh sign-in, so it is not demonstrated here. And the recent activity feed reports that the latest Academia synchronization failed. The Showcase and Academia themselves loaded, but the integration issue remains open.", "only_if": "syncFailedVisible"},
+  {"id": "signout", "text": "Signing out ends the session and returns the user to the sign-in page.", "only_if": "signoutOk"},
+  {"id": "close", "text": "Inspironics Apex. One front door, multiple enterprise experiences."}
+ ]
+}

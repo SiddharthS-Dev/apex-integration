@@ -1,4 +1,4 @@
-import { invokeLLM, requireAI } from '../ai/claude.js';
+import { invokeLLM, requireAI } from '../ai/index.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { log as defaultLog } from '../lib/logger.js';
 import { entities } from '../repo/entities.js';

@@ -28,22 +28,82 @@ const squash = (s) => s.replace(/[ \t\f\v ]+/g, ' ').replace(/\s*\n\s*/g, '\n')
 
 /* ------------------------------------------------------------- pptx ------ */
 
-export async function extractPptx(buffer) {
+/**
+ * Zip-bomb guard defaults. A .pptx is a ZIP, and a few kilobytes of deflate can
+ * claim gigabytes; JSZip would inflate an entry whole into memory. Every entry
+ * is therefore read as a stream and counted against one budget for the whole
+ * archive. The sizes in the archive's own directory are not trusted.
+ */
+export const ZIP_LIMITS = { maxBytes: 50 * 1048576, maxEntries: 5000 }
+
+class ZipBudgetExceeded extends Error {}
+
+/** Read one entry as UTF-8, charging what it inflates to against `budget`; stops (and throws) past it. */
+function readEntryCapped(entry, budget) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let done = false
+    const stream = entry.internalStream('uint8array')
+    stream
+      .on('data', (chunk) => {
+        if (done) return
+        budget.left -= chunk.length
+        if (budget.left < 0) {
+          done = true
+          stream.pause()
+          chunks.length = 0
+          return reject(new ZipBudgetExceeded(`decompressed content exceeds ${budget.maxBytes} bytes`))
+        }
+        chunks.push(chunk)
+      })
+      .on('error', (error) => !done && ((done = true), reject(error)))
+      .on('end', () => !done && ((done = true), resolve(Buffer.concat(chunks).toString('utf8'))))
+      .resume()
+  })
+}
+
+/**
+ * @param {Buffer} buffer
+ * @param {{ maxBytes?: number, maxEntries?: number, log?: { warn: Function } }} [opts]
+ *   Past either limit extraction stops: whatever was read so far is returned,
+ *   with `truncated` set, and a warning is logged.
+ */
+export async function extractPptx(buffer, { maxBytes = ZIP_LIMITS.maxBytes, maxEntries = ZIP_LIMITS.maxEntries, log } = {}) {
   const zip = await JSZip.loadAsync(buffer)
-  const core = await zip.file('docProps/core.xml')?.async('string')
+  const names = Object.keys(zip.files)
+  if (names.length > maxEntries) {
+    log?.warn('PPTX extraction skipped: too many archive entries', { entries: names.length, maxEntries })
+    return { metadataTitle: '', text: '', slideCount: 0, truncated: true }
+  }
+  const budget = { left: maxBytes, maxBytes }
+  let truncated = false
+  const read = async (name) => {
+    if (truncated) return null
+    try {
+      return await readEntryCapped(zip.file(name), budget)
+    } catch (error) {
+      if (!(error instanceof ZipBudgetExceeded)) throw error
+      truncated = true
+      log?.warn('PPTX extraction stopped: decompressed size limit reached', { maxBytes, entry: name })
+      return null
+    }
+  }
+
+  const core = zip.file('docProps/core.xml') ? await read('docProps/core.xml') : null
   const metadataTitle = core ? decodeEntities(/<dc:title>([\s\S]*?)<\/dc:title>/.exec(core)?.[1] || '').trim() : ''
 
-  const slideNames = Object.keys(zip.files)
+  const slideNames = names
     .filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n))
     .sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]))
   const slides = []
   for (const name of slideNames) {
-    const xml = await zip.file(name).async('string')
+    const xml = await read(name)
+    if (xml === null) break
     // one line per paragraph, runs within a paragraph joined
     const paragraphs = xml.split(/<\/a:p>/).map((p) => [...p.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((m) => decodeEntities(m[1])).join(''))
     slides.push(paragraphs.map((p) => p.trim()).filter(Boolean).join('\n'))
   }
-  return { metadataTitle, text: slides.map((s, i) => `[Slide ${i + 1}]\n${s}`).join('\n\n'), slideCount: slides.length }
+  return { metadataTitle, text: slides.map((s, i) => `[Slide ${i + 1}]\n${s}`).join('\n\n'), slideCount: slides.length, ...(truncated && { truncated }) }
 }
 
 /* -------------------------------------------------------------- pdf ------ */
@@ -86,7 +146,9 @@ export function decodePdfString(raw) {
 
 const PDF_STRING = /\((?:\\.|[^\\)])*\)|<[0-9a-fA-F\s]*>/g
 
-export function extractPdf(buffer, { maxStreams = 400 } = {}) {
+export function extractPdf(buffer, { maxStreams = 400, maxBytes = ZIP_LIMITS.maxBytes } = {}) {
+  // the same decompression budget as a .pptx: Flate streams can be bombs too
+  let inflateLeft = maxBytes
   const latin = buffer.toString('latin1')
 
   let metadataTitle = ''
@@ -108,7 +170,9 @@ export function extractPdf(buffer, { maxStreams = 400 } = {}) {
     let data = buffer.subarray(start, end)
     if (/\/FlateDecode/.test(dict)) {
       try {
-        data = inflateSync(data)
+        if (inflateLeft <= 0) break
+        data = inflateSync(data, { maxOutputLength: inflateLeft })
+        inflateLeft -= data.length
       } catch {
         continue
       }
@@ -187,9 +251,9 @@ export function imageSize(buf) {
 }
 
 /** Dispatch by extension. Returns null for kinds with no text to extract. */
-export async function extractContent(ext, buffer) {
-  if (ext === 'pptx') return extractPptx(buffer)
-  if (ext === 'pdf') return extractPdf(buffer)
+export async function extractContent(ext, buffer, limits = {}) {
+  if (ext === 'pptx') return extractPptx(buffer, limits)
+  if (ext === 'pdf') return extractPdf(buffer, { maxBytes: limits.maxBytes })
   if (ext === 'html') return extractHtml(buffer)
   return null
 }

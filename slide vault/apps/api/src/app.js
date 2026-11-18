@@ -10,15 +10,17 @@ import cookieParser from 'cookie-parser';
 
 import { securityHeaders, cors } from './http/security.js';
 import { attachUser } from './http/auth.js';
+import { createIdentityGate } from './http/identity.js';
 import { errorHandler, notFoundHandler } from './http/errors.js';
 import { createRateLimiter, byUserOrIp } from './http/rateLimit.js';
 import { M } from './services/metrics/metrics.js';
 
 import { createDropboxRouter } from './integrations/dropbox/routes/index.js';
-import { createAuthRouter } from './routes/auth.js';
+import { createApexLinkRouter, createAuthRouter, createLoginLimiters } from './routes/auth.js';
 import { createEntityRouter } from './routes/entities.js';
 import { createSystemRouter } from './routes/system.js';
 import { createAiRouter } from './routes/ai.js';
+import { createUsersRouter } from './routes/users.js';
 
 /**
  * The Dropbox routes an ordinary user calls while reading — the file record,
@@ -79,6 +81,8 @@ export function createApp(container) {
       users: container.users,
       cookieName: config.session.cookieName,
       activityTouchMs: config.analytics.activityTouchMinutes * 60_000,
+      // Apex identity assertion; inert while APEX_IDENTITY_MODE is off (the default).
+      identity: createIdentityGate({ config, users: container.users, logger }),
     })
   );
 
@@ -98,7 +102,10 @@ export function createApp(container) {
   });
 
   app.use('/api', generalLimiter);
-  app.use('/api/auth', createAuthRouter(container));
+  // One set of sign-in limiters for the password sign-in and the Apex ownership check.
+  const loginLimiters = createLoginLimiters();
+  app.use('/api/auth', createAuthRouter({ ...container, loginLimiters }));
+  app.use('/api/apex', createApexLinkRouter({ ...container, loginLimiters }));
   app.use('/api', createSystemRouter({ ...container, startedAt }));
   // The administrative limiter is for administration: a reader opening decks
   // goes through /api/dropbox/files/:id/{preview,content} too, and must not
@@ -108,6 +115,7 @@ export function createApp(container) {
 
   app.use('/api/ai', createAiRouter(container));
   app.use('/api/dropbox', adminOnlyLimiter, createDropboxRouter(container));
+  app.use('/api/users', adminLimiter, createUsersRouter(container));
   app.use('/api', createEntityRouter(container));
 
   app.use(notFoundHandler);

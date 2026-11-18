@@ -41,13 +41,15 @@ export async function countUsers() {
   return Number(row.n);
 }
 
-export async function createUser({ email, fullName, role = 'user', passwordHash, audience = DEFAULT_AUDIENCE }) {
+// `q` is a transaction handle (approval of a registration request creates the user inside its own
+// transaction) or, by default, the driver.
+export async function createUser({ email, fullName, role = 'user', passwordHash, audience = DEFAULT_AUDIENCE }, q = db()) {
   const ts = nowIso();
   const user = {
     id: newId(), email: email.trim().toLowerCase(), full_name: fullName || '', role, password_hash: passwordHash,
     audience: AUDIENCE_KEYS.includes(audience) ? audience : DEFAULT_AUDIENCE, created_date: ts, updated_date: ts,
   };
-  await db().run(
+  await q.run(
     'INSERT INTO users (id, email, full_name, role, password_hash, audience, created_date, updated_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [user.id, user.email, user.full_name, user.role, user.password_hash, user.audience, ts, ts],
   );

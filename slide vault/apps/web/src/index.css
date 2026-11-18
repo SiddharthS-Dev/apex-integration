@@ -170,3 +170,22 @@
     display: none !important;
   }
 }
+
+/* ---- Accessibility: honour the OS "reduce motion" setting ---- */
+/* framer-motion is handled by <MotionConfig reducedMotion="user"> in App.jsx;
+   this covers CSS animations and transitions (Tailwind animate-*, transition-*,
+   smooth scrolling). Durations go to near-zero rather than 0 so animationend /
+   transitionend listeners still fire. */
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

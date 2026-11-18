@@ -2,7 +2,7 @@ import { AUDIENCE_KEYS } from '@academy/shared';
 import express from 'express';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
-import { asyncHandler, badRequest, forbidden, notFound, unauthorized } from '../lib/errors.js';
+import { HttpError, asyncHandler, badRequest, forbidden, notFound, unauthorized } from '../lib/errors.js';
 import { log } from '../lib/logger.js';
 import { rateLimit } from '../http/rateLimit.js';
 import {
@@ -10,8 +10,10 @@ import {
 } from '../repo/users.js';
 import { hashPassword, randomToken, sha256, validatePassword, verifyPassword } from './passwords.js';
 import { createSession, destroySession, destroyUserSessions, requireAdmin, requireUser } from './sessions.js';
+import { clearFailures, lockedFor, noteFailure } from './lockout.js';
 import { emailConfigured } from '../notify/mailer.js';
 import { sendAccountEmail } from '../notify/index.js';
+import { onUserCreated } from '../core/index.js';
 
 const router = express.Router();
 
@@ -29,25 +31,47 @@ router.post('/register', sensitiveLimiter, asyncHandler(async (req, res) => {
   if (!EMAIL_RE.test(email)) throw badRequest('Enter a valid email address');
   const pwErr = validatePassword(password);
   if (pwErr) throw badRequest(pwErr);
-  const first = (await countUsers()) === 0;
-  if (!config.allowRegistration && !first) throw forbidden('Registration is closed. Ask an administrator for an invite.');
+  // The first account becomes admin only where allowed (development, or ALLOW_FIRST_USER_ADMIN=true in
+  // production); otherwise it is an ordinary learner and the bootstrap admin is the way in.
+  const firstAdmin = config.allowFirstUserAdmin && (await countUsers()) === 0;
+  if (!config.allowRegistration && !firstAdmin) throw forbidden('Registration is closed. Ask an administrator for an invite.');
   if (await findUserByEmail(email)) throw badRequest('An account with this email already exists');
-  // The first account, or BOOTSTRAP_ADMIN_EMAIL, becomes admin.
-  const role = first || (config.bootstrapAdminEmail && email === config.bootstrapAdminEmail) ? 'admin' : 'user';
+  // Registration never grants admin by email (security review L3: the address is unverified, so whoever
+  // registered it first would own the platform). The bootstrap admin is created at startup from
+  // BOOTSTRAP_ADMIN_EMAIL + BOOTSTRAP_ADMIN_PASSWORD, or with the break-glass CLI.
+  const role = firstAdmin ? 'admin' : 'user';
   const user = await createUser({ email, fullName, role, passwordHash: await hashPassword(password) });
+  await onUserCreated(user, { ip: req.ip });
   await createSession(res, user, req);
   await recordLogin({ userId: user.id, email, success: true, reason: 'register', ip: req.ip, userAgent: req.get('user-agent') });
   log.info('auth.registered', { userId: user.id, role });
   res.status(201).json({ user: publicUser(user) });
 }));
 
+// Per-account lockout (shared with the Core's linking password re-check): see auth/lockout.js.
+
+// An unknown email is checked against this throwaway hash, so it costs the same scrypt work as a wrong
+// password and response timing does not reveal which emails have accounts.
+const dummyHash = hashPassword(randomToken());
+
 router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   const email = cleanEmail(req.body?.email);
   const password = req.body?.password;
+  const wait = lockedFor(email);
+  if (wait) {
+    await recordLogin({ userId: null, email, success: false, reason: 'locked', ip: req.ip, userAgent: req.get('user-agent') });
+    res.setHeader('Retry-After', Math.ceil(wait / 1000));
+    throw new HttpError(429, 'Too many failed sign-in attempts for this account. Try again in 15 minutes.');
+  }
   const user = await findUserByEmail(email);
-  const ok = user && !(user.disabled === true || user.disabled === 1) && (await verifyPassword(password, user.password_hash));
-  await recordLogin({ userId: user?.id, email, success: !!ok, reason: ok ? 'password' : 'invalid_credentials', ip: req.ip, userAgent: req.get('user-agent') });
-  if (!ok) throw unauthorized('Invalid email or password');
+  const passwordOk = await verifyPassword(password, user?.password_hash || (await dummyHash));
+  const ok = !!user && !(user.disabled === true || user.disabled === 1) && passwordOk;
+  await recordLogin({ userId: user?.id, email, success: ok, reason: ok ? 'password' : 'invalid_credentials', ip: req.ip, userAgent: req.get('user-agent') });
+  if (!ok) {
+    noteFailure(email);
+    throw unauthorized('Invalid email or password');
+  }
+  clearFailures(email);
   await updateUser(user.id, { last_login_at: new Date().toISOString() });
   await createSession(res, user, req);
   res.json({ user: publicUser(user) });
@@ -134,6 +158,7 @@ router.post('/invite', requireAdmin, asyncHandler(async (req, res) => {
   if (await findUserByEmail(email)) throw badRequest('A user with this email already exists');
   const temporaryPassword = randomToken(9);
   const user = await createUser({ email, role, audience, fullName: req.body?.full_name, passwordHash: await hashPassword(temporaryPassword) });
+  await onUserCreated(user, { actorUserId: req.user.id, ip: req.ip });
   let emailSent = false;
   if (emailConfigured()) {
     const link = await passwordLink(user.id, 7 * 24 * 3600_000);

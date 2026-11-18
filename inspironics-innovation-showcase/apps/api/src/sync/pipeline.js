@@ -56,6 +56,8 @@ export class SyncBusyError extends HttpError {
 }
 
 export function createSyncService({ config, repos, dropbox, dropboxAuth, store, enricher, seeds, log, metrics }) {
+  // zip-bomb guard for .pptx (and Flate streams in PDFs): stop reading past these, keep what was read
+  const unzipLimits = { maxBytes: config.sync.maxUnzipMb * 1048576, maxEntries: config.sync.maxZipEntries, log }
   /** In-process view of the run this instance owns, for the progress bar. */
   let current = null
   let stopping = false
@@ -145,7 +147,7 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
         warn(`Content extraction skipped: ${(entry.size / 1048576).toFixed(0)} MB exceeds the ${config.sync.maxExtractMb} MB limit`)
       } else {
         try {
-          content = await extractContent(entry.ext, await dropbox.downloadBuffer(entry.externalId))
+          content = await extractContent(entry.ext, await dropbox.downloadBuffer(entry.externalId), unzipLimits)
         } catch (error) {
           warn(`Content extraction failed: ${error.message}`)
         }
@@ -254,7 +256,7 @@ export function createSyncService({ config, repos, dropbox, dropboxAuth, store, 
     let text = ''
     if (row.kind === 'document' && Number(row.size) <= config.sync.maxExtractMb * 1048576) {
       try {
-        text = (await extractContent(row.ext, await dropbox.downloadBuffer(row.external_id)))?.text || ''
+        text = (await extractContent(row.ext, await dropbox.downloadBuffer(row.external_id), unzipLimits))?.text || ''
       } catch (error) {
         log.warn('Content extraction failed while describing a plate', { id: row.id, error: error.message })
       }

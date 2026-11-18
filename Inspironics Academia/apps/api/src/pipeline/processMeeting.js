@@ -1,7 +1,7 @@
 import {
   formatTranscript, heuristicAnalysis, matchOwner, meetingFromFileName, normalizeAnalysis, parseTranscript, speakerStats,
 } from '@academy/shared';
-import { aiEnabled, invokeLLM } from '../ai/claude.js';
+import { aiEnabled, invokeLLM } from '../ai/index.js';
 import { withLock } from '../db/locks.js';
 import { loadPlaybookBytes } from '../files/playbookSource.js';
 import { meetingsAccount, withDropboxAccount } from '../dropbox/connection.js';
@@ -14,7 +14,7 @@ import { asHttpError, errMsg, norm, pipelineError } from './util.js';
 
 // processMeeting — turns a meeting transcript (Teams .docx, .vtt or .txt) into meeting notes:
 // summary, purpose, key ideas, decisions, requirements, action items, open questions and risks,
-// plus who spoke how much. Claude writes the analysis when AI is on; otherwise keyword rules find
+// plus who spoke how much. The AI provider writes the analysis when AI is on; otherwise keyword rules find
 // the likely action items and decisions (Meeting.analysis_method says which).
 //
 // Action items are rows of their own (ActionItem), matched to accounts by the owner's name.
@@ -100,7 +100,7 @@ function chunks(lines, size) {
   return out;
 }
 
-/** Claude's analysis of a parsed transcript; long meetings are analysed in parts and merged. */
+/** The AI analysis of a parsed transcript; long meetings are analysed in parts and merged. */
 export async function analyzeWithAI(parsed, { title, date }) {
   const header = [
     `Meeting: ${title || '(untitled)'}`,
@@ -144,12 +144,12 @@ export default async function processMeeting(payload = {}, ctx = {}) {
   if (!id) throw badRequest('meeting_id is required');
   const meeting = await entities.Meeting.get(id);
   if (!meeting) throw notFound('Meeting not found');
-  const { acquired, result } = await withLock(`pipeline:meeting:${id}`, () => run(meeting, ctx.log || defaultLog), { ttlMs: 30 * 60_000 });
+  const { acquired, result } = await withLock(`pipeline:meeting:${id}`, () => run(meeting, ctx.log || defaultLog, { ai: payload?.ai !== false }), { ttlMs: 30 * 60_000 });
   if (!acquired) throw conflict('This meeting is already being processed — try again when the current run finishes');
   return result;
 }
 
-async function run(meeting, log) {
+async function run(meeting, log, { ai = true } = {}) {
   const sr = entities;
   try {
     await sr.Meeting.update(meeting.id, { status: 'processing', progress: 10, error: '' });
@@ -164,7 +164,7 @@ async function run(meeting, log) {
     let method = 'heuristic';
     let note = '';
     let raw;
-    if (aiEnabled()) {
+    if (ai && aiEnabled()) {
       try {
         raw = await analyzeWithAI(parsed, { title: givenTitle, date });
         method = 'ai';

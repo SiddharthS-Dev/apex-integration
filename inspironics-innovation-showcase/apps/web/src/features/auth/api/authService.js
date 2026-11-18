@@ -206,6 +206,9 @@ export function createAuthService(repo) {
       return { email: id }
     },
 
+    /** The bundled demo has no server to ask: every sign-in way is on, codes are shown on screen. */
+    getConfig: async () => ({ allowRegistration: true, guestEnabled: true, devCodes: true }),
+
     logout: () => repo.clearSession(),
   }
 }

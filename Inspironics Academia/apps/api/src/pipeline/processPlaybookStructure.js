@@ -1,5 +1,5 @@
 import { UNCLASSIFIED } from '@academy/shared';
-import { aiEnabled, invokeLLM } from '../ai/claude.js';
+import { aiEnabled, invokeLLM } from '../ai/index.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { log as defaultLog } from '../lib/logger.js';
 import { entities } from '../repo/entities.js';

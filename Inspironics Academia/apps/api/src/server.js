@@ -4,8 +4,14 @@ import { migrate } from './db/migrations.js';
 import { purgeExpiredSessions } from './auth/sessions.js';
 import { log } from './lib/logger.js';
 import { createApp } from './app.js';
+import { aiUnavailableReason, describeAiConfig } from './ai/index.js';
+import { mediaUnavailableReason } from './media/index.js';
+import { setupProcessTemp } from './lib/tempEnv.js';
 import { startScheduler, stopScheduler } from './sync/scheduler.js';
 import { startJobs, stopJobs } from './notify/jobs.js';
+import { startJobWorker, stopJobWorker } from './jobs/queue.js';
+import { startBatchResumer, stopBatchResumer } from './pipeline/courseContent.js';
+import { startStorageMaintenance, stopStorageMaintenance } from './storage/storage.js';
 import { SYNC_LOCK } from './sync/pipeline.js';
 import { closeStaleRuns } from './sync/log.js';
 import { isLocked } from './db/locks.js';
@@ -13,6 +19,10 @@ import { get as getEntity, list as listEntities, update as updateEntity } from '
 import { lessonLockName } from './pipeline/util.js';
 import { createUser, findUserByEmail } from './repo/users.js';
 import { hashPassword, validatePassword } from './auth/passwords.js';
+import { onUserCreated, sweepOnboarding } from './core/index.js';
+
+// Temp files of this process and its children (FFmpeg, SQLite) go to TEMP_PROCESSING_DIR when set.
+const tempInfo = setupProcessTemp();
 
 const db = await getDb();
 await migrate(db);
@@ -28,7 +38,8 @@ async function bootstrapAdmin() {
   if (!email || !password || (await findUserByEmail(email))) return;
   const problem = validatePassword(password);
   if (problem) return log.warn('auth.bootstrap_admin_refused', { reason: problem });
-  await createUser({ email, fullName: config.bootstrapAdminName, role: 'admin', passwordHash: await hashPassword(password) });
+  const user = await createUser({ email, fullName: config.bootstrapAdminName, role: 'admin', passwordHash: await hashPassword(password) });
+  await onUserCreated(user); // Inspironics membership + staff + platform_admin (R1, ADR 0004)
   log.info('auth.bootstrap_admin_created', { email });
 }
 // A sync killed by a restart stays 'running' in sync_log; close it out unless a live run (possibly on
@@ -63,14 +74,22 @@ const server = app.listen(config.port, config.host, () => {
     host: config.host,
     port: config.port,
     ai: config.aiEnabled,
-    model: config.aiEnabled ? (config.aiProvider === 'base44' ? 'base44' : config.anthropicModel) : undefined,
+    ai_config: describeAiConfig(),
     media: config.mediaProvider,
     dropbox: dropboxConfigured(),
+    temp: tempInfo,
   });
+  // Say at startup what is configured but cannot work, instead of failing on first use.
+  if (process.env.AI_ENABLED && /^(1|true|yes|on)$/i.test(process.env.AI_ENABLED) && aiUnavailableReason()) log.warn('ai.unavailable', { reason: aiUnavailableReason() });
+  if (config.mediaProvider !== 'none' && mediaUnavailableReason()) log.warn('media.unavailable', { provider: config.mediaProvider, reason: mediaUnavailableReason() });
+  if (!tempInfo.configured && tempInfo.system_free_mb != null && tempInfo.system_free_mb < 1024) log.warn('storage.system_temp_low_space', { dir: tempInfo.os_tmpdir, free_mb: tempInfo.system_free_mb, hint: 'Set TEMP_PROCESSING_DIR to a drive with room' });
 });
 
 startScheduler();
 startJobs();
+startJobWorker().catch((err) => log.error('jobs.worker_start_failed', { error: err.message }));
+startStorageMaintenance();
+startBatchResumer(); // restarts course batches stopped by the AI provider's daily quota
 
 const sessionSweep = setInterval(() => purgeExpiredSessions().catch(() => {}), 3600_000);
 sessionSweep.unref();
@@ -78,10 +97,19 @@ sessionSweep.unref();
 const lessonSweep = setInterval(() => releaseInterruptedLessons().catch(() => {}), 5 * 60_000);
 lessonSweep.unref();
 
+// Onboarding housekeeping (Use Case 007): expired drafts and decoys, one-time secrets in sent email
+// bodies, and closed requests past the configured retention period. Runs whatever the flags say.
+const onboardingSweep = setInterval(() => sweepOnboarding(db).catch((err) => log.warn('onboarding.sweep_failed', { error: err.message })), 3600_000);
+onboardingSweep.unref();
+sweepOnboarding(db).catch((err) => log.warn('onboarding.sweep_failed', { error: err.message }));
+
 async function shutdown(signal) {
   log.info('api.shutdown', { signal });
   stopScheduler();
   stopJobs();
+  stopJobWorker();
+  stopStorageMaintenance();
+  stopBatchResumer();
   server.close();
   await closeDb();
   process.exit(0);

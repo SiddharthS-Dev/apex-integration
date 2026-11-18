@@ -1,0 +1,14 @@
+# Build context is the workspace root (see apps/api/Dockerfile). Send only what the image needs.
+**/node_modules
+**/dist
+**/data
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+apps/api/test
+apps/web/src
+apps/web/public
+docs
+scripts
+.git

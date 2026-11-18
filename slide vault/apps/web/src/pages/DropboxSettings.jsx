@@ -6,7 +6,7 @@ import {
   Activity, History, Unplug, Wand2, AlertTriangle, ListChecks,
 } from 'lucide-react';
 import { dropboxAuth, syncDropbox, renameUntitledPresentations } from '@/api/functions';
-import { backendMode } from '@/api/base44Client';
+import { backendMode } from '@/api/backendClient';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui';
 import { cn, timeAgo } from '@/lib/utils';

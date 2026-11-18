@@ -1,0 +1,10 @@
+[
+ {"mark":"S1 intro","text":"Meet Apex, the Inspironics home dashboard. One secure front door to three platforms: the Innovation Showcase, SlidesVault, and Inspironics Academia."},
+ {"mark":"S2 login","text":"Everything starts at a single sign-in. Users enter their email and password once. Apex checks them against every platform and opens each session, so no app asks again."},
+ {"mark":"S3 dashboard","text":"This is the dashboard. One card per platform, each probing its application live, so teams can see at a glance that all three are ready. Recent activity shows what changed across the platforms, and quick search jumps to any project from the keyboard."},
+ {"mark":"S4 showcase","text":"The Innovation Showcase is an immersive gallery of intelligent-infrastructure blueprints, command decks and architecture systems, with an ecosystem explorer and monthly reporting. Users browse and open entries right here, in the same window."},
+ {"mark":"S5 vault","text":"SlidesVault is the presentation knowledge hub. Decks are synced from Dropbox through the platform's own API, so the browser never talks to Dropbox directly. Users search the library, open a deck to view it, check analytics, and keep decks available offline."},
+ {"mark":"S6 academia","text":"Inspironics Academia turns engineering playbooks into learning. Learners follow courses, take tests, and earn verifiable certificates. Administrators manage playbooks, AI-assisted content, and integrations from the admin area."},
+ {"mark":"S8 finale","text":"Back on the dashboard, one sign-in, one address, and three working platforms. Apex gives every team a single front door, with security handled once for everything behind it."},
+ {"mark":"S8 outro","text":"Inspironics Apex. Three platforms, one front door."}
+]

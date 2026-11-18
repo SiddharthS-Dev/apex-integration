@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin console · Apex</title>
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <script>
+      try {
+        const saved = localStorage.getItem('apex.theme')
+        const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+      } catch {}
+    </script>
+    <style>
+      /*
+       * Apex admin console: access requests from the onboarding assistant, reviewed and decided here
+       * on the APEX front door. Every read and decision goes to the Core API (/academia/api/core/…),
+       * which checks on the server that the signed-in person is a platform administrator (default
+       * deny); this page only shows what the Core returns. Applicant text is written with textContent.
+       */
+      :root {
+        color-scheme: light;
+        --bg: #eef3fb;
+        --surface: #ffffff;
+        --surface-2: #f6f8fd;
+        --text: #0b1530;
+        --text-2: #334155;
+        --muted: #5b6b85;
+        --border: rgba(15, 23, 42, 0.09);
+        --border-2: rgba(15, 23, 42, 0.16);
+        --shadow: 0 18px 48px -30px rgba(30, 64, 175, 0.4);
+        --cyan: #06b6d4;
+        --blue: #2563eb;
+        --purple: #7c3aed;
+        --green: #059669;
+        --amber: #b45309;
+        --rose: #e11d48;
+        --tint: rgba(37, 99, 235, 0.06);
+      }
+      :root[data-theme='dark'] {
+        color-scheme: dark;
+        --bg: #050a18;
+        --surface: #0b1328;
+        --surface-2: #0f1932;
+        --text: #f1f5f9;
+        --text-2: #cbd5e1;
+        --muted: #94a3b8;
+        --border: rgba(148, 163, 184, 0.14);
+        --border-2: rgba(148, 163, 184, 0.26);
+        --shadow: 0 18px 48px -24px rgba(0, 0, 0, 0.7);
+        --cyan: #22d3ee;
+        --green: #34d399;
+        --amber: #fbbf24;
+        --rose: #fb7185;
+        --tint: rgba(34, 211, 238, 0.07);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        background-image: radial-gradient(900px 500px at 80% -10%, rgba(59, 130, 246, 0.12), transparent 65%),
+          radial-gradient(700px 500px at 0% 100%, rgba(6, 182, 212, 0.1), transparent 70%);
+        background-attachment: fixed;
+        color: var(--text);
+        font: 15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      a {
+        color: inherit;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      .wrap {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        backdrop-filter: blur(14px);
+        background: color-mix(in srgb, var(--bg) 82%, transparent);
+        border-bottom: 1px solid var(--border);
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        height: 64px;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        font-size: 0.82rem;
+      }
+      .brand svg {
+        width: 30px;
+        height: 30px;
+      }
+      .crumb {
+        color: var(--muted);
+        font-weight: 600;
+        letter-spacing: 0;
+        font-size: 0.95rem;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .who {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 38px;
+        padding: 0 14px;
+        border-radius: 10px;
+        border: 1px solid var(--border-2);
+        background: var(--surface);
+        cursor: pointer;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.88rem;
+        transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+      }
+      .btn:hover {
+        border-color: var(--cyan);
+      }
+      .btn:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible,
+      .row:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 2px;
+      }
+      .btn.primary {
+        border: 0;
+        color: #fff;
+        background: linear-gradient(135deg, var(--cyan), var(--purple));
+      }
+      .btn.danger {
+        color: var(--rose);
+        border-color: color-mix(in srgb, var(--rose) 45%, transparent);
+      }
+      .btn[disabled] {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      main {
+        padding: 26px 0 60px;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 1.7rem;
+        letter-spacing: -0.02em;
+      }
+      .lead {
+        margin: 0 0 20px;
+        color: var(--muted);
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .stat {
+        padding: 14px 16px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .stat b {
+        display: block;
+        font-size: 1.6rem;
+        line-height: 1.1;
+      }
+      .stat span {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .filters select,
+      .filters input {
+        height: 38px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border-2);
+        background: var(--surface);
+      }
+      .filters input {
+        flex: 1;
+        min-width: 200px;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.25fr);
+        gap: 18px;
+        align-items: start;
+      }
+      .panel {
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: calc(100vh - 290px);
+        min-height: 200px;
+        overflow-y: auto;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4px 12px;
+        width: 100%;
+        padding: 13px 16px;
+        border: 0;
+        border-bottom: 1px solid var(--border);
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+      }
+      .row:hover {
+        background: var(--tint);
+      }
+      .row[aria-current='true'] {
+        background: var(--tint);
+        box-shadow: inset 3px 0 0 var(--cyan);
+      }
+      .row .name {
+        font-weight: 650;
+      }
+      .row .sub {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+      .tag {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        white-space: nowrap;
+        background: rgba(124, 58, 237, 0.12);
+        color: var(--purple);
+      }
+      :root[data-theme='dark'] .tag {
+        color: #c4b5fd;
+      }
+      .status {
+        justify-self: end;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border-2);
+        color: var(--muted);
+      }
+      .status.PENDING_APPROVAL {
+        color: var(--amber);
+        border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+      }
+      .status.APPROVED {
+        color: var(--green);
+        border-color: color-mix(in srgb, var(--green) 45%, transparent);
+      }
+      .status.REJECTED {
+        color: var(--rose);
+        border-color: color-mix(in srgb, var(--rose) 45%, transparent);
+      }
+      .empty {
+        padding: 40px 20px;
+        text-align: center;
+        color: var(--muted);
+      }
+      .detail {
+        padding: 20px 22px;
+      }
+      .detail h2 {
+        margin: 0;
+        font-size: 1.3rem;
+      }
+      .detail .meta {
+        margin: 4px 0 14px;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .detail h3 {
+        margin: 20px 0 6px;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+      }
+      dl {
+        margin: 0;
+      }
+      dl > div {
+        display: grid;
+        grid-template-columns: minmax(0, 12rem) minmax(0, 1fr);
+        gap: 12px;
+        padding: 6px 0;
+        border-bottom: 1px dashed var(--border);
+      }
+      dt {
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+      dd {
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .note {
+        margin-top: 14px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+        background: color-mix(in srgb, var(--amber) 8%, transparent);
+        font-size: 0.88rem;
+      }
+      .advice {
+        margin-top: 14px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px dashed var(--border-2);
+        font-size: 0.88rem;
+      }
+      .advice ul {
+        margin: 6px 0 0;
+        padding-left: 18px;
+      }
+      .actions {
+        position: sticky;
+        bottom: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-end;
+        margin: 20px -22px -20px;
+        padding: 14px 22px;
+        border-top: 1px solid var(--border);
+        background: var(--surface-2);
+      }
+      .msg {
+        padding: 30px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .msg strong {
+        display: block;
+        color: var(--text);
+        margin-bottom: 6px;
+      }
+      /* dialogs */
+      dialog {
+        width: min(560px, calc(100vw - 32px));
+        padding: 0;
+        border: 1px solid var(--border-2);
+        border-radius: 14px;
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.45);
+      }
+      dialog::backdrop {
+        background: rgba(2, 6, 23, 0.55);
+        backdrop-filter: blur(3px);
+      }
+      dialog form {
+        padding: 20px 22px;
+      }
+      dialog h2 {
+        margin: 0 0 4px;
+        font-size: 1.15rem;
+      }
+      dialog p.d {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+      fieldset {
+        margin: 0 0 14px;
+        padding: 0;
+        border: 0;
+      }
+      legend,
+      label.f {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 650;
+        font-size: 0.88rem;
+      }
+      .opt {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 7px 0;
+        font-size: 0.9rem;
+      }
+      .opt input {
+        width: 17px;
+        height: 17px;
+        accent-color: var(--blue);
+      }
+      .opt small {
+        color: var(--muted);
+      }
+      .hint {
+        margin: 2px 0 8px;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+      dialog textarea {
+        width: 100%;
+        min-height: 74px;
+        padding: 9px 11px;
+        border-radius: 10px;
+        border: 1px solid var(--border-2);
+        background: var(--surface-2);
+        resize: vertical;
+      }
+      .err {
+        min-height: 1.2em;
+        margin: 6px 0 0;
+        color: var(--rose);
+        font-size: 0.85rem;
+      }
+      .dlg-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        z-index: 50;
+        transform: translateX(-50%);
+        max-width: calc(100vw - 32px);
+        padding: 11px 16px;
+        border-radius: 10px;
+        background: #0b1530;
+        color: #fff;
+        font-size: 0.9rem;
+        box-shadow: var(--shadow);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .list {
+          max-height: 360px;
+        }
+        dl > div {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 2px;
+        }
+        .who {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap bar">
+        <a class="brand" href="/" aria-label="Apex home">
+          <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="m" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#06b6d4" /><stop offset="100%" stop-color="#7c3aed" /></linearGradient>
+            </defs>
+            <path d="M16 2.5 29 27H3L16 2.5Z" stroke="url(#m)" stroke-width="2.4" stroke-linejoin="round" />
+            <path d="M16 12.5 22 24H10l6-11.5Z" fill="url(#m)" opacity=".9" />
+          </svg>
+          APEX
+        </a>
+        <span class="crumb">/ Admin console</span>
+        <span class="spacer"></span>
+        <span class="who" id="who"></span>
+        <a class="btn" href="/">← Back to home</a>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <h1>Access requests</h1>
+      <p class="lead">People who applied through the onboarding assistant. Review each request, then approve, ask a question or reject.</p>
+
+      <div id="gate" class="panel msg" hidden></div>
+
+      <div id="console" hidden>
+        <div class="stats" aria-label="Summary">
+          <div class="stat"><b id="n-pending">–</b><span>Waiting for approval</span></div>
+          <div class="stat"><b id="n-info">–</b><span>Waiting for the applicant</span></div>
+          <div class="stat"><b id="n-approved">–</b><span>Approved</span></div>
+          <div class="stat"><b id="n-rejected">–</b><span>Rejected</span></div>
+        </div>
+
+        <div class="filters">
+          <select id="f-status" aria-label="Status">
+            <option value="reviewable">Waiting for review</option>
+            <option value="PENDING_APPROVAL">Pending approval</option>
+            <option value="INFO_REQUESTED">Information requested</option>
+            <option value="APPROVED">Approved</option>
+            <option value="REJECTED">Rejected</option>
+            <option value="all">All</option>
+          </select>
+          <select id="f-role" aria-label="Role"><option value="">Any role</option></select>
+          <input id="f-q" type="search" placeholder="Search name, email or organisation" aria-label="Search" />
+        </div>
+
+        <div class="layout">
+          <section class="panel" aria-label="Requests">
+            <ul class="list" id="list"></ul>
+          </section>
+          <section class="panel" aria-live="polite">
+            <div class="detail" id="detail"><p class="empty">Select a request to see the details.</p></div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- Approve -->
+    <dialog id="dlg-approve" aria-labelledby="ap-title">
+      <form method="dialog" novalidate>
+        <h2 id="ap-title">Approve this request?</h2>
+        <p class="d">Creates the account for the verified email address with only the roles you tick. Administrator roles can never be granted here.</p>
+        <fieldset id="ap-roles"><legend>Roles to grant</legend></fieldset>
+        <fieldset id="ap-platforms"><legend>APEX platforms shown on their home</legend><p class="hint">Innovation Showcase and SlidesVault also need an account there, created and linked by an administrator.</p></fieldset>
+        <label class="f" for="ap-note">Internal note <small class="hint">(never shown to the applicant)</small></label>
+        <textarea id="ap-note" maxlength="2000"></textarea>
+        <label class="opt"><input type="checkbox" id="ap-confirm" /> I have checked the role, each access choice and the claims I relied on.</label>
+        <p class="err" id="ap-err" role="alert"></p>
+        <div class="dlg-actions">
+          <button class="btn" value="cancel" type="button" data-close>Cancel</button>
+          <button class="btn primary" type="submit" id="ap-go">Approve and create account</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Ask a question -->
+    <dialog id="dlg-info" aria-labelledby="in-title">
+      <form method="dialog" novalidate>
+        <h2 id="in-title">Ask the applicant a question</h2>
+        <p class="d">The question is emailed with a private link that expires. The internal note is not sent.</p>
+        <label class="f" for="in-q">Question for the applicant</label>
+        <textarea id="in-q" maxlength="2000"></textarea>
+        <label class="f" for="in-note">Internal note</label>
+        <textarea id="in-note" maxlength="2000"></textarea>
+        <p class="err" id="in-err" role="alert"></p>
+        <div class="dlg-actions">
+          <button class="btn" type="button" data-close>Cancel</button>
+          <button class="btn primary" type="submit">Send question</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Reject -->
+    <dialog id="dlg-reject" aria-labelledby="rj-title">
+      <form method="dialog" novalidate>
+        <h2 id="rj-title">Reject this request?</h2>
+        <p class="d">No account is created. The applicant is told by email; the reason stays internal.</p>
+        <label class="f" for="rj-reason">Reason (internal)</label>
+        <textarea id="rj-reason" maxlength="1000"></textarea>
+        <label class="f" for="rj-msg">Message to the applicant <small class="hint">(optional)</small></label>
+        <textarea id="rj-msg" maxlength="2000"></textarea>
+        <p class="err" id="rj-err" role="alert"></p>
+        <div class="dlg-actions">
+          <button class="btn" type="button" data-close>Cancel</button>
+          <button class="btn danger" type="submit">Reject request</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+
+    <script>
+      /* ---------------------------------------------------------------- helpers -- */
+      const API = '/academia/api/core'
+      const $ = (id) => document.getElementById(id)
+      const ROLE_LABELS = { learner: 'Learner', intern: 'Intern', alumni: 'Alumni', mentor: 'Mentor', student: 'Student' }
+      const ROLE_NOTES = { intern: 'only once the internship offer is verified', alumni: 'only once the former association is verified' }
+      const ONBOARDING_ROLES = [['INTERN', 'Intern'], ['ALUMNI', 'Alumni / Former Member'], ['INDUSTRY_PARTNER', 'Industry Partner'], ['CEO', 'Chief Executive Officer'], ['VP', 'Vice President'], ['DIRECTOR', 'Director']]
+      const STATUS_TEXT = { PENDING_APPROVAL: 'Pending approval', INFO_REQUESTED: 'Waiting for applicant', APPROVED: 'Approved', REJECTED: 'Rejected', EXPIRED: 'Expired', SUPERSEDED: 'Superseded' }
+
+      function el(tag, props = {}, ...kids) {
+        const n = document.createElement(tag)
+        for (const [k, v] of Object.entries(props)) {
+          if (v === null || v === undefined || v === false) continue
+          if (k === 'class') n.className = v
+          else if (k === 'text') n.textContent = v
+          else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v)
+          else n.setAttribute(k, v === true ? '' : String(v))
+        }
+        for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) n.append(c)
+        return n
+      }
+      const human = (v) => (Array.isArray(v) ? v.map(human).join(', ') : /^\d+_\d+$/.test(String(v)) ? String(v).replace('_', '–') : String(v).replace(/_/g, ' '))
+      const when = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '')
+      function ago(iso) {
+        if (!iso) return ''
+        const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
+        if (s < 60) return 'just now'
+        if (s < 3600) return `${Math.round(s / 60)} min ago`
+        if (s < 86400) return `${Math.round(s / 3600)} h ago`
+        return `${Math.round(s / 86400)} d ago`
+      }
+      function toast(text) {
+        const t = $('toast')
+        t.textContent = text
+        t.hidden = false
+        clearTimeout(toast.t)
+        toast.t = setTimeout(() => (t.hidden = true), 4500)
+      }
+
+      class ApiError extends Error {
+        constructor(status, message) {
+          super(message)
+          this.status = status
+        }
+      }
+      async function call(method, path, body) {
+        const res = await fetch(API + path, {
+          method,
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: body ? { 'Content-Type': 'application/json' } : {},
+          body: body ? JSON.stringify(body) : undefined,
+        })
+        let data = null
+        try {
+          data = await res.json()
+        } catch {}
+        if (res.status === 401 && data?.code === 'APEX_SIGNIN_REQUIRED') location.replace('/login?next=%2Fadmin&expired=1')
+        if (!res.ok) throw new ApiError(res.status, data?.error || 'Something went wrong. Try again.')
+        return data
+      }
+
+      /* ------------------------------------------------------------------ state -- */
+      const state = { rows: [], selected: null, detail: null, platformCatalogue: [] }
+
+      function gate(title, text) {
+        $('console').hidden = true
+        const g = $('gate')
+        g.hidden = false
+        g.replaceChildren(el('strong', { text: title }), el('span', { text }))
+      }
+
+      for (const [code, label] of ONBOARDING_ROLES) $('f-role').append(el('option', { value: code, text: label }))
+
+      /* ------------------------------------------------------------------- list -- */
+      async function loadCounts() {
+        try {
+          const all = await call('GET', '/registrations?status=all')
+          const n = (s) => all.filter((r) => r.status === s).length
+          $('n-pending').textContent = n('PENDING_APPROVAL')
+          $('n-info').textContent = n('INFO_REQUESTED')
+          $('n-approved').textContent = n('APPROVED')
+          $('n-rejected').textContent = n('REJECTED')
+        } catch {}
+      }
+
+      let seq = 0
+      async function loadList() {
+        const my = ++seq
+        const qs = new URLSearchParams({ status: $('f-status').value })
+        if ($('f-role').value) qs.set('role', $('f-role').value)
+        if ($('f-q').value.trim()) qs.set('q', $('f-q').value.trim())
+        let rows
+        try {
+          rows = await call('GET', `/registrations?${qs}`)
+        } catch (err) {
+          if (err.status === 403) return gate('Administrators only', 'This console is for platform administrators. Your account cannot review access requests.')
+          if (err.status === 401) return gate('Sign in to Inspironics Academia first', 'Open Inspironics Academia from the APEX home once, then come back to this page.')
+          return gate('The access requests could not be loaded', err.message)
+        }
+        if (my !== seq) return
+        $('gate').hidden = true
+        $('console').hidden = false
+        state.rows = rows
+        const list = $('list')
+        list.replaceChildren()
+        if (!rows.length) {
+          list.append(el('li', { class: 'empty', text: $('f-status').value === 'reviewable' ? 'No access requests are waiting. 🎉' : 'Nothing matches these filters.' }))
+          return
+        }
+        for (const r of rows) {
+          const b = el('button', { type: 'button', class: 'row', 'aria-current': String(r.id === state.selected), onclick: () => select(r.id) },
+            el('span', { class: 'name', text: r.full_name || r.email }),
+            el('span', { class: `status ${r.status}`, text: STATUS_TEXT[r.status] || r.status }),
+            el('span', { class: 'sub' }, el('span', { class: 'tag', text: r.role_label || 'Request' }), ' ', r.claimed_organization ? `${r.claimed_organization} · ` : '', r.email),
+            el('span', { class: 'sub', text: ago(r.submitted_at || r.created_at) }))
+          list.append(el('li', {}, b))
+        }
+      }
+
+      /* ----------------------------------------------------------------- detail -- */
+      const section = (title, rows) => {
+        const shown = rows.filter(([, v]) => v !== null && v !== undefined && v !== '')
+        if (!shown.length) return null
+        return [el('h3', { text: title }), el('dl', {}, ...shown.map(([k, v]) => el('div', {}, el('dt', { text: k }), el('dd', { text: String(v) }))))]
+      }
+      const platformLabel = (code) => state.platformCatalogue.find((p) => p.code === code)?.label || code
+
+      async function select(id) {
+        state.selected = id
+        for (const b of document.querySelectorAll('.row')) b.setAttribute('aria-current', 'false')
+        const current = [...document.querySelectorAll('.row')].find((_, i) => state.rows[i]?.id === id)
+        current?.setAttribute('aria-current', 'true')
+        const box = $('detail')
+        box.replaceChildren(el('p', { class: 'empty', text: 'Loading…' }))
+        let d
+        try {
+          d = await call('GET', `/registrations/${encodeURIComponent(id)}`)
+        } catch (err) {
+          box.replaceChildren(el('p', { class: 'empty', text: err.message }))
+          return
+        }
+        state.detail = d
+        state.platformCatalogue = d.platform_catalogue || state.platformCatalogue
+        const advice = d.advice || {}
+        const profileRows = (d.profile_fields || []).map((f) => {
+          const v = d.profile?.[f.key]
+          return [f.label, v === undefined ? null : f.type === 'enum' ? human(v) : Array.isArray(v) ? human(v) : String(v)]
+        })
+        const reviewable = d.status === 'PENDING_APPROVAL' || d.status === 'INFO_REQUESTED'
+        // Sections are [heading, list] pairs or null: flatten, and leave out what is empty.
+        const parts = (...items) => items.flat().filter(Boolean)
+        box.replaceChildren(...parts(
+          el('h2', { text: d.full_name || d.email }),
+          el('p', { class: 'meta' }, el('span', { class: 'tag', text: d.requested?.role_label || 'Request' }), `  ${STATUS_TEXT[d.status] || d.status} · submitted ${when(d.submitted_at || d.created_at)}`),
+          section('Verification', [
+            ['Email', `${d.verification?.email || d.email}${d.verification?.email_verified ? '  ✓ verified' : ''}`],
+            ['Organisation (claimed)', d.requested?.claimed_organization ? `${d.requested.claimed_organization}  (not verified)` : ''],
+            ['18 or older', d.consent?.adult_confirmed_at ? `Confirmed ${when(d.consent.adult_confirmed_at)}` : ''],
+            ['Notice accepted', d.consent?.version ? `${d.consent.version} · ${when(d.consent.accepted_at)}` : ''],
+          ]),
+          section('Requested (self-reported)', [
+            ['Role', d.requested?.role_label],
+            ['APEX platforms', (d.requested?.platforms || []).map(platformLabel).join(', ') || '—'],
+            ...profileRows,
+          ]),
+          d.verification_note ? el('p', { class: 'note' }, el('strong', { text: 'Verify before approving: ' }), d.verification_note) : null,
+          advice.summary || advice.observations?.length
+            ? el('div', { class: 'advice' },
+                el('strong', { text: `Review advice (${advice.source === 'ai' ? 'AI-assisted' : 'rules only'}, advisory)` }),
+                advice.summary ? el('div', { text: advice.summary }) : null,
+                advice.observations?.length ? el('ul', {}, ...advice.observations.map((o) => el('li', { text: o.text }))) : null)
+            : null,
+          section('Clarification', [
+            ['Question', d.clarification?.question],
+            ['Answer', d.clarification?.question ? d.clarification.answer || 'Not answered yet' : ''],
+          ]),
+          section('Decision', [
+            ['Decided', d.decision?.decided_at ? when(d.decision.decided_at) : ''],
+            ['Roles granted', d.decision?.approved_roles ? d.decision.approved_roles.map((r) => ROLE_LABELS[r.role] || r.role).join(', ') || 'none' : ''],
+            ['Reason', d.decision?.reason],
+            ['Internal note', d.internal_note],
+          ]),
+          reviewable
+            ? el('div', { class: 'actions' },
+                el('button', { type: 'button', class: 'btn danger', text: 'Reject…', onclick: openReject }),
+                el('button', { type: 'button', class: 'btn', text: 'Ask a question…', onclick: openInfo }),
+                el('button', { type: 'button', class: 'btn primary', text: 'Approve…', onclick: openApprove }))
+            : null,
+        ))
+      }
+
+      /* ---------------------------------------------------------------- dialogs -- */
+      for (const b of document.querySelectorAll('[data-close]')) b.addEventListener('click', () => b.closest('dialog').close())
+
+      function openApprove() {
+        const d = state.detail
+        const roles = $('ap-roles')
+        roles.replaceChildren(el('legend', { text: 'Roles to grant' }),
+          el('p', { class: 'hint', text: `Nothing is preselected. Suggested least-privileged: ${(d.default_roles || []).map((r) => ROLE_LABELS[r] || r).join(', ') || 'none'}.` }),
+          ...(d.grantable_roles || []).map((r) =>
+            el('label', { class: 'opt' }, el('input', { type: 'checkbox', value: r, 'data-role': '' }), ROLE_LABELS[r] || r, ROLE_NOTES[r] ? el('small', { text: `— ${ROLE_NOTES[r]}` }) : null)))
+        const requested = d.requested?.platforms || []
+        const plats = $('ap-platforms')
+        const hint = plats.querySelector('.hint')
+        plats.replaceChildren(el('legend', { text: 'APEX platforms shown on their home' }), hint,
+          ...(d.platform_catalogue || []).map((p) =>
+            el('label', { class: 'opt' }, el('input', { type: 'checkbox', value: p.code, 'data-platform': '', checked: !requested.length || requested.includes(p.code) }), p.label,
+              requested.includes(p.code) ? el('small', { text: '— requested' }) : null)))
+        $('ap-note').value = ''
+        $('ap-confirm').checked = false
+        $('ap-err').textContent = ''
+        $('dlg-approve').showModal()
+      }
+      $('dlg-approve').querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const d = state.detail
+        const roles = [...document.querySelectorAll('#ap-roles [data-role]:checked')].map((i) => ({ role: i.value, scope_type: 'platform' }))
+        const platforms = [...document.querySelectorAll('#ap-platforms [data-platform]:checked')].map((i) => i.value)
+        if (!platforms.length) return ($('ap-err').textContent = 'Choose at least one APEX platform.')
+        if (!$('ap-confirm').checked) return ($('ap-err').textContent = 'Confirm that you checked the role and every access choice.')
+        const go = $('ap-go')
+        go.disabled = true
+        try {
+          const r = await call('POST', `/registrations/${encodeURIComponent(d.id)}/approve`, {
+            onboarding_role: d.requested.onboarding_role, roles, platforms, confirm: true, note: $('ap-note').value.trim() || null,
+          })
+          $('dlg-approve').close()
+          toast(r.password_chosen ? 'Approved. They can sign in now with the password they chose.' : 'Approved. The invitation email with the set-password link was sent.')
+          await refresh(d.id)
+        } catch (err) {
+          $('ap-err').textContent = err.message
+        } finally {
+          go.disabled = false
+        }
+      })
+
+      function openInfo() {
+        $('in-q').value = ''
+        $('in-note').value = ''
+        $('in-err').textContent = ''
+        $('dlg-info').showModal()
+      }
+      $('dlg-info').querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const q = $('in-q').value.trim()
+        if (!q) return ($('in-err').textContent = 'Write the question.')
+        try {
+          await call('POST', `/registrations/${encodeURIComponent(state.detail.id)}/request-info`, { question: q, note: $('in-note').value.trim() || null })
+          $('dlg-info').close()
+          toast('Question sent. The applicant answers through a private link.')
+          await refresh(state.detail.id)
+        } catch (err) {
+          $('in-err').textContent = err.message
+        }
+      })
+
+      function openReject() {
+        $('rj-reason').value = ''
+        $('rj-msg').value = ''
+        $('rj-err').textContent = ''
+        $('dlg-reject').showModal()
+      }
+      $('dlg-reject').querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const reason = $('rj-reason').value.trim()
+        if (reason.length < 5) return ($('rj-err').textContent = 'Give a meaningful reason (at least 5 characters).')
+        try {
+          await call('POST', `/registrations/${encodeURIComponent(state.detail.id)}/reject`, { reason, message: $('rj-msg').value.trim() || null })
+          $('dlg-reject').close()
+          toast('Request rejected. The applicant was told by email.')
+          await refresh(state.detail.id)
+        } catch (err) {
+          $('rj-err').textContent = err.message
+        }
+      })
+
+      /* ------------------------------------------------------------------ start -- */
+      async function refresh(keep) {
+        await Promise.all([loadList(), loadCounts()])
+        if (keep) await select(keep)
+      }
+      let typing
+      $('f-q').addEventListener('input', () => {
+        clearTimeout(typing)
+        typing = setTimeout(loadList, 250)
+      })
+      $('f-status').addEventListener('change', loadList)
+      $('f-role').addEventListener('change', loadList)
+
+      fetch('/auth/me', { cache: 'no-store' })
+        .then((r) => {
+          if (r.status === 401) location.replace('/login?next=%2Fadmin')
+          return r.ok ? r.json() : null
+        })
+        .then((who) => {
+          if (who?.email) $('who').textContent = who.email
+        })
+        .catch(() => {})
+
+      const wanted = new URLSearchParams(location.search).get('request')
+      refresh().then(() => {
+        const first = wanted && state.rows.find((r) => r.id === wanted) ? wanted : state.rows[0]?.id
+        if (first) select(first)
+      })
+    </script>
+  </body>
+</html>

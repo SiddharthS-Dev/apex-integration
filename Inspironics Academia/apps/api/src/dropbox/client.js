@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { log } from '../lib/logger.js';
 import {
   DropboxError, clearAccessToken, deleteConnection, getAccessToken, getSyncSettings, loadConnection, updateConnection,
@@ -56,7 +57,7 @@ function pathRootFor(conn) {
 // Low-level call. `kind` is 'rpc' (JSON body) or 'content' (args in Dropbox-API-Arg, binary response).
 // Handles: 429/5xx/network retry with backoff (honours Retry-After), 401 → drop cached token and retry
 // once, invalid_root → store the new root namespace id and retry once.
-async function call(kind, endpoint, payload, { token: explicitToken, pathRoot = true } = {}) {
+async function call(kind, endpoint, payload, { token: explicitToken, pathRoot = true, body: upload } = {}) {
   let retried401 = false;
   let retriedRoot = false;
   for (let attempt = 0; ; attempt++) {
@@ -73,6 +74,8 @@ async function call(kind, endpoint, payload, { token: explicitToken, pathRoot = 
       }
     } else {
       headers['Dropbox-API-Arg'] = httpHeaderSafeJson(payload ?? {});
+      // Uploads send the bytes as the body; their result comes back as JSON.
+      if (upload) { headers['Content-Type'] = 'application/octet-stream'; body = upload; }
     }
 
     let res;
@@ -84,6 +87,7 @@ async function call(kind, endpoint, payload, { token: explicitToken, pathRoot = 
     }
 
     if (res.ok) {
+      if (kind === 'content' && upload) { const text = await res.text(); return text ? JSON.parse(text) : null; }
       if (kind === 'content') return { buffer: Buffer.from(await res.arrayBuffer()), result: safeParse(res.headers.get('dropbox-api-result')) };
       const text = await res.text();
       return text ? JSON.parse(text) : null;
@@ -153,6 +157,90 @@ export async function listFolderRecursive(path) {
     content_hash: e.content_hash,
     server_modified: e.server_modified,
   }));
+}
+
+const fileMeta = (e) => ({
+  id: e.id, name: e.name, path_display: e.path_display, path_lower: e.path_lower, rev: e.rev,
+  size: e.size, content_hash: e.content_hash, server_modified: e.server_modified,
+});
+
+/** One folder level: sub-folders and files with their metadata (no file bytes are downloaded). */
+export async function listFolder(path) {
+  const entries = await listAll(path, { recursive: false });
+  return {
+    folders: entries.filter((e) => e['.tag'] === 'folder').map((e) => ({ name: e.name, path: e.path_display })).sort((a, b) => a.name.localeCompare(b.name)),
+    files: entries.filter((e) => e['.tag'] === 'file').map(fileMeta).sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
+/** Current metadata of a file (by id or path), or null when it was deleted or moved out of reach. */
+export async function getFileMetadata(fileIdOrPath) {
+  try {
+    const m = await rpc('files/get_metadata', { path: normalizePath(fileIdOrPath) });
+    return m?.['.tag'] === 'file' ? fileMeta(m) : null;
+  } catch (err) {
+    if (err.status === 409 && /not_found/.test(err.summary || '')) return null;
+    throw err;
+  }
+}
+
+/**
+ * Opens a streamed download (no buffering, nothing written to disk): returns the fetch Response so the
+ * caller can pipe it to a client. `range` ("bytes=0-99") is passed through for seeking.
+ */
+export async function openDownload(fileIdOrPath, { range } = {}) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const conn = await loadConnection();
+    const headers = { Authorization: `Bearer ${await getAccessToken()}`, 'Dropbox-API-Arg': httpHeaderSafeJson({ path: normalizePath(fileIdOrPath) }) };
+    const root = pathRootFor(conn);
+    if (root) headers['Dropbox-API-Path-Root'] = root;
+    if (range) headers.Range = range;
+    let res;
+    try {
+      res = await fetch(`${CONTENT_HOST}files/download`, { method: 'POST', headers });
+    } catch (err) {
+      throw new DropboxError(`Dropbox unreachable (files/download): ${err.cause?.code || err.code || 'network error'}`, { code: 'network' });
+    }
+    if (res.ok || res.status === 206) return res;
+    const err = await readError(res);
+    if (res.status === 401 && attempt === 0) { clearAccessToken(); continue; }
+    throw new DropboxError(`Dropbox files/download failed (${res.status}${err.error_summary ? `: ${String(err.error_summary).slice(0, 160)}` : ''})`, { status: res.status, summary: err.error_summary, code: err.error?.['.tag'] });
+  }
+  throw new DropboxError('Dropbox files/download failed', { status: 401 });
+}
+
+/** Space used and allocated on the connected account (needs account_info.read). */
+export async function getSpaceUsage() {
+  const u = await rpc('users/get_space_usage', null, { pathRoot: false });
+  const allocated = u?.allocation?.allocated ?? u?.allocation?.individual?.allocated ?? null;
+  return { used: u?.used ?? null, allocated, team: u?.allocation?.['.tag'] === 'team' };
+}
+
+/**
+ * Dropbox's content hash (SHA-256 of the SHA-256 of each 4 MB block), to tell whether a file with the
+ * same bytes is already there.
+ */
+export function dropboxContentHash(buf) {
+  const blocks = [];
+  for (let i = 0; i < buf.length; i += 4 * 1024 * 1024) blocks.push(crypto.createHash('sha256').update(buf.subarray(i, i + 4 * 1024 * 1024)).digest());
+  return crypto.createHash('sha256').update(Buffer.concat(blocks)).digest('hex');
+}
+
+const UPLOAD_CHUNK = 64 * 1024 * 1024;
+/**
+ * Uploads `buf` to `path` (needs the files.content.write permission on the Dropbox app). Files over
+ * 150 MB go through an upload session. mode: 'overwrite' | 'add' (add renames on conflict).
+ */
+export async function uploadFile(path, buf, { mode = 'overwrite' } = {}) {
+  const commit = { path: normalizePath(path), mode: mode === 'add' ? 'add' : 'overwrite', autorename: mode === 'add', mute: true };
+  if (buf.length <= 150 * 1024 * 1024) return call('content', 'files/upload', commit, { body: buf });
+  const start = await call('content', 'files/upload_session/start', { close: false }, { body: buf.subarray(0, UPLOAD_CHUNK) });
+  let offset = UPLOAD_CHUNK;
+  while (buf.length - offset > UPLOAD_CHUNK) {
+    await call('content', 'files/upload_session/append_v2', { cursor: { session_id: start.session_id, offset }, close: false }, { body: buf.subarray(offset, offset + UPLOAD_CHUNK) });
+    offset += UPLOAD_CHUNK;
+  }
+  return call('content', 'files/upload_session/finish', { cursor: { session_id: start.session_id, offset }, commit }, { body: buf.subarray(offset) });
 }
 
 export async function listSubfolders(path) {
