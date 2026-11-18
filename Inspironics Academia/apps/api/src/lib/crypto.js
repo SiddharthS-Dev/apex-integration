@@ -78,7 +78,7 @@ export function decryptWithIndex(envelope, key = defaultKeys()) {
   const ct = Buffer.from(ctB, 'base64url');
   const keys = keyList(key);
   for (let i = 0; i < keys.length; i++) {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', keys[i], iv);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', keys[i], iv, { authTagLength: 16 });
     decipher.setAuthTag(tag);
     try {
       return { plaintext: Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8'), keyIndex: i };

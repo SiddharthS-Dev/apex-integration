@@ -144,3 +144,11 @@ test('(e) rewrap-tokens refuses the default database unless asked by name, and l
   assert.match(r.stderr, /Refusing to rewrap tokens in .*--allow-default-db/);
   assert.deepEqual(files.map(stamp), before);
 });
+
+test('a truncated GCM tag is rejected, not accepted with a weaker check', () => {
+  const cipher = new TokenCipher(OLD);
+  const [v, iv, data, tag] = cipher.encrypt('refresh-token').split('.');
+  const short = Buffer.from(tag, 'base64').subarray(0, 4).toString('base64');
+  assert.throws(() => cipher.decrypt([v, iv, data, short].join('.')));
+  assert.equal(cipher.decrypt([v, iv, data, tag].join('.')), 'refresh-token');
+});

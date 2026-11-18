@@ -86,7 +86,7 @@ export class TokenCipher {
     const data = Buffer.from(dataB64, 'base64');
     const keys = [this.#key, ...this.#previous];
     for (let i = 0; i < keys.length; i++) {
-      const decipher = crypto.createDecipheriv(ALGORITHM, keys[i], iv);
+      const decipher = crypto.createDecipheriv(ALGORITHM, keys[i], iv, { authTagLength: 16 });
       decipher.setAuthTag(tag);
       try {
         return { plaintext: Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8'), keyIndex: i };

@@ -147,3 +147,11 @@ test('(e) the rewrap CLI refuses the default data directory and leaves it untouc
   assert.equal(fs.existsSync(path.join(dataDir, `__rewrap-probe-${process.pid}__`)), false);
   assert.deepEqual(files.map(statOf), before, 'academy.db (and its WAL/SHM) unchanged');
 });
+
+test('a truncated GCM tag is rejected, not accepted with a weaker check', () => {
+  const key = crypto.randomBytes(32);
+  const [v, iv, tag, ct] = encrypt('refresh-token', key).split('.');
+  const short = Buffer.from(tag, 'base64url').subarray(0, 4).toString('base64url');
+  assert.throws(() => decrypt([v, iv, short, ct].join('.'), key));
+  assert.equal(decrypt([v, iv, tag, ct].join('.'), key), 'refresh-token');
+});

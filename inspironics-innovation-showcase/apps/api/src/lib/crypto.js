@@ -101,7 +101,7 @@ export function decryptWithIndex(key, envelope, aad = '') {
   const keys = ring(key)
   for (let i = 0; i < keys.length; i++) {
     try {
-      const decipher = createDecipheriv('aes-256-gcm', keys[i], Buffer.from(iv, 'base64url'))
+      const decipher = createDecipheriv('aes-256-gcm', keys[i], Buffer.from(iv, 'base64url'), { authTagLength: 16 })
       if (aad) decipher.setAAD(Buffer.from(aad))
       decipher.setAuthTag(Buffer.from(tag, 'base64url'))
       return { plaintext: Buffer.concat([decipher.update(Buffer.from(body, 'base64url')), decipher.final()]).toString('utf8'), keyIndex: i }

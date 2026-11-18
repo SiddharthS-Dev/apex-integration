@@ -141,3 +141,11 @@ test('(e) rewrap-secrets refuses the default database unless asked by name, and 
   assert.match(r.stderr, /Refusing to rewrap secrets in .*--allow-default-db/)
   assert.deepEqual([real, `${real}-wal`, `${real}-shm`].map(stamp), before)
 })
+
+test('a truncated GCM tag is rejected, not accepted with a weaker check', () => {
+  const key = crypto.randomBytes(32)
+  const [v, iv, tag, body] = encrypt(key, 'refresh-token', AAD).split('.')
+  const short = Buffer.from(tag, 'base64url').subarray(0, 4).toString('base64url')
+  assert.throws(() => decrypt(key, [v, iv, short, body].join('.'), AAD))
+  assert.equal(decrypt(key, [v, iv, tag, body].join('.'), AAD), 'refresh-token')
+})

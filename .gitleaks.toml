@@ -22,4 +22,7 @@ regexes = [
   '''MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=''',
   # ci.yml: the throwaway Postgres service password `ci` inside connection strings.
   '''postgres://postgres:ci@localhost''',
+  # Showcase web: `apiPending` is the *name* of a browser localStorage key
+  # (apps/web/src/shared/config/index.js), not a credential. Flagged by generic-api-key on entropy.
+  '''^inspironics\.api\.pending\.v1$''',
 ]

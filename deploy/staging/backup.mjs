@@ -125,7 +125,7 @@ async function decryptFileWith(src, dest, key) {
     fs.closeSync(fd)
   }
   if (!header.subarray(0, MAGIC.length).equals(MAGIC)) throw new Error(`${src}: not an APEX backup file`)
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, header.subarray(MAGIC.length))
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, header.subarray(MAGIC.length), { authTagLength: 16 })
   decipher.setAuthTag(tag)
   const partial = `${dest}.partial`
   const body = size - HEADER_BYTES - TAG_BYTES
@@ -155,7 +155,7 @@ async function verifyFileWith(src, key) {
   fs.readSync(fd, tag, 0, TAG_BYTES, size - TAG_BYTES)
   fs.closeSync(fd)
   if (!header.subarray(0, MAGIC.length).equals(MAGIC)) return false
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, header.subarray(MAGIC.length))
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, header.subarray(MAGIC.length), { authTagLength: 16 })
   decipher.setAuthTag(tag)
   const body = size - HEADER_BYTES - TAG_BYTES
   try {
