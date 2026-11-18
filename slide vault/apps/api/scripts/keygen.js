@@ -3,9 +3,9 @@
  *
  *   npm run keygen
  *
- * Rotating this key makes every stored refresh token unreadable, which shows
- * up as "reconnect Dropbox" rather than as silent breakage — see
- * docs/SECURITY.md before rotating in production.
+ * To rotate, keep the old key in DROPBOX_TOKEN_ENCRYPTION_KEY_PREVIOUS so the
+ * stored refresh token stays readable, then run `npm run rewrap-tokens` — see
+ * docs/SECURITY.md.
  */
 import { generateKey } from '../src/crypto/tokenCipher.js';
 

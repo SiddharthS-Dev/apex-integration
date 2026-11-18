@@ -10,10 +10,15 @@
  *   node deploy/staging/generate-secrets.mjs --prune-identity-keys    drop every kid but the current
  *   node deploy/staging/generate-secrets.mjs --add-missing            add variables introduced since the
  *                                                                file was generated; keep every other value
+ *   node deploy/staging/generate-secrets.mjs --rotate <NAME>          new random value for one data-encryption
+ *                                                                key (see ROTATABLE_KEYS); the old value is
+ *                                                                prepended to <NAME>_PREVIOUS so stored data
+ *                                                                stays readable
  *   options: --out <file>   --port <n>   --admin-email <e>
  *
- * Rotation and pruning rewrite only the identity-key lines and keep every other value; the old file
- * is kept beside it as .env.staging.bak-<time>. After either, restart the whole stack (keys are read
+ * Rotation and pruning rewrite only the identity-key lines (or, for --rotate, the one key and its
+ * _PREVIOUS list) and keep every other value; the old file is kept beside it as .env.staging.bak-<time>.
+ * Nothing rotates automatically. After either, restart the whole stack (keys are read
  * at start-up only): see docs/operations/STAGING_RUNBOOK.md.
  *
  * Every value is throwaway and local to this machine or CI run. Nothing here is a real credential;
@@ -64,6 +69,43 @@ export function identityVars(store) {
     APEX_IDENTITY_KEYS_SHOWCASE: JSON.stringify(keysFor(store, 'showcase')),
     APEX_IDENTITY_KEYS_SLIDESVAULT: JSON.stringify(keysFor(store, 'slidesvault')),
   }
+}
+
+/**
+ * Data-encryption keys --rotate accepts, with the encoding each is generated in. Each app reads the
+ * matching _PREVIOUS variable (compose.yml) and tries it for decryption; backup.mjs reads
+ * BACKUP_ENCRYPTION_KEY_PREVIOUS for decrypt/verify.
+ */
+export const ROTATABLE_KEYS = {
+  CORE_TOKEN_ENCRYPTION_KEY: () => b64(32),
+  SHOWCASE_ENCRYPTION_KEY: () => hex(32),
+  SLIDESVAULT_TOKEN_ENCRYPTION_KEY: () => b64(32),
+  BACKUP_ENCRYPTION_KEY: () => b64(32),
+}
+
+/**
+ * The variables after rotating `name`: a fresh current value, and the old one prepended to
+ * <name>_PREVIOUS (comma-separated, newest first). Every other variable is kept.
+ */
+export function rotateKey(vars, name) {
+  const fresh = ROTATABLE_KEYS[name]
+  if (!fresh) throw new Error(`--rotate takes one of ${Object.keys(ROTATABLE_KEYS).join(', ')}`)
+  if (!vars[name]) throw new Error(`${name} is not set in the file; nothing to rotate (generate-secrets.mjs --add-missing adds it)`)
+  const previous = String(vars[`${name}_PREVIOUS`] || '').split(',').map((s) => s.trim()).filter(Boolean)
+  let next = fresh()
+  while (next === vars[name] || previous.includes(next)) next = fresh()
+  return { ...vars, [name]: next, [`${name}_PREVIOUS`]: [vars[name], ...previous.filter((k) => k !== vars[name])].join(',') }
+}
+
+function backupFile(out) {
+  const backup = `${out}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`
+  fs.copyFileSync(out, backup)
+  try {
+    fs.chmodSync(backup, 0o600)
+  } catch {
+    /* Windows */
+  }
+  return backup
 }
 
 /** Every variable, freshly generated. */
@@ -152,18 +194,28 @@ function main(argv) {
     return
   }
 
+  if (argv.includes('--rotate')) {
+    const name = arg('--rotate')
+    if (!fs.existsSync(out)) throw new Error(`${out} does not exist — generate it first.`)
+    const next = rotateKey(parseEnv(fs.readFileSync(out, 'utf8')), name)
+    const backup = backupFile(out)
+    writeSecure(out, serialise(next))
+    console.log(`  Rotated ${name} in ${out}; the old value is now first in ${name}_PREVIOUS (${next[`${name}_PREVIOUS`].split(',').length} key(s)).`)
+    console.log(`  previous file kept as ${backup}`)
+    if (name === 'BACKUP_ENCRYPTION_KEY') {
+      console.log('  New backup sets use the new key. Keep BACKUP_ENCRYPTION_KEY_PREVIOUS until the last set made with the old key has aged out of retention.')
+    } else {
+      console.log('  Recreate that service (compose up -d --force-recreate), run its rewrap CLI, then remove the _PREVIOUS value: see STAGING_RUNBOOK.md "Key rotation".')
+    }
+    return
+  }
+
   if (rotating || pruning) {
     if (!fs.existsSync(out)) throw new Error(`${out} does not exist — generate it first.`)
     const vars = parseEnv(fs.readFileSync(out, 'utf8'))
     const store = validateStore(JSON.parse(vars.APEX_IDENTITY_KEYS_STORE || 'null'))
     const next = rotating ? rotateStore(store) : pruneStore(store)
-    const backup = `${out}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`
-    fs.copyFileSync(out, backup)
-    try {
-      fs.chmodSync(backup, 0o600)
-    } catch {
-      /* Windows */
-    }
+    const backup = backupFile(out)
     writeSecure(out, serialise({ ...vars, ...identityVars(next) }))
     console.log(`  ${rotating ? 'Rotated' : 'Pruned'} identity keys in ${out}`)
     console.log(`  current kid ${next.current}; kids now: ${Object.keys(next.keys).join(', ')}`)

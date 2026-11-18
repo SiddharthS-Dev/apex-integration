@@ -36,12 +36,12 @@ export function assertTestSafeSqlite(file, env = process.env) {
 }
 
 /**
- * The migration CLI's decision for a SQLite target: null to go ahead, else the
+ * The migration (and rewrap-tokens) CLI's decision for a SQLite target: null to go ahead, else the
  * reason to refuse. The default data directory needs --allow-default-db or
  * APEX_ALLOW_DEFAULT_DB=1.
  */
-export function defaultDbRefusal(file, { argv = process.argv, env = process.env } = {}) {
+export function defaultDbRefusal(file, { argv = process.argv, env = process.env, action = 'migrate' } = {}) {
   if (!isInDefaultDataDir(file)) return null;
   if (argv.includes('--allow-default-db') || String(env.APEX_ALLOW_DEFAULT_DB || '').trim() === '1') return null;
-  return `Refusing to migrate ${path.resolve(file)}: it is the default (real) database. Re-run with --allow-default-db or APEX_ALLOW_DEFAULT_DB=1 if that is really the target.`;
+  return `Refusing to ${action} ${path.resolve(file)}: it is the default (real) database. Re-run with --allow-default-db or APEX_ALLOW_DEFAULT_DB=1 if that is really the target.`;
 }

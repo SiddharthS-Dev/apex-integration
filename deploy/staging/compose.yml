@@ -96,6 +96,8 @@ services:
       APEX_IDENTITY_KEYS: ${APEX_IDENTITY_KEYS_CORE:?run generate-secrets.mjs}
       APEX_IDENTITY_TRUSTED_SOURCES: ${APEX_STAGING_GATEWAY_IP:-10.213.47.10}
       TOKEN_ENCRYPTION_KEY: ${CORE_TOKEN_ENCRYPTION_KEY:?run generate-secrets.mjs}
+      # Retired keys after generate-secrets.mjs --rotate (decryption only); empty normally.
+      TOKEN_ENCRYPTION_KEY_PREVIOUS: ${CORE_TOKEN_ENCRYPTION_KEY_PREVIOUS:-}
       # External inputs isolated: no AI, no speech, no Dropbox, mail to the log only.
       AI_ENABLED: 'false'
       AI_PROVIDER: none
@@ -144,6 +146,7 @@ services:
       DATABASE_URL: postgres://showcase:${SHOWCASE_DB_PASSWORD}@postgres:5432/showcase
       OBJECT_STORE_DIR: /data/objects
       ENCRYPTION_KEY: ${SHOWCASE_ENCRYPTION_KEY:?run generate-secrets.mjs}
+      ENCRYPTION_KEY_PREVIOUS: ${SHOWCASE_ENCRYPTION_KEY_PREVIOUS:-}
       ALLOW_REGISTRATION: 'false'
       GUEST_ENABLED: 'false'
       GOOGLE_CLIENT_ID: ''
@@ -193,6 +196,7 @@ services:
       OBJECT_STORE_DIR: /data/objects
       # Required at start-up even with Dropbox unset (refresh tokens are encrypted at rest).
       DROPBOX_TOKEN_ENCRYPTION_KEY: ${SLIDESVAULT_TOKEN_ENCRYPTION_KEY:?run generate-secrets.mjs}
+      DROPBOX_TOKEN_ENCRYPTION_KEY_PREVIOUS: ${SLIDESVAULT_TOKEN_ENCRYPTION_KEY_PREVIOUS:-}
       APEX_IDENTITY_MODE: required
       APEX_IDENTITY_ISSUER: apex-gateway
       APEX_IDENTITY_AUDIENCE: slidesvault

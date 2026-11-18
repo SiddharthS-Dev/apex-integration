@@ -165,6 +165,8 @@ export function buildConfig(env = process.env) {
       /** Must match a redirect URI registered in the Dropbox App Console. */
       redirectUri: env.DROPBOX_REDIRECT_URI || `${apiBaseUrl}/api/dropbox/oauth/callback`,
       tokenEncryptionKey: env.DROPBOX_TOKEN_ENCRYPTION_KEY || '',
+      /** Retired keys, comma-separated: still tried for decryption after a rotation (crypto/tokenCipher.js). */
+      tokenEncryptionKeyPrevious: env.DROPBOX_TOKEN_ENCRYPTION_KEY_PREVIOUS || '',
       maxRetries: int(env.DROPBOX_MAX_RETRIES, 5),
       requestTimeoutMs: int(env.DROPBOX_REQUEST_TIMEOUT_SECONDS, 30) * 1000,
       downloadTimeoutMs: int(env.DROPBOX_DOWNLOAD_TIMEOUT_SECONDS, 120) * 1000,
@@ -291,6 +293,26 @@ export function decodeKey(value) {
 }
 
 /**
+ * Decodes DROPBOX_TOKEN_ENCRYPTION_KEY_PREVIOUS: zero or more keys,
+ * comma-separated, each validated like the main key. Returns the valid keys in
+ * order and the 1-based positions of malformed entries (never their values).
+ */
+export function decodeKeyList(value) {
+  const keys = [];
+  const invalid = [];
+  String(value || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .forEach((entry, i) => {
+      const key = decodeKey(entry);
+      if (key) keys.push(key);
+      else invalid.push(i + 1);
+    });
+  return { keys, invalid };
+}
+
+/**
  * Startup validation, split into fatal problems (the process must not start)
  * and warnings (a degraded but usable server — e.g. Dropbox not yet configured
  * on a fresh install).
@@ -313,6 +335,10 @@ export function validateConfig(cfg) {
     );
   } else if (!decodeKey(cfg.dropbox.tokenEncryptionKey)) {
     errors.push('DROPBOX_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes (AES-256-GCM).');
+  }
+  // Fatal like the main key: a malformed retired key would leave rows written before the rotation unreadable.
+  for (const position of decodeKeyList(cfg.dropbox.tokenEncryptionKeyPrevious).invalid) {
+    errors.push(`DROPBOX_TOKEN_ENCRYPTION_KEY_PREVIOUS entry ${position} must decode to exactly 32 bytes (AES-256-GCM).`);
   }
 
   if (cfg.sync.maxConcurrentFiles < 1 || cfg.sync.maxConcurrentFiles > 64) {

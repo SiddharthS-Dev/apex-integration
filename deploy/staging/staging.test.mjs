@@ -190,3 +190,108 @@ test('generate-secrets --add-missing adds new variables (the backup key) and kee
   for (const [k, v] of Object.entries(older)) assert.equal(after[k], v, `${k} kept`)
   assert.match(cli('--add-missing'), /already has every variable/)
 })
+
+test('backup key rotation: (a) old sets still decrypt and verify, (b) new sets need the new key, (c) a wrong key fails', async () => {
+  const { decryptFile, encryptTo, verifyFile } = await import('./backup.mjs')
+  const { Readable } = await import('node:stream')
+  const oldKey = crypto.randomBytes(32)
+  const olderKey = crypto.randomBytes(32)
+  const newKey = crypto.randomBytes(32)
+  const plain = crypto.randomBytes(50_000)
+  const oldSet = path.join(tmp, 'rot-old.enc')
+  const olderSet = path.join(tmp, 'rot-older.enc')
+  const newSet = path.join(tmp, 'rot-new.enc')
+  await encryptTo(Readable.from([plain]), oldSet, oldKey)
+  await encryptTo(Readable.from([plain]), olderSet, olderKey)
+  await encryptTo(Readable.from([plain]), newSet, newKey)
+  const ring = [newKey, oldKey, olderKey]
+
+  for (const set of [oldSet, olderSet, newSet]) {
+    assert.equal(await verifyFile(set, ring), true)
+    const out = `${set}.out`
+    await decryptFile(set, out, ring)
+    assert.ok(fs.readFileSync(out).equals(plain))
+  }
+  assert.equal(await verifyFile(newSet, [oldKey, olderKey]), false, 'a new set does not open with the old keys')
+  await assert.rejects(decryptFile(newSet, path.join(tmp, 'rot-x'), oldKey), /cannot decrypt/)
+
+  await assert.rejects(decryptFile(oldSet, path.join(tmp, 'rot-wrong'), [newKey, crypto.randomBytes(32)]), /cannot decrypt .*tried 2 keys/)
+  assert.equal(fs.existsSync(path.join(tmp, 'rot-wrong')), false)
+  assert.equal(fs.existsSync(path.join(tmp, 'rot-wrong.partial')), false)
+  assert.equal(await verifyFile(oldSet, [newKey, crypto.randomBytes(32)]), false)
+})
+
+test('backup key rotation: (d) BACKUP_ENCRYPTION_KEY_PREVIOUS is validated like the main key; the CLI uses it', async () => {
+  const { parsePreviousKeys, encryptTo } = await import('./backup.mjs')
+  const { Readable } = await import('node:stream')
+  const k1 = crypto.randomBytes(32).toString('base64')
+  const k2 = crypto.randomBytes(32).toString('base64')
+  assert.deepEqual(parsePreviousKeys(''), [])
+  assert.equal(parsePreviousKeys(`${k1}, ${k2}`).length, 2)
+  assert.throws(() => parsePreviousKeys(`${k1},c2hvcnQ=`), /BACKUP_ENCRYPTION_KEY_PREVIOUS entry 2 must be 32 random bytes/)
+  try {
+    parsePreviousKeys('c2hvcnQ=')
+  } catch (error) {
+    assert.ok(!error.message.includes('c2hvcnQ='), 'the value is not echoed')
+  }
+
+  // The CLI: a set made with the old key verifies and decrypts after rotation, via the env file.
+  const setDir = path.join(tmp, 'sets', '20261118T020000Z')
+  fs.mkdirSync(setDir, { recursive: true })
+  const plain = Buffer.from('pg_dump bytes')
+  await encryptTo(Readable.from([plain]), path.join(setDir, 'core.dump.enc'), Buffer.from(k1, 'base64'))
+  const { sha256File } = await import('./backup.mjs')
+  fs.writeFileSync(path.join(setDir, 'manifest.json'), JSON.stringify({ set: '20261118T020000Z', files: [{ file: 'core.dump.enc', sha256: await sha256File(path.join(setDir, 'core.dump.enc')) }] }))
+  const envFile = path.join(tmp, '.env.backup-rot')
+  const env = { ...process.env }
+  delete env.BACKUP_ENCRYPTION_KEY
+  delete env.BACKUP_ENCRYPTION_KEY_PREVIOUS
+  const backup = (vars, ...args) => {
+    fs.writeFileSync(envFile, serialise(vars))
+    try {
+      return { code: 0, out: execFileSync(process.execPath, [path.join(HERE, 'backup.mjs'), ...args, '--env-file', envFile], { encoding: 'utf8', env, stdio: 'pipe' }) }
+    } catch (error) {
+      return { code: error.status, out: `${error.stdout}${error.stderr}` }
+    }
+  }
+  assert.equal(backup({ BACKUP_ENCRYPTION_KEY: k2 }, 'verify', setDir).code, 1, 'without the previous key the old set fails')
+  const ok = backup({ BACKUP_ENCRYPTION_KEY: k2, BACKUP_ENCRYPTION_KEY_PREVIOUS: k1 }, 'verify', setDir)
+  assert.equal(ok.code, 0, ok.out)
+  assert.match(ok.out, /verified: 1 files/)
+  const out = path.join(tmp, 'core.dump')
+  assert.equal(backup({ BACKUP_ENCRYPTION_KEY: k2, BACKUP_ENCRYPTION_KEY_PREVIOUS: k1 }, 'decrypt', path.join(setDir, 'core.dump.enc'), out).code, 0)
+  assert.ok(fs.readFileSync(out).equals(plain))
+  const bad = backup({ BACKUP_ENCRYPTION_KEY: k2, BACKUP_ENCRYPTION_KEY_PREVIOUS: 'c2hvcnQ=' }, 'verify', setDir)
+  assert.equal(bad.code, 1)
+  assert.match(bad.out, /BACKUP_ENCRYPTION_KEY_PREVIOUS must be 32 random bytes/)
+  for (const k of [k1, k2]) assert.ok(!ok.out.includes(k) && !bad.out.includes(k), 'no key printed')
+})
+
+test('generate-secrets --rotate moves the current key to <NAME>_PREVIOUS and writes a fresh one', () => {
+  const out = path.join(tmp, '.env.rotate')
+  const cli = (...args) => execFileSync(process.execPath, [path.join(HERE, 'generate-secrets.mjs'), '--out', out, ...args], { encoding: 'utf8', stdio: 'pipe' })
+  cli()
+  const first = parseEnv(fs.readFileSync(out, 'utf8'))
+  const printed = cli('--rotate', 'CORE_TOKEN_ENCRYPTION_KEY')
+  const second = parseEnv(fs.readFileSync(out, 'utf8'))
+  if (process.platform !== 'win32') assert.equal(fs.statSync(out).mode & 0o777, 0o600)
+  assert.notEqual(second.CORE_TOKEN_ENCRYPTION_KEY, first.CORE_TOKEN_ENCRYPTION_KEY)
+  assert.equal(Buffer.from(second.CORE_TOKEN_ENCRYPTION_KEY, 'base64').length, 32)
+  assert.equal(second.CORE_TOKEN_ENCRYPTION_KEY_PREVIOUS, first.CORE_TOKEN_ENCRYPTION_KEY)
+  for (const [k, v] of Object.entries(first)) if (!k.startsWith('CORE_TOKEN_ENCRYPTION_KEY')) assert.equal(second[k], v, `${k} kept`)
+  for (const k of [first.CORE_TOKEN_ENCRYPTION_KEY, second.CORE_TOKEN_ENCRYPTION_KEY]) assert.ok(!printed.includes(k), 'no key printed')
+
+  cli('--rotate', 'CORE_TOKEN_ENCRYPTION_KEY')
+  const third = parseEnv(fs.readFileSync(out, 'utf8'))
+  assert.equal(third.CORE_TOKEN_ENCRYPTION_KEY_PREVIOUS, `${second.CORE_TOKEN_ENCRYPTION_KEY},${first.CORE_TOKEN_ENCRYPTION_KEY}`, 'newest first')
+
+  cli('--rotate', 'SHOWCASE_ENCRYPTION_KEY')
+  const fourth = parseEnv(fs.readFileSync(out, 'utf8'))
+  assert.match(fourth.SHOWCASE_ENCRYPTION_KEY, /^[0-9a-f]{64}$/, 'same encoding as generated')
+  assert.equal(fourth.SHOWCASE_ENCRYPTION_KEY_PREVIOUS, third.SHOWCASE_ENCRYPTION_KEY)
+  cli('--rotate', 'BACKUP_ENCRYPTION_KEY')
+  assert.equal(parseEnv(fs.readFileSync(out, 'utf8')).BACKUP_ENCRYPTION_KEY_PREVIOUS, fourth.BACKUP_ENCRYPTION_KEY)
+
+  assert.throws(() => cli('--rotate', 'POSTGRES_PASSWORD'), /--rotate takes one of/)
+  assert.throws(() => cli('--rotate'), /--rotate takes one of/)
+})

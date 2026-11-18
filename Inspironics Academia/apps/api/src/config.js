@@ -72,6 +72,8 @@ export const config = Object.freeze({
 
   // Secrets at rest (Dropbox refresh token). 32 bytes, base64 or hex.
   tokenEncryptionKey: env.TOKEN_ENCRYPTION_KEY || '',
+  // Retired keys, comma-separated, still tried for decryption after a rotation (lib/crypto.js).
+  tokenEncryptionKeyPrevious: env.TOKEN_ENCRYPTION_KEY_PREVIOUS || '',
 
   // AI text generation, always called from this server (keys never reach the browser).
   // AI_PROVIDER = gemini (default) | ollama | none. AI_FALLBACK_PROVIDER optionally names a

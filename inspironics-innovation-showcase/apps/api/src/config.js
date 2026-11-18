@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ISSUER, parseIdentityMode, parseKeys, parseTrustedSources } from './lib/apexIdentity.js'
+import { parsePreviousKeys } from './lib/crypto.js'
 
 /** This application's audience in Apex identity assertions. Fixed: a different value would accept another app's assertions. */
 export const IDENTITY_AUDIENCE = 'showcase'
@@ -103,6 +104,8 @@ export function loadConfig(env = process.env) {
 
     /** 32 bytes, hex or base64. Encrypts the Dropbox refresh token at rest. */
     encryptionKey: str(env.ENCRYPTION_KEY),
+    /** Retired keys, comma-separated: still tried for decryption after a rotation (lib/crypto.js). */
+    encryptionKeyPrevious: str(env.ENCRYPTION_KEY_PREVIOUS),
     devKeyFile: fromRoot('data/.dev-encryption-key'),
 
     auth: {
@@ -221,6 +224,8 @@ function validate(c) {
   const need = (cond, level, message) => cond || problems.push({ level, message })
 
   need(!c.isProd || c.encryptionKey, 'error', 'ENCRYPTION_KEY is required in production (32 bytes, hex or base64).')
+  // a malformed retired key would leave ciphertext written before the rotation unreadable
+  for (const message of parsePreviousKeys(c.encryptionKeyPrevious).errors) problems.push({ level: c.isProd ? 'error' : 'warn', message })
   need(!c.isProd || c.db.url, 'warn', 'DATABASE_URL is not set — production is running on SQLite.')
   // a local production run (behind a gateway on http://localhost) may opt out of Secure
   // cookies explicitly; anything public must be https

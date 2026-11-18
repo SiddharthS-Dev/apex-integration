@@ -1,4 +1,4 @@
-import { parseKey } from './lib/crypto.js';
+import { parseKey, parsePreviousKeys } from './lib/crypto.js';
 
 // Start-up configuration checks. `errors` stop a production server before it listens (server.js);
 // `warnings` are logged. Pure: takes the env and the resolved config, so it is testable on its own.
@@ -35,6 +35,10 @@ export function startupProblems(env = process.env, cfg) {
     } catch (err) {
       (production ? errors : warnings).push(err.message);
     }
+  }
+  // Retired keys (TOKEN_ENCRYPTION_KEY_PREVIOUS): a malformed one would leave older ciphertext unreadable.
+  for (const message of parsePreviousKeys(cfg.tokenEncryptionKeyPrevious).errors) {
+    (production ? errors : warnings).push(message);
   }
 
   // The bootstrap admin becomes platform_admin: in production its password must be long.

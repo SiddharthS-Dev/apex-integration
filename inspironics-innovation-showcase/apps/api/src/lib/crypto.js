@@ -15,12 +15,31 @@ const scrypt = promisify(scryptCb)
 
 /* ------------------------------------------------------------ keys ------ */
 
-/** Parse a 32-byte key given as 64 hex chars or base64. */
-export function parseKey(text) {
+/** Parse a 32-byte key given as 64 hex chars or base64. The message names the variable, never the value. */
+export function parseKey(text, name = 'ENCRYPTION_KEY') {
   const s = String(text || '').trim()
   const buf = /^[0-9a-f]{64}$/i.test(s) ? Buffer.from(s, 'hex') : Buffer.from(s, 'base64')
-  if (buf.length !== 32) throw new Error('ENCRYPTION_KEY must decode to exactly 32 bytes (64 hex chars or 44 base64 chars).')
+  if (buf.length !== 32) throw new Error(`${name} must decode to exactly 32 bytes (64 hex chars or 44 base64 chars).`)
   return buf
+}
+
+/**
+ * ENCRYPTION_KEY_PREVIOUS: retired keys, comma-separated, each validated like
+ * ENCRYPTION_KEY. -> { keys, errors }: the valid keys in order, and one message
+ * per malformed entry (naming its position, never its value).
+ */
+export function parsePreviousKeys(text, name = 'ENCRYPTION_KEY_PREVIOUS') {
+  const keys = []
+  const errors = []
+  const entries = String(text || '').split(',').map((s) => s.trim()).filter(Boolean)
+  entries.forEach((entry, i) => {
+    try {
+      keys.push(parseKey(entry, entries.length > 1 ? `${name} entry ${i + 1}` : name))
+    } catch (err) {
+      errors.push(err.message)
+    }
+  })
+  return { keys, errors }
 }
 
 /**
@@ -39,26 +58,62 @@ export function resolveEncryptionKey(config, log) {
   return key
 }
 
+/**
+ * The key ring: [current, ...previous]. encrypt() uses the first; decrypt()
+ * tries them in order, so ciphertext written before a rotation still opens.
+ * A malformed previous key is fatal in production (config validation reports
+ * it too) and skipped with a warning otherwise.
+ */
+export function resolveEncryptionKeys(config, log) {
+  const current = resolveEncryptionKey(config, log)
+  const { keys, errors } = parsePreviousKeys(config.encryptionKeyPrevious)
+  if (errors.length) {
+    if (config.isProd) throw new Error(errors.join(' '))
+    for (const message of errors) log?.warn(`${message} Ignoring that entry.`)
+  }
+  return [current, ...keys]
+}
+
 /* ------------------------------------------------------ AES-256-GCM ------ */
 
 const VERSION = 'v1'
+const ring = (key) => (Array.isArray(key) ? key : [key])
 
-/** -> "v1.<iv>.<tag>.<ciphertext>", all base64url. `aad` binds the ciphertext to its purpose. */
+/**
+ * -> "v1.<iv>.<tag>.<ciphertext>", all base64url. `aad` binds the ciphertext to its purpose.
+ * `key` is a Buffer or a key ring; a ring encrypts with its first (current) key.
+ */
 export function encrypt(key, plaintext, aad = '') {
   const iv = randomBytes(12)
-  const cipher = createCipheriv('aes-256-gcm', key, iv)
+  const cipher = createCipheriv('aes-256-gcm', ring(key)[0], iv)
   if (aad) cipher.setAAD(Buffer.from(aad))
   const body = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()])
   return [VERSION, iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), body.toString('base64url')].join('.')
 }
 
-export function decrypt(key, envelope, aad = '') {
+/**
+ * Opens an envelope with the first key of the ring that authenticates it.
+ * -> { plaintext, keyIndex } (0 = the current key).
+ */
+export function decryptWithIndex(key, envelope, aad = '') {
   const [version, iv, tag, body] = String(envelope || '').split('.')
   if (version !== VERSION || !iv || !tag || body === undefined) throw new Error('Unrecognised ciphertext format.')
-  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64url'))
-  if (aad) decipher.setAAD(Buffer.from(aad))
-  decipher.setAuthTag(Buffer.from(tag, 'base64url'))
-  return Buffer.concat([decipher.update(Buffer.from(body, 'base64url')), decipher.final()]).toString('utf8')
+  const keys = ring(key)
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', keys[i], Buffer.from(iv, 'base64url'))
+      if (aad) decipher.setAAD(Buffer.from(aad))
+      decipher.setAuthTag(Buffer.from(tag, 'base64url'))
+      return { plaintext: Buffer.concat([decipher.update(Buffer.from(body, 'base64url')), decipher.final()]).toString('utf8'), keyIndex: i }
+    } catch {
+      // GCM authentication failed under this key (or the envelope is damaged): try the next one.
+    }
+  }
+  throw new Error('Ciphertext failed authentication (wrong key, wrong purpose or tampered data).')
+}
+
+export function decrypt(key, envelope, aad = '') {
+  return decryptWithIndex(key, envelope, aad).plaintext
 }
 
 /* ----------------------------------------------------------- scrypt ------ */

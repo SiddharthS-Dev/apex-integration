@@ -10,6 +10,7 @@
     "dev": "node --watch --env-file-if-exists=.env src/server.js",
     "start": "node --env-file-if-exists=.env src/server.js",
     "migrate": "node --env-file-if-exists=.env src/db/migrate-cli.js",
+    "rewrap-secrets": "node --env-file-if-exists=.env src/db/rewrap-cli.js",
     "test": "node --test \"test/**/*.test.js\"",
     "core:grant-admin": "node --env-file-if-exists=.env src/core/cli/grant-admin.js",
     "core:rollback-identity": "node --env-file-if-exists=.env src/core/cli/rollback-identity.js"
