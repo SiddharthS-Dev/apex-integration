@@ -110,7 +110,7 @@ test('cookie jar keeps live cookies and drops cleared ones', () => {
 })
 
 test('compose.yml reads only variables that are generated, defaulted or documented', () => {
-  const compose = fs.readFileSync(path.join(HERE, 'compose.yml'), 'utf8')
+  const compose = fs.readFileSync(path.join(HERE, 'compose.yml'), 'utf8').replace(/\r\n/g, '\n') // CRLF on a Windows checkout
   const example = fs.readFileSync(path.join(HERE, '.env.staging.example'), 'utf8')
   const generated = new Set(Object.keys(freshVars()))
   const documented = new Set([...example.matchAll(/^#?\s*([A-Z][A-Z0-9_]+)=/gm)].map((m) => m[1]))
@@ -128,4 +128,65 @@ test('compose.yml reads only variables that are generated, defaulted or document
   // Each service holds its own audience's keys only.
   assert.equal((compose.match(/^\s+APEX_IDENTITY_KEYS_STORE:/gm) || []).length, 1)
   for (const a of ['CORE', 'SHOWCASE', 'SLIDESVAULT']) assert.equal((compose.match(new RegExp(`\\$\\{APEX_IDENTITY_KEYS_${a}\\b`, 'g')) || []).length, 1)
+})
+
+test('backup files: encrypted round trip; wrong key or one flipped byte is refused with no output', async () => {
+  const { decryptFile, encryptTo, parseKey, verifyFile } = await import('./backup.mjs')
+  const { Readable } = await import('node:stream')
+  const key = crypto.randomBytes(32)
+  const plain = crypto.randomBytes(300_000)
+  const enc = path.join(tmp, 'db.dump.enc')
+  await encryptTo(Readable.from([plain.subarray(0, 100_000), plain.subarray(100_000)]), enc, key)
+  const raw = fs.readFileSync(enc)
+  assert.ok(raw.subarray(0, 8).equals(Buffer.from('APEXBK1\n')))
+  assert.equal(raw.indexOf(plain.subarray(0, 64)), -1, 'nothing in clear')
+  assert.equal(await verifyFile(enc, key), true)
+  const out = path.join(tmp, 'db.dump')
+  await decryptFile(enc, out, key)
+  assert.ok(fs.readFileSync(out).equals(plain))
+
+  assert.equal(await verifyFile(enc, crypto.randomBytes(32)), false)
+  await assert.rejects(decryptFile(enc, path.join(tmp, 'wrong'), crypto.randomBytes(32)), /cannot decrypt/)
+  assert.equal(fs.existsSync(path.join(tmp, 'wrong')), false)
+  assert.equal(fs.existsSync(path.join(tmp, 'wrong.partial')), false)
+  const tampered = Buffer.from(raw)
+  tampered[5000] ^= 1
+  fs.writeFileSync(path.join(tmp, 't.enc'), tampered)
+  assert.equal(await verifyFile(path.join(tmp, 't.enc'), key), false)
+
+  const empty = path.join(tmp, 'empty.enc')
+  await encryptTo(Readable.from([]), empty, key)
+  await decryptFile(empty, path.join(tmp, 'empty'), key)
+  assert.equal(fs.readFileSync(path.join(tmp, 'empty')).length, 0)
+
+  assert.throws(() => parseKey(''), /32 random bytes/)
+  assert.throws(() => parseKey(crypto.randomBytes(16).toString('base64')), /32 random bytes/)
+  assert.equal(parseKey(key.toString('base64')).length, 32)
+})
+
+test('backup retention drops old sets, always keeps the newest three, ignores other folders', async () => {
+  const { expiredSets, setName } = await import('./backup.mjs')
+  const now = Date.UTC(2026, 10, 30, 12, 0, 0)
+  const day = (d) => setName(new Date(now - d * 86_400_000))
+  assert.match(day(0), /^\d{8}T\d{6}Z$/)
+  const names = [day(1), day(5), day(20), day(40), 'notes', '20260101T000000Z.partial']
+  assert.deepEqual(expiredSets(names, { now, retentionDays: 14 }).sort(), [day(40)].sort(), 'day 20 is one of the newest three')
+  assert.deepEqual(expiredSets([...names, day(2)], { now, retentionDays: 14 }).sort(), [day(20), day(40)].sort())
+  assert.deepEqual(expiredSets([day(100), day(200), day(300)], { now, retentionDays: 14 }), [], 'a stopped schedule never ages every set away')
+})
+
+test('generate-secrets --add-missing adds new variables (the backup key) and keeps the rest', () => {
+  const out = path.join(tmp, '.env.addmissing')
+  const cli = (...args) => execFileSync(process.execPath, [path.join(HERE, 'generate-secrets.mjs'), '--out', out, ...args], { encoding: 'utf8' })
+  cli()
+  const original = parseEnv(fs.readFileSync(out, 'utf8'))
+  const { BACKUP_ENCRYPTION_KEY: _dropped, ...older } = original
+  fs.writeFileSync(out, serialise(older))
+  const printed = cli('--add-missing')
+  assert.match(printed, /Added BACKUP_ENCRYPTION_KEY/)
+  const after = parseEnv(fs.readFileSync(out, 'utf8'))
+  assert.equal(Buffer.from(after.BACKUP_ENCRYPTION_KEY, 'base64').length, 32)
+  assert.ok(!printed.includes(after.BACKUP_ENCRYPTION_KEY), 'the key is not printed')
+  for (const [k, v] of Object.entries(older)) assert.equal(after[k], v, `${k} kept`)
+  assert.match(cli('--add-missing'), /already has every variable/)
 })

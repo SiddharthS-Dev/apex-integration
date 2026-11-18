@@ -1,0 +1,25 @@
+# gitleaks configuration (CI job `secret-scan`). Default rules, plus a narrow allow-list of values
+# that are deliberately fake or throwaway. Every entry says why; never allow-list a real secret —
+# rotate it instead.
+title = "APEX gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known fake or throwaway values"
+paths = [
+  # Test suites use fabricated keys (e.g. redaction tests feed a fake `sk-ant-…` string).
+  '''(^|/)tests?/''',
+  '''\.test\.(m?js|ts|tsx)$''',
+  # Committed examples hold placeholders only.
+  '''\.env(\.[a-z]+)?\.example$''',
+  # Lockfiles carry integrity hashes, not secrets.
+  '''package-lock\.json$''',
+]
+regexes = [
+  # ci.yml: a throwaway 32-byte key for the SlidesVault-on-Postgres job (documented in place).
+  '''MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=''',
+  # ci.yml: the throwaway Postgres service password `ci` inside connection strings.
+  '''postgres://postgres:ci@localhost''',
+]

@@ -20,6 +20,9 @@ apex/.revoked-sessions
 apex/.identity-keys.json
 apex/.identity-keys.json.*.tmp
 
+# Staging backup sets (encrypted, but never in git).
+deploy/staging/backups/
+
 # Demo video capture intermediate output, scratch frames and large binary models
 demo video/capture/out/
 demo video/capture/work/

@@ -1,0 +1,16 @@
+# Paths Semgrep (CI job `sast`) skips. This file replaces Semgrep's defaults, so they are repeated.
+.git/
+node_modules/
+dist/
+build/
+coverage/
+*.min.js
+# Tests, fixtures and tooling that never ship.
+test/
+tests/
+*.test.js
+*.test.mjs
+tools/
+demo video/
+# Retired prototype: not built, not deployed (audit report §Scope).
+inspironics-innovation-showcase/legacy/

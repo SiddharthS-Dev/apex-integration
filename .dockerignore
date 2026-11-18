@@ -20,6 +20,7 @@ apex/.identity-keys.json*
 # Staging secrets written by deploy/staging/generate-secrets.mjs.
 deploy/staging/.env.staging
 deploy/staging/*.bak
+deploy/staging/backups
 
 # Not needed by any image.
 docs

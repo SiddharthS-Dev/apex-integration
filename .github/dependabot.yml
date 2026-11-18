@@ -1,0 +1,33 @@
+# Dependency update pull requests (SCA). Weekly; minor and patch updates are grouped so the
+# volume stays reviewable. Security updates also need "Dependabot security updates" switched on in
+# the repository settings (Settings → Code security).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/Inspironics Academia"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
+  - package-ecosystem: npm
+    directory: "/inspironics-innovation-showcase"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
+  - package-ecosystem: npm
+    directory: "/slide vault"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directories:
+      - "/deploy/gateway"
+      - "/Inspironics Academia/apps/api"
+      - "/inspironics-innovation-showcase/apps/api"
+      - "/slide vault/apps/api"
+    schedule: { interval: weekly }

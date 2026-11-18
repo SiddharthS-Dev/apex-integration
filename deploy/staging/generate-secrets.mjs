@@ -8,6 +8,8 @@
  *                                                                the databases must be recreated too)
  *   node deploy/staging/generate-secrets.mjs --rotate-identity-keys   new current kid, previous kept
  *   node deploy/staging/generate-secrets.mjs --prune-identity-keys    drop every kid but the current
+ *   node deploy/staging/generate-secrets.mjs --add-missing            add variables introduced since the
+ *                                                                file was generated; keep every other value
  *   options: --out <file>   --port <n>   --admin-email <e>
  *
  * Rotation and pruning rewrite only the identity-key lines and keep every other value; the old file
@@ -80,6 +82,8 @@ export function freshVars({ port = 4173, adminEmail = 'staging-admin@apex-stagin
     CORE_TOKEN_ENCRYPTION_KEY: b64(32),
     SHOWCASE_ENCRYPTION_KEY: hex(32),
     SLIDESVAULT_TOKEN_ENCRYPTION_KEY: b64(32),
+    // Encrypts backup sets (backup.mjs). Not read by any container.
+    BACKUP_ENCRYPTION_KEY: b64(32),
     ...identityVars(newStore()),
   }
 }
@@ -136,6 +140,17 @@ function main(argv) {
   const out = path.resolve(arg('--out') || DEFAULT_OUT)
   const rotating = argv.includes('--rotate-identity-keys')
   const pruning = argv.includes('--prune-identity-keys')
+
+  if (argv.includes('--add-missing')) {
+    if (!fs.existsSync(out)) throw new Error(`${out} does not exist — generate it first.`)
+    const vars = parseEnv(fs.readFileSync(out, 'utf8'))
+    const fresh = freshVars()
+    const added = Object.keys(fresh).filter((k) => !(k in vars))
+    if (!added.length) return console.log(`  ${out} already has every variable.`)
+    writeSecure(out, serialise({ ...vars, ...Object.fromEntries(added.map((k) => [k, fresh[k]])) }))
+    console.log(`  Added ${added.join(', ')} to ${out}; every other value kept.`)
+    return
+  }
 
   if (rotating || pruning) {
     if (!fs.existsSync(out)) throw new Error(`${out} does not exist — generate it first.`)

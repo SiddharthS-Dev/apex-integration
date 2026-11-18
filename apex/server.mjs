@@ -26,6 +26,10 @@
  *                      SlidesVault (default off; APEX_IDENTITY_MODE_SHOWCASE / _SLIDESVAULT
  *                      per app). See gateway-identity.mjs, docs/operations/IDENTITY_ASSERTION.md
  *   APEX_GOOGLE_CLIENT_ID  shows "Sign in with Google" (must equal the Core's GOOGLE_CLIENT_ID)
+ *   APEX_ALLOWED_HOSTS extra host names the gateway answers to (comma-separated); loopback names,
+ *                      the APEX_PUBLIC_URL host and a specific APEX_HOST are always allowed. Any
+ *                      other Host gets 421 (DNS-rebinding defence)
+ *   APEX_MAX_BODY_MB   the largest request body forwarded to an app (default 64)
  *
  * Deliberately dependency-free (node: builtins only) so the shell needs no
  * node_modules of its own and start.bat has nothing to install for it.
@@ -86,6 +90,94 @@ const linker = createLinker({ identity })
 /** "Sign in with Google" on the sign-in page, when set. The Core verifies the token against the same client id. */
 const GOOGLE_CLIENT_ID = (process.env.APEX_GOOGLE_CLIENT_ID || '').trim()
 
+/* ------------------------------------------------------------ hardening -- */
+
+/** HSTS only once browsers reach Apex over https (APEX_PUBLIC_URL); over plain http it would be ignored or harmful. */
+const HTTPS_PUBLIC = PUBLIC_ORIGIN.startsWith('https://')
+
+/**
+ * Baseline headers on everything the gateway answers itself (pages, bundles, redirects, errors).
+ * Proxied API responses keep the app's own Referrer-Policy and X-Frame-Options; they get nosniff
+ * and HSTS only where the app did not set them (see forward()).
+ */
+const BASELINE_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'X-Frame-Options': 'SAMEORIGIN',
+  ...(HTTPS_PUBLIC ? { 'Strict-Transport-Security': 'max-age=31536000; includeSubDomains' } : {}),
+}
+
+/**
+ * The CSP for HTML the gateway serves without a stricter one of its own (the dashboard, the apps'
+ * built index.html, status pages). Deliberately no script-src or default-src: the app bundles are
+ * not written for one. Sign-in, link and admin pages keep their hash-based policies.
+ */
+export const DEFAULT_HTML_CSP = "object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+
+function applyBaselineHeaders(res) {
+  for (const [name, value] of Object.entries(BASELINE_HEADERS)) res.setHeader(name, value)
+}
+
+const hasHeader = (headers, name) => Object.keys(headers).some((k) => k.toLowerCase() === name)
+
+/** The default CSP, added to an HTML response's headers unless one is already there. */
+const withHtmlCsp = (contentType, headers) =>
+  /^text\/html\b/i.test(contentType) && !hasHeader(headers, 'content-security-policy')
+    ? { 'Content-Security-Policy': DEFAULT_HTML_CSP, ...headers }
+    : headers
+
+/**
+ * The largest request body the gateway forwards to an app (APEX_MAX_BODY_MB, default 64 MB, above
+ * the Academia's 50 MB upload limit). Larger declared bodies get 413 before any upstream is
+ * contacted; a streamed body that grows past it is cut off.
+ */
+const MAX_BODY_BYTES = (() => {
+  const mb = Number(process.env.APEX_MAX_BODY_MB)
+  return Math.round((Number.isFinite(mb) && mb > 0 ? mb : 64) * 1024 * 1024)
+})()
+
+/**
+ * Host names the gateway answers to (DNS-rebinding defence, and the only Host a sign-in Origin may
+ * be derived from): loopback names, the APEX_PUBLIC_URL host, a specific APEX_HOST address, and
+ * APEX_ALLOWED_HOSTS (comma-separated host names, for a LAN address or a proxy that rewrites Host).
+ * Ports are not compared: a rebinding attack changes the name, never the port.
+ */
+const ALLOWED_HOSTS = (() => {
+  const hosts = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+  try {
+    hosts.add(new URL(PUBLIC_ORIGIN).hostname.toLowerCase())
+  } catch {}
+  if (HOST && HOST !== '0.0.0.0' && HOST !== '::') hosts.add(net.isIPv6(HOST) ? `[${HOST.toLowerCase()}]` : HOST.toLowerCase())
+  for (const h of String(process.env.APEX_ALLOWED_HOSTS || '').split(',')) {
+    const name = h.trim().toLowerCase()
+    if (name) hosts.add(name)
+  }
+  return hosts
+})()
+
+/** The host name of a Host header value ('example.com:4173' -> 'example.com', '[::1]:80' -> '[::1]'). */
+function hostnameOf(hostHeader) {
+  const value = String(hostHeader || '').trim().toLowerCase()
+  if (!value) return ''
+  if (value.startsWith('[')) return value.slice(0, value.indexOf(']') + 1)
+  return value.split(':')[0]
+}
+
+/** True when a Host header names this gateway. An absent Host (HTTP/1.0) is not a browser and is allowed. */
+export function hostAllowed(hostHeader) {
+  if (!hostHeader) return true
+  return ALLOWED_HOSTS.has(hostnameOf(hostHeader))
+}
+
+/** The Host the browser used: the proxy's X-Forwarded-Host behind a trusted proxy, else Host. */
+const browserHost = (req) => (TRUST_PROXY ? publicFace(req).host : req.headers.host)
+
+function sendMisdirected(res) {
+  const text = 'Apex does not answer to this host name.\n'
+  res.writeHead(421, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': Buffer.byteLength(text), 'Cache-Control': 'no-store' })
+  res.end(text)
+}
+
 /**
  * The Host header one project's server sees: its upstream address (APEX_UPSTREAM_HOST_<ID>,
  * else APEX_UPSTREAM_HOST, else loopback), bracketed when it is IPv6.
@@ -134,12 +226,12 @@ function sendFile(res, file, { immutable = false, headers = {} } = {}) {
   }
   if (!stat.isFile()) return false
 
-  res.writeHead(200, {
+  res.writeHead(200, withHtmlCsp(typeOf(file), {
     'Content-Type': typeOf(file),
     'Content-Length': stat.size,
     'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
     ...headers,
-  })
+  }))
   fs.createReadStream(file).pipe(res)
   return true
 }
@@ -150,6 +242,7 @@ function sendHtml(res, status, html) {
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Length': body.length,
     'Cache-Control': 'no-store',
+    'Content-Security-Policy': DEFAULT_HTML_CSP,
   })
   res.end(body)
 }
@@ -294,14 +387,34 @@ function downstreamHeaders(up, project) {
  *   when the child could not be reached at all (nothing has been sent yet).
  */
 function forward(req, res, { project, port, upstreamPath, cookies = true, extra, onError }) {
+  const declared = Number(req.headers['content-length'])
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return refuseTooLarge(req, res)
+
+  let tooLarge = false
   const upstream = http.request(
     { host: upstreamHost(project.id), port, method: req.method, path: upstreamPath, headers: upstreamHeaders(req, project, port, { cookies, extra }) },
     (up) => {
+      // The app decides its own framing and referrer rules; the gateway's baseline nosniff and
+      // HSTS stay underneath and are replaced by the app's own values when it sends them.
+      if (!up.headers['x-frame-options']) res.removeHeader('X-Frame-Options')
+      if (!up.headers['referrer-policy']) res.removeHeader('Referrer-Policy')
       res.writeHead(up.statusCode || 502, downstreamHeaders(up, project))
       up.pipe(res)
       up.on('error', () => res.destroy())
     }
   )
+
+  // A body with no (or a false) Content-Length is counted as it streams.
+  let received = 0
+  req.on('data', (chunk) => {
+    received += chunk.length
+    if (received <= MAX_BODY_BYTES || tooLarge) return
+    tooLarge = true
+    req.unpipe(upstream)
+    upstream.destroy()
+    if (res.headersSent || res.destroyed) return res.destroy()
+    refuseTooLarge(req, res)
+  })
 
   const fail = (code, message) => upstream.destroy(Object.assign(new Error(message), { code }))
   const connectTimer = setTimeout(() => fail('ETIMEDOUT', 'connect timeout'), CONNECT_TIMEOUT_MS)
@@ -314,6 +427,7 @@ function forward(req, res, { project, port, upstreamPath, cookies = true, extra,
 
   upstream.on('error', (err) => {
     clearTimeout(connectTimer)
+    if (tooLarge) return
     if (res.headersSent || res.destroyed) return res.destroy()
     onError(err)
   })
@@ -325,6 +439,13 @@ function forward(req, res, { project, port, upstreamPath, cookies = true, extra,
   })
 
   req.pipe(upstream)
+}
+
+/** 413 for a body over MAX_BODY_BYTES; the connection closes once the answer is out, so the rest is never read. */
+function refuseTooLarge(req, res) {
+  const limitMb = Math.round(MAX_BODY_BYTES / (1024 * 1024))
+  sendJson(res, 413, { error: `That request is larger than Apex accepts (${limitMb} MB).`, code: 'PAYLOAD_TOO_LARGE' }, { Connection: 'close' })
+  res.on('finish', () => req.destroy())
 }
 
 /* ------------------------------------------------------------------ dev ---- */
@@ -521,10 +642,11 @@ const isNavigation = (req) =>
  */
 function allowedOrigins(req) {
   const origins = new Set([PUBLIC_ORIGIN, localUrl(PORT)])
-  if (req.headers.host) origins.add(`http://${req.headers.host}`)
+  // Only a Host this gateway answers to (ALLOWED_HOSTS): a rebound attacker name never becomes an origin.
+  if (req.headers.host && hostAllowed(req.headers.host)) origins.add(`http://${req.headers.host}`)
   if (TRUST_PROXY) {
     const face = publicFace(req)
-    if (face.host) origins.add(`${face.proto}://${face.host}`)
+    if (face.host && hostAllowed(face.host)) origins.add(`${face.proto}://${face.host}`)
   }
   return origins
 }
@@ -800,6 +922,8 @@ const identityUnavailable = (res, project) =>
 
 export const server = http.createServer((req, res) => {
   stripIdentityHeaders(req)
+  applyBaselineHeaders(res)
+  if (!hostAllowed(browserHost(req))) return sendMisdirected(res)
   dispatch(req, res).catch((err) => {
     console.error('  request error:', err)
     if (!res.headersSent) sendJson(res, 500, { error: 'Apex could not handle that request.' })
@@ -909,6 +1033,7 @@ async function dispatch(req, res) {
 server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => socket.destroy())
   stripIdentityHeaders(req)
+  if (!hostAllowed(browserHost(req))) return refuseUpgrade(socket, 421, 'Misdirected Request')
   const target = targetOf(req.url)
   if (!target) return refuseUpgrade(socket, 400, 'Bad Request')
   if (!sessionOf(req)) return refuseUpgrade(socket, 401, 'Unauthorized')
