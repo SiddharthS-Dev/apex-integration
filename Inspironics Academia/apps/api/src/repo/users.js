@@ -69,9 +69,26 @@ export async function updateUser(id, patch) {
   return findUserById(id);
 }
 
+// Deleting a user also removes the personal data kept about them outside the users row: their sign-in
+// history (rows by id, and attempts recorded by email only, e.g. while locked) and their queued or sent
+// email. The append-only audit trail (audit_events) is kept by design.
 export async function deleteUser(id) {
+  const user = await findUserById(id);
   await db().run('DELETE FROM sessions WHERE user_id = ?', [id]);
+  await db().run('DELETE FROM login_history WHERE user_id = ?', [id]);
+  await db().run('DELETE FROM email_outbox WHERE user_id = ?', [id]);
+  if (user?.email) {
+    await db().run('DELETE FROM login_history WHERE user_id IS NULL AND lower(email) = ?', [user.email.toLowerCase()]);
+    await db().run('DELETE FROM email_outbox WHERE lower(to_email) = ?', [user.email.toLowerCase()]);
+  }
   await db().run('DELETE FROM users WHERE id = ?', [id]);
+}
+
+/** LOGIN_HISTORY_RETENTION_DAYS: deletes sign-in history older than that many days. Returns the count. */
+export async function purgeLoginHistory(days) {
+  if (!(Number(days) > 0)) return 0;
+  const cutoff = new Date(Date.now() - Number(days) * 86_400_000).toISOString();
+  return (await db().run('DELETE FROM login_history WHERE created_at < ?', [cutoff])).changes;
 }
 
 export async function recordLogin({ userId, email, success, reason, ip, userAgent }) {

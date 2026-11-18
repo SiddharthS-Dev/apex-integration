@@ -168,3 +168,73 @@ test('an unknown email still pays for a scrypt compare (no timing oracle)', asyn
     await h.close()
   }
 })
+
+/* ------------------------------------------- registration, retention, SPA CSP ------ */
+
+test('ALLOW_REGISTRATION: closed by default in production, open in development, explicit value wins', () => {
+  assert.equal(loadConfig({ NODE_ENV: 'production' }).auth.allowRegistration, false)
+  assert.equal(loadConfig({ NODE_ENV: 'production', ALLOW_REGISTRATION: 'true' }).auth.allowRegistration, true)
+  assert.equal(loadConfig({ NODE_ENV: 'development' }).auth.allowRegistration, true)
+  assert.equal(loadConfig({ NODE_ENV: 'development', ALLOW_REGISTRATION: 'false' }).auth.allowRegistration, false)
+})
+
+test('retention: login_history and plate_events are purged past their opt-in windows; unset keeps everything', async () => {
+  const { housekeep } = await import('../src/services.js')
+  const old = new Date(Date.now() - 40 * 86_400_000).toISOString()
+  const recent = new Date(Date.now() - 2 * 86_400_000).toISOString()
+  const seed = async (db) => {
+    for (const [id, at] of [['old', old], ['new', recent]]) {
+      await db.run('INSERT INTO login_history (id, email, method, success, created_at) VALUES (?, ?, ?, ?, ?)', [`lh-${id}`, 'a@x.io', 'password', 1, at])
+      await db.run('INSERT INTO plate_events (id, file_id, user_id, kind, created_at) VALUES (?, ?, ?, ?, ?)', [`pe-${id}`, 'f1', 'u1', 'view', at])
+    }
+  }
+  const count = async (db, table) => Number((await db.get(`SELECT CAST(COUNT(*) AS INTEGER) AS n FROM ${table}`)).n)
+
+  const keep = await createHarness()
+  try {
+    assert.equal(keep.config.retention.loginHistoryDays, 0)
+    await seed(keep.services.db)
+    const removed = await housekeep(keep.services.repos, keep.config)
+    assert.deepEqual(removed, { sessions: 0, loginHistory: 0, plateEvents: 0 })
+    assert.equal(await count(keep.services.db, 'login_history'), 2)
+    assert.equal(await count(keep.services.db, 'plate_events'), 2)
+  } finally {
+    await keep.close()
+  }
+
+  const h = await createHarness({ env: { LOGIN_HISTORY_RETENTION_DAYS: '30', PLATE_EVENTS_RETENTION_DAYS: '30' } })
+  try {
+    await seed(h.services.db)
+    const removed = await housekeep(h.services.repos, h.config)
+    assert.equal(removed.loginHistory, 1)
+    assert.equal(removed.plateEvents, 1)
+    assert.deepEqual((await h.services.db.all('SELECT id FROM login_history')).map((r) => r.id), ['lh-new'])
+    assert.deepEqual((await h.services.db.all('SELECT id FROM plate_events')).map((r) => r.id), ['pe-new'])
+  } finally {
+    await h.close()
+  }
+})
+
+test('SERVE_WEB: the web app HTML carries a CSP; the API keeps its default-src none', async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { SPA_CSP } = await import('../src/app.js')
+  const dist = mkdtempSync(path.join(os.tmpdir(), 'insp-web-'))
+  writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>x</title>')
+  writeFileSync(path.join(dist, 'offline.html'), '<!doctype html><title>offline</title>')
+  const h = await createHarness({ env: { SERVE_WEB: 'true', WEB_DIST: dist } })
+  try {
+    for (const p of ['/', '/library/some-route', '/offline.html']) {
+      const res = await fetch(h.base + p)
+      assert.equal(res.status, 200, p)
+      assert.equal(res.headers.get('content-security-policy'), SPA_CSP, p)
+    }
+    assert.match(SPA_CSP, /object-src 'none'/)
+    const api = await fetch(h.base + '/api/health')
+    assert.equal(api.headers.get('content-security-policy'), "default-src 'none'; frame-ancestors 'self'")
+  } finally {
+    await h.close()
+    rmSync(dist, { recursive: true, force: true })
+  }
+})

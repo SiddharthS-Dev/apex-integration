@@ -107,7 +107,7 @@ let cookie = '';
 async function call(method, url, body, headers = {}) {
   const res = await realFetch(`${base}/api${url}`, {
     method,
-    headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}), ...headers },
+    headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie, Origin: base } : {}), ...headers },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const set = res.headers.get('set-cookie');

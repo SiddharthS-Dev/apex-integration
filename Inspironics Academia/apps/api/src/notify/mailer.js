@@ -103,6 +103,13 @@ async function sendSmtp(msg) {
 // response link). The log transport never writes their body; it stays in email_outbox only (and the
 // onboarding retention job blanks it there).
 export const SECRET_BODY_KINDS = new Set(['onboarding_code', 'onboarding_info_requested']);
+// Account mail that carries a live one-time link (set-password / reset). In production the log transport
+// withholds these unless EMAIL_LOG_SECRETS=true, and the outbox body is blanked once sent (outbox.js).
+export const ACCOUNT_SECRET_KINDS = new Set(['password_reset', 'invite']);
+
+const truthy = (v) => /^(1|true|yes|on)$/i.test(String(v || '').trim());
+/** EMAIL_LOG_SECRETS=true: the operator explicitly accepts reset/invite links in the production log. */
+export const logSecretsOptIn = () => truthy(process.env.EMAIL_LOG_SECRETS);
 
 /** Sends one message ({ to, subject, text, html, kind }). Throws on failure; the outbox retries. */
 export async function sendMail(msg) {
@@ -113,7 +120,10 @@ export async function sendMail(msg) {
   // Development only, opt-in: ONBOARDING_DEV_LOG_CODES=true prints onboarding codes and response links when no
   // email service is configured, so a local applicant can finish. Never in production.
   const devShow = process.env.NODE_ENV !== 'production' && /^(1|true|yes|on)$/i.test(String(process.env.ONBOARDING_DEV_LOG_CODES || '').trim());
-  const body = SECRET_BODY_KINDS.has(msg.kind) && !devShow ? '[withheld: contains a one-time secret; see email_outbox]' : msg.text;
+  const accountWithheld = ACCOUNT_SECRET_KINDS.has(msg.kind) && process.env.NODE_ENV === 'production' && !logSecretsOptIn();
+  const body = (SECRET_BODY_KINDS.has(msg.kind) && !devShow) || accountWithheld
+    ? '[withheld: contains a one-time secret; configure an email provider, or set EMAIL_LOG_SECRETS=true]'
+    : msg.text;
   log.info('email.logged', { to: msg.to, subject: msg.subject, body });
   return { id: 'log' };
 }

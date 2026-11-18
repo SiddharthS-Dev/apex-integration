@@ -188,7 +188,7 @@ function client() {
     const raw = Buffer.isBuffer(body);
     const res = await fetch(`${base}/api${url}`, {
       method,
-      headers: { ...(body !== undefined && !raw ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}), ...headers },
+      headers: { ...(body !== undefined && !raw ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie, Origin: base } : {}), ...headers },
       body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
     });
     const set = res.headers.get('set-cookie');

@@ -125,7 +125,7 @@ let server;
 let base;
 let cookie = '';
 async function call(method, url, body) {
-  const res = await realFetch(`${base}/api${url}`, { method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const res = await realFetch(`${base}/api${url}`, { method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie, Origin: base } : {}) }, body: body ? JSON.stringify(body) : undefined });
   const set = res.headers.get('set-cookie');
   if (set) cookie = set.split(';')[0];
   const text = await res.text();

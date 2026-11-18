@@ -7,7 +7,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'Feature-**', 'feature-**']
+    branches: [main, develop, 'Feature-**', 'feature-**']
   pull_request:
 
 concurrency:
@@ -39,6 +39,46 @@ jobs:
           for f in *.mjs; do node --check "$f"; done
           node --test staging.test.mjs
 
+  # ---------------------------------------------------------------- security scanning --
+  # Free, open-source scanners; no account or token needed. Non-blocking for their first runs
+  # (continue-on-error), like the postgres job: promote each to required once it is green, and add
+  # any accepted false positive to .gitleaks.toml / .semgrepignore / .trivyignore with a reason.
+
+  secret-scan:
+    name: Secret scanning (gitleaks, full history)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" --entrypoint sh ghcr.io/gitleaks/gitleaks:v8.21.2 -c \
+            'git config --global --add safe.directory /repo && gitleaks detect --source /repo --config /repo/.gitleaks.toml --redact --no-banner --exit-code 1'
+
+  sast:
+    name: Static analysis (Semgrep OSS rules)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: semgrep (JavaScript, Node.js, Express, React; ERROR severity fails)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep:1.95.0 semgrep scan --metrics=off \
+            --config p/javascript --config p/nodejs --config p/express --config p/react \
+            --severity ERROR --error
+
+  iac-scan:
+    name: Dockerfile and Compose misconfiguration (Trivy config)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: trivy config
+        run: |
+          docker run --rm -v "$PWD:/repo" aquasec/trivy:0.57.1 config --severity HIGH,CRITICAL --exit-code 1 \
+            --skip-dirs /repo/inspironics-innovation-showcase/legacy /repo
+
   academia:
     name: Inspironics Academia
     runs-on: ubuntu-latest
@@ -57,6 +97,9 @@ jobs:
         run: npm run build -w @academy/web
       - name: Dependency advisories (production, high and above)
         run: npm audit --omit=dev --audit-level=high
+      - name: Dependency advisories (all, incl. build tools; critical; report only)
+        continue-on-error: true
+        run: npm audit --audit-level=critical
 
   showcase:
     name: Innovation Showcase
@@ -88,6 +131,9 @@ jobs:
         run: npm run build -w @inspironics/web
       - name: Dependency advisories (production, high and above)
         run: npm audit --omit=dev --audit-level=high
+      - name: Dependency advisories (all, incl. build tools; critical; report only)
+        continue-on-error: true
+        run: npm audit --audit-level=critical
 
   slidesvault:
     name: SlidesVault
@@ -107,6 +153,9 @@ jobs:
         run: npm run build
       - name: Dependency advisories (production, high and above)
         run: npm audit --omit=dev --audit-level=high
+      - name: Dependency advisories (all, incl. build tools; critical; report only)
+        continue-on-error: true
+        run: npm audit --audit-level=critical
 
   slidesvault-image:
     name: SlidesVault API image
@@ -221,8 +270,33 @@ jobs:
         run: $COMPOSE config --quiet
       - name: Build the four images and start the stack (waits for every healthcheck)
         run: $COMPOSE up -d --build --wait --wait-timeout 600
+      - name: Container image scan (Trivy; HIGH/CRITICAL with a fix available)
+        continue-on-error: true  # promote to blocking once the base images are clean
+        run: |
+          TAG="$(grep '^APEX_IMAGE_TAG=' deploy/staging/.env.staging | cut -d= -f2)"
+          status=0
+          for img in gateway core showcase-api slidesvault-api; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.57.1 image \
+              --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress "apex-staging/$img:$TAG" || status=1
+          done
+          exit $status
       - name: Smoke test through the gateway (health, sign-in, assertions, forged headers, sign-out)
         run: node deploy/staging/smoke.mjs gateway
+      - name: Dynamic scan (OWASP ZAP baseline, unauthenticated, against the gateway)
+        continue-on-error: true  # passive baseline; promote once the first report is triaged
+        run: |
+          PORT="$(grep '^APEX_STAGING_PORT=' deploy/staging/.env.staging | cut -d= -f2)"
+          mkdir -p zap && chmod 777 zap
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" zaproxy/zaproxy:2.15.0 \
+            zap-baseline.py -t "http://127.0.0.1:${PORT:-4173}/login" -I -r zap-report.html -J zap-report.json
+      - name: Keep the ZAP report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-baseline-report
+          path: zap/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Direct backend bypass attempts from a throwaway container on the backend network
         run: |
           TAG="$(grep '^APEX_IMAGE_TAG=' deploy/staging/.env.staging | cut -d= -f2)"
@@ -230,6 +304,15 @@ jobs:
           docker run --rm --network apex-staging-backend --read-only -e SMOKE_KID="$KID" \
             -v "$PWD/deploy/staging/smoke.mjs:/smoke/smoke.mjs:ro" --entrypoint node \
             "apex-staging/showcase-api:$TAG" /smoke/smoke.mjs bypass
+      - name: Encrypted backup of the stack, verified, and a decrypted dump readable by pg_restore
+        run: |
+          B="$RUNNER_TEMP/apex-backups"
+          node deploy/staging/backup.mjs --out "$B"
+          node deploy/staging/backup.mjs verify --out "$B"
+          SET="$(ls "$B" | sort | tail -1)"
+          node deploy/staging/backup.mjs decrypt "$B/$SET/core.dump.enc" "$RUNNER_TEMP/core.dump"
+          $COMPOSE exec -T postgres pg_restore --list < "$RUNNER_TEMP/core.dump" | grep -q 'TABLE public users'
+          rm -rf "$B" "$RUNNER_TEMP/core.dump"
       - name: Stack status and logs
         if: failure()
         run: |

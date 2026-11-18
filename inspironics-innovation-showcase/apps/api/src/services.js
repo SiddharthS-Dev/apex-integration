@@ -52,3 +52,17 @@ export async function createServices(config, log, overrides = {}) {
 
   return { config, log, metrics, db, repos, key, dropboxAuth, dropbox, store, enricher, seeds, sync, scheduler }
 }
+
+/**
+ * The hourly housekeeping: expired sessions, plus the opt-in retention windows
+ * (LOGIN_HISTORY_RETENTION_DAYS, PLATE_EVENTS_RETENTION_DAYS; 0 = keep). Returns what was removed.
+ */
+export async function housekeep(repos, config, log) {
+  const removed = { sessions: 0, loginHistory: 0, plateEvents: 0 }
+  await repos.sessions.purgeExpired()
+  const { loginHistoryDays = 0, plateEventsDays = 0 } = config.retention || {}
+  if (loginHistoryDays > 0) removed.loginHistory = await repos.loginHistory.purgeOlderThan(loginHistoryDays)
+  if (plateEventsDays > 0) removed.plateEvents = await repos.events.purgeOlderThan(plateEventsDays)
+  if (removed.loginHistory || removed.plateEvents) log?.info?.('Retention purge', removed)
+  return removed
+}

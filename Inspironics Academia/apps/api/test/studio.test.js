@@ -79,7 +79,7 @@ async function call(who, method, url, body, headers = {}) {
   const raw = Buffer.isBuffer(body);
   const res = await realFetch(`${base}/api${url}`, {
     method,
-    headers: { ...(body !== undefined && !raw ? { 'Content-Type': 'application/json' } : {}), ...(jar[who] ? { Cookie: jar[who] } : {}), ...headers },
+    headers: { ...(body !== undefined && !raw ? { 'Content-Type': 'application/json' } : {}), ...(jar[who] ? { Cookie: jar[who], Origin: base } : {}), ...headers },
     body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
   });
   const set = res.headers.get('set-cookie');

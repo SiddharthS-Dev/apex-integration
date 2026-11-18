@@ -166,3 +166,36 @@ test('a cached preview read recently survives even if it was written long ago', 
   await stack.container.retention();
   assert.ok(fs.existsSync(store.pathFor('preview-read.pdf')));
 });
+
+/* ---------------------------------------------------- sign-in history -- */
+
+async function seedLoginHistory(db) {
+  for (const [rowId, at] of [
+    ['login-stale', ago(181 * DAY)],
+    ['login-fresh', ago(179 * DAY)],
+  ]) {
+    await db.execute(
+      'INSERT INTO login_history (id, user_id, user_name, email, status, ip, login_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [rowId, 'user-1', 'A', 'a@example.com', 'success', '127.0.0.1', at, at]
+    );
+  }
+}
+
+test('sign-in history is kept indefinitely unless RETENTION_LOGIN_HISTORY_DAYS is set', async (t) => {
+  const stack = await createTestStack({ withApp: false });
+  t.after(() => stack.close());
+  assert.equal(stack.config.retention.loginHistoryDays, 0);
+  await seedLoginHistory(stack.db);
+  const results = await stack.container.retention();
+  assert.equal(results.loginHistory, 0);
+  assert.deepEqual(await ids(stack.db, 'login_history'), ['login-fresh', 'login-stale']);
+});
+
+test('RETENTION_LOGIN_HISTORY_DAYS purges sign-in records older than it', async (t) => {
+  const stack = await createTestStack({ withApp: false, configOverrides: { RETENTION_LOGIN_HISTORY_DAYS: '180' } });
+  t.after(() => stack.close());
+  await seedLoginHistory(stack.db);
+  const results = await stack.container.retention();
+  assert.equal(results.loginHistory, 1);
+  assert.deepEqual(await ids(stack.db, 'login_history'), ['login-fresh']);
+});

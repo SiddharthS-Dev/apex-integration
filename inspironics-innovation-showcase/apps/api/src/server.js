@@ -6,7 +6,7 @@ import { createApp } from './app.js'
 import { loadConfig, loadDotEnv } from './config.js'
 import { hashPassword } from './lib/crypto.js'
 import { createLogger } from './lib/log.js'
-import { createServices } from './services.js'
+import { createServices, housekeep } from './services.js'
 
 loadDotEnv()
 const config = loadConfig()
@@ -22,7 +22,7 @@ const services = await createServices(config, log)
 const { repos, sync, scheduler } = services
 
 await repos.syncLog.failAbandoned()
-await repos.sessions.purgeExpired()
+await housekeep(repos, config, log)
 await bootstrapAdmin()
 
 const app = createApp(services)
@@ -48,7 +48,7 @@ server.on('error', (error) => {
   process.exit(1)
 })
 
-const housekeeping = setInterval(() => repos.sessions.purgeExpired().catch(() => {}), 3600_000)
+const housekeeping = setInterval(() => housekeep(repos, config, log).catch((error) => log.warn('Housekeeping failed', { error })), 3600_000)
 housekeeping.unref()
 
 let closing = false

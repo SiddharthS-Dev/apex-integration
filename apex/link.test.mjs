@@ -261,7 +261,7 @@ test('start without a Core user in the session is 401; signed out is 401; cross-
     const csp = page.headers.get('content-security-policy')
     const html = fs.readFileSync(new URL('./public/link.html', import.meta.url), 'utf8')
     for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
-      assert.ok(csp.includes(`'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'`))
+      assert.ok(csp.includes(`'sha256-${crypto.createHash('sha256').update(m[1].replace(/\r\n?/g, '\n'), 'utf8').digest('base64')}'`))
     }
     assert.ok(!/script-src[^;]*'unsafe-inline'/.test(csp))
     assert.match(csp, /frame-ancestors 'none'/)

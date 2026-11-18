@@ -111,7 +111,8 @@ export function loadConfig(env = process.env) {
       cookieSecure: bool(env.COOKIE_SECURE, publicUrl.startsWith('https://')),
       /** COOKIE_SECURE=false said out loud — the only way production runs on plain http. */
       cookieInsecureExplicit: bool(env.COOKIE_SECURE, null) === false,
-      allowRegistration: bool(env.ALLOW_REGISTRATION, true),
+      /** Self-service sign-up. Closed by default in production (set ALLOW_REGISTRATION=true to open it); open in development. */
+      allowRegistration: bool(env.ALLOW_REGISTRATION, !isProd),
       /** The shared, anonymous guest identity. Off unless GUEST_ENABLED=true. */
       guestEnabled: bool(env.GUEST_ENABLED, false),
       /** Consecutive failed sign-ins (within the lockout window) before an account is locked for that window. */
@@ -142,6 +143,15 @@ export function loadConfig(env = process.env) {
        * folder is chosen. An App Folder app is exempt (it only sees its own folder).
        */
       allowFullSync: bool(env.DROPBOX_ALLOW_FULL_SYNC, false),
+    },
+
+    /**
+     * Opt-in retention, applied by the hourly housekeeping. Unset (0) keeps everything, as before.
+     * login_history holds emails and IP addresses; plate_events is per-user view analytics.
+     */
+    retention: {
+      loginHistoryDays: int(env.LOGIN_HISTORY_RETENTION_DAYS, 0, { min: 0 }),
+      plateEventsDays: int(env.PLATE_EVENTS_RETENTION_DAYS, 0, { min: 0 }),
     },
 
     sync: {

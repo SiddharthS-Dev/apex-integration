@@ -127,6 +127,13 @@ export function buildConfig(env = process.env) {
       sameSite: env.SESSION_COOKIE_SAMESITE || 'lax',
     },
 
+    /**
+     * Self-service registration (POST /api/auth/register). Off by default in
+     * production — an open sign-up there hands the library to anyone who can
+     * reach the API — and on in development; ALLOW_REGISTRATION decides either way.
+     */
+    allowRegistration: bool(env.ALLOW_REGISTRATION, !isProduction),
+
     bootstrapAdmin: {
       email: String(env.BOOTSTRAP_ADMIN_EMAIL || '').trim().toLowerCase(),
       password: env.BOOTSTRAP_ADMIN_PASSWORD || '',
@@ -179,6 +186,12 @@ export function buildConfig(env = process.env) {
       lockTtlMinutes: int(env.DROPBOX_SYNC_LOCK_TTL_MINUTES, 60),
     },
 
+    /** Zip-bomb limits for .pptx extraction (checked before and during decompression). */
+    extraction: {
+      maxEntries: int(env.PPTX_MAX_ZIP_ENTRIES, 5000),
+      maxUncompressedBytes: int(env.PPTX_MAX_UNZIP_MB, 300) * 1024 * 1024,
+    },
+
     ai: {
       enabled: bool(env.AI_ENABLED, true),
       apiKey: env.ANTHROPIC_API_KEY || '',
@@ -207,6 +220,8 @@ export function buildConfig(env = process.env) {
     retention: {
       syncLogDays: int(env.RETENTION_SYNC_LOG_DAYS, 90),
       auditLogDays: int(env.RETENTION_AUDIT_LOG_DAYS, 365),
+      /** Sign-in history (email, IP). 0 / unset = keep indefinitely. */
+      loginHistoryDays: Math.max(0, int(env.RETENTION_LOGIN_HISTORY_DAYS, 0)),
     },
 
     /**
@@ -251,6 +266,17 @@ function identityConfig(env) {
     kid: String(env.APEX_IDENTITY_KID ?? '').trim(),
     trustedSources: parseTrustedSources(String(env.APEX_IDENTITY_TRUSTED_SOURCES ?? '').trim() || 'loopback'),
   };
+}
+
+/** True for a URL on this machine only: localhost (and *.localhost), 127.0.0.0/8 or ::1. */
+export function isLocalUrl(value) {
+  let host;
+  try {
+    host = new URL(String(value)).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  } catch {
+    return false;
+  }
+  return host === 'localhost' || host.endsWith('.localhost') || /^127(?:\.\d{1,3}){3}$/.test(host) || host === '::1';
 }
 
 /** Decodes an encryption key from hex or base64, or returns null if malformed. */
@@ -333,7 +359,20 @@ export function validateConfig(cfg) {
     warnings.push('DROPBOX_REDIRECT_URI is not https — Dropbox requires https outside localhost.');
   }
   if (cfg.isProduction && !cfg.session.secure) {
-    warnings.push('SESSION_COOKIE_SECURE is false in production — session cookies would travel over http.');
+    // A local production run (behind the Apex gateway on http://127.0.0.1, as the private staging
+    // stack does) may opt out of Secure cookies; anything reachable by another host must be https.
+    const publicUrls = [cfg.appBaseUrl, cfg.apiBaseUrl].filter((url) => !isLocalUrl(url));
+    if (publicUrls.length) {
+      errors.push(
+        `SESSION_COOKIE_SECURE is false in production on a non-local address (${publicUrls.join(', ')}) — ` +
+          'session cookies would travel over plain http. Serve APP_BASE_URL / API_BASE_URL over https ' +
+          'and set SESSION_COOKIE_SECURE=true.'
+      );
+    } else {
+      warnings.push(
+        'SESSION_COOKIE_SECURE is false in production — fine on localhost, never on a public host.'
+      );
+    }
   }
   if (cfg.ai.enabled && !cfg.ai.apiKey) {
     warnings.push(

@@ -33,7 +33,7 @@ function client(ip = `10.0.0.${++ipCounter}`) {
       headers: {
         'X-Forwarded-For': ip,
         ...(body !== undefined && !raw ? { 'Content-Type': 'application/json' } : {}),
-        ...(cookie ? { Cookie: cookie } : {}),
+        ...(cookie ? { Cookie: cookie, Origin: base } : {}),
         ...headers,
       },
       body: body === undefined ? undefined : raw ? body : JSON.stringify(body),

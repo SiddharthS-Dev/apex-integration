@@ -55,13 +55,16 @@ export const config = Object.freeze({
   // Auth
   sessionTtlHours: num(env.SESSION_TTL_HOURS, 12),
   cookieSecure: bool(env.COOKIE_SECURE, env.NODE_ENV === 'production'),
-  allowRegistration: bool(env.ALLOW_REGISTRATION, true),
+  // Open self-registration: on by default in development, off in production unless ALLOW_REGISTRATION=true.
+  allowRegistration: bool(env.ALLOW_REGISTRATION, env.NODE_ENV !== 'production'),
   // The first self-registered account becomes admin in development. In production it does not unless
   // ALLOW_FIRST_USER_ADMIN=true — there the bootstrap admin (BOOTSTRAP_ADMIN_*) is the supported path,
   // so whoever reaches a fresh deployment first cannot take it over.
   allowFirstUserAdmin: env.NODE_ENV === 'production' ? bool(env.ALLOW_FIRST_USER_ADMIN, false) : bool(env.ALLOW_FIRST_USER_ADMIN, true),
   // Consecutive failed sign-ins for one email (within 15 min) before that email is locked for 15 min.
   loginMaxFailures: Math.max(1, num(env.LOGIN_MAX_FAILURES, 10)),
+  // Days of sign-in history (login_history) to keep; unset or 0 keeps it indefinitely.
+  loginHistoryRetentionDays: Math.max(0, num(env.LOGIN_HISTORY_RETENTION_DAYS, 0)),
   bootstrapAdminEmail: (env.BOOTSTRAP_ADMIN_EMAIL || '').trim().toLowerCase(),
   // With a password too, the admin is created at startup instead of by registering (see server.js).
   bootstrapAdminPassword: env.BOOTSTRAP_ADMIN_PASSWORD || '',

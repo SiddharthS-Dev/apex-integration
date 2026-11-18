@@ -12,6 +12,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'academy-authprod-'));
 Object.assign(process.env, {
   DATA_DIR: dir, SQLITE_PATH: path.join(dir, 'test.db'), DATABASE_URL: '', EMAIL_PROVIDER: 'log', AI_ENABLED: 'false', LOG_LEVEL: 'error',
   NODE_ENV: 'production', COOKIE_SECURE: 'false', BOOTSTRAP_ADMIN_EMAIL: 'boss@example.com',
+  // Registration is closed by default in production (securityAudit.test.js); these cases open it explicitly.
+  ALLOW_REGISTRATION: 'true',
 });
 delete process.env.ALLOW_FIRST_USER_ADMIN;
 const silence = console.log;

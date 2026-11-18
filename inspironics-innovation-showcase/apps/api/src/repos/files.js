@@ -274,6 +274,13 @@ export function createEventsRepo(db) {
     record: (fileId, userId, kind) =>
       db.run('INSERT INTO plate_events (id, file_id, user_id, kind, created_at) VALUES (?, ?, ?, ?, ?)', [randomId(), fileId, userId, kind, nowIso()]),
 
+    /** Deletes analytics events older than `days` (PLATE_EVENTS_RETENTION_DAYS); returns how many went. */
+    async purgeOlderThan(days) {
+      const cutoff = new Date(Date.now() - days * 86_400_000).toISOString()
+      const r = await db.run('DELETE FROM plate_events WHERE created_at < ?', [cutoff])
+      return Number(r?.changes ?? r?.rowCount ?? 0)
+    },
+
     async byDay(sinceIso) {
       return db.all(
         `SELECT SUBSTR(created_at, 1, 10) AS day, kind, CAST(COUNT(*) AS INTEGER) AS n

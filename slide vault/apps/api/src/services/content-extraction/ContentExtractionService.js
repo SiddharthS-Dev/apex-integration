@@ -7,7 +7,7 @@
  *
  *   File -> Extractor -> NormalizedDocument -> AI
  */
-import { extractPptx } from './pptx.js';
+import { DEFAULT_ZIP_LIMITS, extractPptx } from './pptx.js';
 import { extractPdf } from './pdf.js';
 import { extractHtml } from './html.js';
 
@@ -22,10 +22,30 @@ import { extractHtml } from './html.js';
  * @property {{provider: string, externalId: string, path: string}} source
  */
 
+/**
+ * File signatures ("magic bytes") the extension must agree with. A file whose
+ * bytes are not what its name claims is never handed to a parser: it is
+ * indexed by metadata only and the mismatch is logged.
+ */
+const SIGNATURES = {
+  // .pptx is an Office Open XML package: a ZIP, local file header first.
+  pptx: [Buffer.from([0x50, 0x4b, 0x03, 0x04])],
+  // .ppt is the legacy binary format: an OLE compound file.
+  ppt: [Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])],
+};
+
+/** True when `buffer` starts with a signature `format` allows (or `format` has none on record). */
+export function matchesSignature(buffer, format) {
+  const expected = SIGNATURES[String(format ?? '').toLowerCase()];
+  if (!expected) return true;
+  return expected.some((sig) => buffer.length >= sig.length && buffer.subarray(0, sig.length).equals(sig));
+}
+
 export class ContentExtractionService {
-  constructor({ logger, maxTextLength = 20_000 } = {}) {
+  constructor({ logger, maxTextLength = 20_000, zipLimits = DEFAULT_ZIP_LIMITS } = {}) {
     this.logger = logger?.child?.({ component: 'ContentExtractionService' }) ?? logger;
     this.maxTextLength = maxTextLength;
+    this.zipLimits = { ...DEFAULT_ZIP_LIMITS, ...zipLimits };
   }
 
   /** Extensions this service can do anything useful with. */
@@ -52,6 +72,15 @@ export class ContentExtractionService {
       source: { provider: source.provider ?? '', externalId: source.externalId ?? '', path: source.path ?? '' },
     };
 
+    if (!matchesSignature(buffer, format)) {
+      this.logger?.warn?.('Content extraction skipped: file signature does not match its extension', {
+        name,
+        format,
+        reason: 'signature_mismatch',
+      });
+      return { ...empty, metadata: { extractionError: `File content is not a valid .${format} (signature mismatch).` } };
+    }
+
     try {
       if (format === 'pptx') return { ...empty, ...(await this.#pptx(buffer)) };
       if (format === 'pdf') return { ...empty, ...(await this.#pdf(buffer)) };
@@ -68,7 +97,7 @@ export class ContentExtractionService {
   }
 
   async #pptx(buffer) {
-    const parsed = await extractPptx(buffer);
+    const parsed = await extractPptx(buffer, this.zipLimits);
 
     const slides = parsed.slides.map((slide) => ({
       index: slide.index,

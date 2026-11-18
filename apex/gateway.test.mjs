@@ -378,3 +378,131 @@ test('per-project upstream host: APEX_UPSTREAM_HOST_SHOWCASE wins over APEX_UPST
     await gw.close()
   }
 })
+
+/* --------------------------------------------------------- hardening -- */
+
+/** A raw request (fetch() may not set Host). Resolves with the response, whatever happens to the upload. */
+function raw(base, p, { method = 'GET', headers = {}, body, chunks } = {}) {
+  const { port } = new URL(base)
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, method, path: p, headers }, (res) => {
+      let text = ''
+      res.setEncoding('utf8')
+      res.on('data', (c) => (text += c))
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text }))
+      res.on('error', () => resolve({ status: res.statusCode, headers: res.headers, text }))
+    })
+    req.on('error', (err) => (req.reusedSocket ? reject(err) : null))
+    if (chunks) for (const c of chunks) req.write(c)
+    if (body !== undefined) req.write(body)
+    req.end()
+  })
+}
+
+test('baseline security headers on gateway pages; proxied API keeps its own framing rules; default CSP on HTML', async () => {
+  const gw = await gateway('headers')
+  try {
+    const config = await gw.call('/auth/config')
+    assert.equal(config.headers.get('x-content-type-options'), 'nosniff')
+    assert.equal(config.headers.get('x-frame-options'), 'SAMEORIGIN')
+    assert.equal(config.headers.get('referrer-policy'), 'strict-origin-when-cross-origin')
+    assert.equal(config.headers.get('strict-transport-security'), null, 'no HSTS over plain http')
+
+    // The sign-in page keeps its own, stricter policy.
+    const login = await gw.call('/login')
+    assert.equal(login.status, 200)
+    assert.match(login.headers.get('content-security-policy'), /script-src/)
+
+    // A redirect and a 404 page get the baseline too.
+    const redir = await gw.call('/showcase/', { headers: { Accept: 'text/html' } })
+    assert.equal(redir.status, 302)
+    assert.equal(redir.headers.get('x-content-type-options'), 'nosniff')
+
+    const token = auth.issueToken('one@x.io', ['showcase', 'vault', 'academia'], 1)
+    const home = await gw.call('/', { headers: { Cookie: cookieFor(token) } })
+    assert.equal(home.status, 200)
+    assert.equal(home.headers.get('content-security-policy'), "object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
+    const missing = await gw.call('/no-such-page', { headers: { Cookie: cookieFor(token) } })
+    assert.equal(missing.status, 404)
+    assert.match(missing.headers.get('content-security-policy'), /object-src 'none'/)
+
+    const api = await gw.call('/showcase/api/anything', { headers: { Cookie: cookieFor(token) } })
+    assert.equal(api.status, 200)
+    assert.equal(api.headers.get('x-content-type-options'), 'nosniff', 'nosniff added where the app sent none')
+    assert.equal(api.headers.get('x-frame-options'), null, 'the app decides its own framing')
+    assert.equal(api.headers.get('content-security-policy'), null, 'no CSP invented for an API response')
+  } finally {
+    await gw.close()
+  }
+})
+
+test('HSTS once APEX_PUBLIC_URL is https', async () => {
+  const gw = await gateway('hsts', { APEX_PUBLIC_URL: 'https://apex.example.com' })
+  try {
+    const res = await gw.call('/auth/config')
+    assert.equal(res.headers.get('strict-transport-security'), 'max-age=31536000; includeSubDomains')
+  } finally {
+    await gw.close()
+  }
+})
+
+test('Host allow-list: a foreign Host gets 421; loopback, the public host and APEX_ALLOWED_HOSTS are answered', async () => {
+  const gw = await gateway('hosts', { APEX_PUBLIC_URL: 'https://apex.example.com', APEX_ALLOWED_HOSTS: 'lan-box, 10.0.0.7' })
+  try {
+    assert.equal((await raw(gw.base, '/auth/config', { headers: { Host: 'evil.example' } })).status, 421)
+    assert.equal((await raw(gw.base, '/auth/config', { headers: { Host: 'evil.example:4173' } })).status, 421)
+    // A rebound name cannot reach the sign-in either, nor smuggle its own origin past the Origin check.
+    const login = await raw(gw.base, '/auth/login', {
+      method: 'POST',
+      headers: { Host: 'evil.example', Origin: 'http://evil.example', 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    assert.equal(login.status, 421)
+    for (const host of ['localhost:9', '127.0.0.1:4173', '[::1]:4173', 'apex.example.com', 'LAN-BOX:5173', '10.0.0.7']) {
+      assert.equal((await raw(gw.base, '/auth/config', { headers: { Host: host } })).status, 200, host)
+    }
+  } finally {
+    await gw.close()
+  }
+})
+
+test('Host allow-list behind a trusted proxy checks X-Forwarded-Host', async () => {
+  const gw = await gateway('hosts-proxy', { APEX_PUBLIC_URL: 'https://apex.example.com', APEX_TRUST_PROXY: '1' })
+  try {
+    const ok = await raw(gw.base, '/auth/config', { headers: { Host: '127.0.0.1', 'X-Forwarded-Host': 'apex.example.com', 'X-Forwarded-Proto': 'https' } })
+    assert.equal(ok.status, 200)
+    const bad = await raw(gw.base, '/auth/config', { headers: { Host: '127.0.0.1', 'X-Forwarded-Host': 'evil.example' } })
+    assert.equal(bad.status, 421)
+  } finally {
+    await gw.close()
+  }
+})
+
+test('APEX_MAX_BODY_MB: a declared or streamed body over the limit gets 413 and never reaches the app whole', async () => {
+  const gw = await gateway('body-cap', { APEX_MAX_BODY_MB: '0.001' }) // ~1 KB
+  try {
+    const token = auth.issueToken('one@x.io', ['showcase', 'vault', 'academia'], 1)
+    const before = apps.showcase.seen.length
+
+    const declared = await raw(gw.base, '/showcase/api/upload', {
+      method: 'POST',
+      headers: { Cookie: cookieFor(token), 'Content-Type': 'application/octet-stream', 'Content-Length': '5000' },
+    })
+    assert.equal(declared.status, 413)
+    assert.equal(JSON.parse(declared.text).code, 'PAYLOAD_TOO_LARGE')
+    assert.equal(apps.showcase.seen.length, before, 'the app was never contacted')
+
+    const streamed = await raw(gw.base, '/showcase/api/upload', {
+      method: 'POST',
+      headers: { Cookie: cookieFor(token), 'Content-Type': 'application/octet-stream' },
+      chunks: [Buffer.alloc(800), Buffer.alloc(800), Buffer.alloc(800)],
+    })
+    assert.equal(streamed.status, 413, 'a chunked body that grows past the limit is cut off')
+
+    // Under the limit still flows through.
+    const small = await gw.call('/showcase/api/upload', { method: 'POST', headers: { Cookie: cookieFor(token) }, body: 'x'.repeat(500) })
+    assert.equal(small.status, 200)
+  } finally {
+    await gw.close()
+  }
+})

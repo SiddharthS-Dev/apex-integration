@@ -207,7 +207,33 @@ that user's Core sessions.
 
 ## 7. Backup and restore (Postgres)
 
-### Backup
+### Automated, encrypted backups (recommended)
+
+`deploy/staging/backup.mjs` takes one complete set per run, encrypted while it streams (AES-256-GCM),
+and applies retention:
+
+```sh
+node deploy/staging/generate-secrets.mjs --add-missing   # once, on a file generated before backups existed
+node deploy/staging/backup.mjs                           # set in deploy/staging/backups/<UTC time>/
+node deploy/staging/backup.mjs verify                    # newest set: SHA-256 and key check of every file
+```
+
+- **Contents:** `pg_dump -Fc` of `core`, `showcase` and `slidesvault`, the roles (`pg_dumpall
+  --globals-only`), the `core-data` and `gateway-state` volumes, and a `manifest.json`.
+- **Key:** `BACKUP_ENCRYPTION_KEY` in `.env.staging` (or the environment). Keep a copy of it **away
+  from the backups**; without it they cannot be restored.
+- **Retention:** 14 days by default (`--retention-days` or `BACKUP_RETENTION_DAYS`). The newest three
+  sets are always kept, so a stopped schedule never ages every backup away.
+- **Location:** `--out` or `BACKUP_DIR`; the default folder is gitignored. Copy sets off the host
+  (another disk or object storage): a backup on the same disk as the data does not survive that disk.
+- **Schedule** (daily at 02:00 is a sensible default):
+  - Linux cron: `0 2 * * * cd /path/to/apex && node deploy/staging/backup.mjs >> backups.log 2>&1`
+  - Windows: `schtasks /Create /SC DAILY /ST 02:00 /TN "APEX staging backup" /TR "cmd /c cd /d E:\apex && node deploy\staging\backup.mjs"`
+- **To restore,** decrypt first, then follow the drill or the real restore below with the decrypted file:
+  `node deploy/staging/backup.mjs decrypt backups/<set>/core.dump.enc core.dump`. Delete decrypted
+  files when done.
+
+### Manual backup
 
 Take one archive per database plus the roles:
 
@@ -338,7 +364,8 @@ The SlidesVault command works only while `005_core_user_id` is its latest migrat
   DEC-010 is open.
 - **No consent screens, public registration, student-work publication or external organisations.**
   These are held in R1. `CORE_EXTERNAL_ORGS_ENABLED=false`.
-- **No automated backups or monitoring.** §7 is manual.
+- **No monitoring, and no backup schedule installed.** §7 provides the encrypted backup tool; the host's
+  scheduler must run it, and sets must be copied off the host.
 
 ### Known limits
 

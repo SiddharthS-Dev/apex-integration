@@ -29,7 +29,7 @@ function client() {
   const call = async (method, url, body) => {
     const res = await fetch(`${base}/api${url}`, {
       method,
-      headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) },
+      headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie, Origin: base } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     const set = res.headers.get('set-cookie');

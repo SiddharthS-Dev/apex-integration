@@ -61,6 +61,59 @@ export function setEmbeddableHeaders(res, { origins = [], isProduction, html = f
   return res;
 }
 
+/**
+ * CSRF defence in depth on top of SameSite=Lax: a state-changing request must
+ * come from one of our own origins.
+ *
+ * - A request whose Origin (or, failing that, Referer) names a foreign origin is
+ *   refused everywhere — including an opaque "null" Origin from a sandboxed
+ *   frame or data: URL, which is never ours.
+ * - A request that carries the session cookie but neither header is refused:
+ *   every browser sends Origin on a cross-site write, so a cookie-bearing write
+ *   with no Origin and no Referer is not one of our pages.
+ * - Cookie-less writes (the Apex gateway's server-side sign-in, its
+ *   X-Apex-Service link-proof call, requests authenticated by the gateway's
+ *   identity assertion) have no session to ride on and pass. So does a
+ *   header-less sign-out: the worst a forged one can do is end a session, and
+ *   the gateway signs each app out with only its cookie.
+ *
+ * The allowed set is configuration only (CORS_ORIGINS plus the APP_BASE_URL and
+ * API_BASE_URL origins). It deliberately does not trust an origin derived from
+ * the Host header, which an attacker controls under DNS rebinding.
+ *
+ * Mount under /api: `req.path` is then relative to it.
+ */
+export function originGuard({ origins = [], cookieName }) {
+  const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
+  const allowed = new Set(origins.map(toOrigin).filter(Boolean));
+
+  return (req, res, next) => {
+    if (SAFE.has(req.method)) return next();
+    const origin = req.headers.origin || toOrigin(req.headers.referer);
+    if (origin) {
+      if (allowed.has(origin.replace(/\/$/, ''))) return next();
+      res.status(403).json({ error: 'Cross-origin request refused.', code: 'BAD_ORIGIN' });
+      return;
+    }
+    if (cookieName && req.cookies?.[cookieName] && req.path !== '/auth/logout') {
+      res.status(403).json({ error: 'Request refused: it carries no Origin or Referer.', code: 'BAD_ORIGIN' });
+      return;
+    }
+    next();
+  };
+}
+
+/** The origin of a URL ("https://a.example:8443"), or null if it is not one. */
+function toOrigin(value) {
+  if (!value) return null;
+  try {
+    const { origin } = new URL(String(value));
+    return origin && origin !== 'null' ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
 /** CORS restricted to the configured origins, with credentials allowed. */
 export function cors({ origins }) {
   const allowed = new Set(origins.map((origin) => origin.replace(/\/$/, '')));

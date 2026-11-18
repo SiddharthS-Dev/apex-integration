@@ -16,6 +16,13 @@ import { apexLinkRoutes, authRoutes, createLoginGuards } from './routes/auth.js'
 import { dropboxRoutes } from './routes/dropbox.js'
 import { entityRoutes } from './routes/entities.js'
 
+/**
+ * The CSP on the built web app's HTML (SERVE_WEB). Conservative on purpose: no script-src or
+ * default-src, which the bundle is not written for; it stops plugins, <base> hijacking and framing
+ * by other sites. The API's own responses keep `default-src 'none'` (securityHeaders).
+ */
+export const SPA_CSP = "object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+
 export function createApp(deps) {
   const { config, repos, log, metrics } = deps
   const app = express()
@@ -59,11 +66,13 @@ export function createApp(deps) {
         index: false,
         setHeaders(res, file) {
           res.setHeader('Cache-Control', file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache')
+          if (file.toLowerCase().endsWith('.html')) res.setHeader('Content-Security-Policy', SPA_CSP)
         },
       })
     )
     app.get('*', (req, res) => {
       res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Content-Security-Policy', SPA_CSP)
       res.sendFile(path.join(config.webDist, 'index.html'))
     })
     log.info('Serving the web app', { dir: config.webDist })

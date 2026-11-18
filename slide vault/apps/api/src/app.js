@@ -8,7 +8,7 @@
 import express from 'express';
 import cookieParser from 'cookie-parser';
 
-import { securityHeaders, cors } from './http/security.js';
+import { securityHeaders, cors, originGuard } from './http/security.js';
 import { attachUser } from './http/auth.js';
 import { createIdentityGate } from './http/identity.js';
 import { errorHandler, notFoundHandler } from './http/errors.js';
@@ -53,6 +53,14 @@ export function createApp(container) {
   // one is either a mistake or an attempt to exhaust memory.
   app.use(express.json({ limit: '256kb' }));
   app.use(cookieParser());
+  // Cookie-bearing writes must come from our own origin (CSRF defence in depth).
+  app.use(
+    '/api',
+    originGuard({
+      origins: [...config.corsOrigins, config.appBaseUrl, config.apiBaseUrl],
+      cookieName: config.session.cookieName,
+    })
+  );
 
   /* Request logging and HTTP metrics. */
   app.use((req, res, next) => {

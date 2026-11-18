@@ -194,6 +194,13 @@ export function createLoginHistoryRepo(db) {
         [randomId(), userId, email, method, success, reason, ip, String(userAgent).slice(0, 300), nowIso()]
       ),
 
+    /** Deletes sign-in records older than `days` (LOGIN_HISTORY_RETENTION_DAYS); returns how many went. */
+    async purgeOlderThan(days) {
+      const cutoff = new Date(Date.now() - days * 86_400_000).toISOString()
+      const r = await db.run('DELETE FROM login_history WHERE created_at < ?', [cutoff])
+      return Number(r?.changes ?? r?.rowCount ?? 0)
+    },
+
     async list({ limit = 50, offset = 0 } = {}) {
       const rows = await db.all(
         `SELECT id, user_id, email, method, success, reason, ip, user_agent, created_at

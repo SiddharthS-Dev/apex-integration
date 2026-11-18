@@ -67,6 +67,8 @@ All optional, set in the environment before `start.bat`:
 | `APEX_IDENTITY_TRUSTED_SOURCES` | `loopback`       | Read by each app: the addresses (IPs or CIDRs, comma-separated) an assertion may arrive from. Name the gateway's container network when the apps do not share its host. |
 | `APEX_IDENTITY_KEYS_FILE` | `apex/.identity-keys.json` | Where the assertion keys live (gitignored, created on first use). Rotate with `node apex/identity-keys.mjs rotate`. |
 | `APEX_UPSTREAM_HOST` | `127.0.0.1`                 | Where the gateway reaches the app APIs and dev servers — a host name in a container deployment. |
+| `APEX_ALLOWED_HOSTS` | unset                       | Extra host names the gateway answers to, comma-separated (a LAN address with `APEX_HOST=0.0.0.0`, or the name a reverse proxy sends as `Host`). Loopback names, the `APEX_PUBLIC_URL` host and a specific `APEX_HOST` address are always allowed; any other `Host` (or, with `APEX_TRUST_PROXY`, `X-Forwarded-Host`) gets `421` — a DNS-rebinding defence. |
+| `APEX_MAX_BODY_MB`   | `64`                        | The largest request body the gateway forwards to an app. Larger ones get `413`. Keep it above the Academia's `MAX_UPLOAD_MB`. |
 | `APEX_GOOGLE_CLIENT_ID` | unset                    | Shows **Sign in with Google** on the sign-in page. The Academia (APEX Core) is started with the same value as `GOOGLE_CLIENT_ID` and signs in only a Google account already linked to a Core user. Unset: no button, no Google scripts on the page. |
 
 `start.bat prod` runs every API with `NODE_ENV=production`. Over plain
