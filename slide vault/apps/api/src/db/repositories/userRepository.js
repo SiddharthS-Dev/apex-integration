@@ -14,7 +14,16 @@ import { promisify } from 'node:util';
 import { ROLES } from '@slidesvault/shared';
 
 const scrypt = promisify(crypto.scrypt);
-const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
+/**
+ * Current cost: N=2^17, r=8 (128 MiB per hash, the OWASP minimum for scrypt).
+ * Hashes made with older parameters still verify — the parameters travel with
+ * the hash — and are upgraded on the next successful sign-in (needsRehash).
+ */
+const SCRYPT = { N: 2 ** 17, r: 8, p: 1, keylen: 64 };
+/** Node refuses scrypt above 32 MiB unless told otherwise; 128·N·r is what it needs, doubled for headroom. */
+const maxmemFor = (N, r) => 2 * 128 * N * r;
+/** A stored hash is trusted data, but an absurd N would still be a memory bomb. */
+const MAX_N = 2 ** 20;
 const now = () => new Date().toISOString();
 
 // One definition of the roles, shared with the web app, so the value the API
@@ -28,6 +37,7 @@ export async function hashPassword(password) {
     N: SCRYPT.N,
     r: SCRYPT.r,
     p: SCRYPT.p,
+    maxmem: maxmemFor(SCRYPT.N, SCRYPT.r),
   });
   return [
     'scrypt',
@@ -47,16 +57,26 @@ export async function verifyPassword(password, stored) {
   const [, N, r, p, saltB64, hashB64] = parts;
   const expected = Buffer.from(hashB64, 'base64');
   let derived;
+  if (!(Number(N) <= MAX_N)) return false;
   try {
     derived = await scrypt(String(password), Buffer.from(saltB64, 'base64'), expected.length, {
       N: Number(N),
       r: Number(r),
       p: Number(p),
+      maxmem: maxmemFor(Number(N), Number(r)),
     });
   } catch {
     return false;
   }
   return derived.length === expected.length && crypto.timingSafeEqual(derived, expected);
+}
+
+/** True when a stored scrypt hash was made with weaker parameters than the current ones. */
+export function needsRehash(stored) {
+  const parts = String(stored ?? '').split('$');
+  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
+  const [, N, r, p] = parts.map(Number);
+  return N < SCRYPT.N || r < SCRYPT.r || p < SCRYPT.p;
 }
 
 /** True when the account has a password the sign-in can check (accounts made by Google or Apex have none). */
@@ -290,6 +310,13 @@ export class LoginHistoryRepository {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [crypto.randomUUID(), userId, userName, email, status, ip, timestamp, timestamp]
     );
+  }
+
+  /** Deletes sign-in records older than `days` (RETENTION_LOGIN_HISTORY_DAYS). Returns the count. */
+  async purgeOlderThan(days) {
+    const cutoff = new Date(Date.now() - days * 24 * 3600_000).toISOString();
+    const result = await this.db.execute('DELETE FROM login_history WHERE login_at < ?', [cutoff]);
+    return result.changes;
   }
 
   async list({ limit = 100, offset = 0 } = {}) {

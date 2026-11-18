@@ -37,12 +37,16 @@ COPY packages/shared/src ./packages/shared/src
 COPY apps/api/src ./apps/api/src
 COPY apps/api/scripts ./apps/api/scripts
 
-# The database and the preview cache must outlive the container.
-RUN mkdir -p /data && chown -R node:node /data /app
+# The application stays owned by root and read-only to the runtime user. The
+# only place the process writes is /data: the SQLite database (DB_FILE) and the
+# preview cache (OBJECT_STORE_DIR). Nothing else under /app is written at run
+# time, so only /data is handed to `node`.
+RUN chown -R root:root /app && chmod -R a-w,a+rX /app \
+ && mkdir -p /data && chown node:node /data && chmod 700 /data
 VOLUME ["/data"]
 
 # Never run as root: a compromised process should not be able to rewrite the
-# application it is running.
+# application it is running (it is owned by root and not writable, above).
 USER node
 WORKDIR /app/apps/api
 

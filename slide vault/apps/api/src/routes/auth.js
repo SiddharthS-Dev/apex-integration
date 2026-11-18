@@ -10,7 +10,7 @@ import { asyncHandler } from '../http/errors.js';
 import { clientIp, requireAuth, sessionCookieOptions } from '../http/auth.js';
 import { createRateLimiter, byIp, byLoginAccount, byLoginTarget } from '../http/rateLimit.js';
 import { requireEmail, requireString, optionalString } from '../http/validate.js';
-import { ROLES, UserRepository, hasPassword, hashPassword, verifyPassword } from '../db/repositories/userRepository.js';
+import { ROLES, UserRepository, hasPassword, hashPassword, needsRehash, verifyPassword } from '../db/repositories/userRepository.js';
 import { AUDIT } from '../services/audit/AuditService.js';
 import { SERVICE_HEADER, currentSigningKey, issueLinkProof, verifyAssertion } from '../http/apexIdentity.js';
 
@@ -110,6 +110,8 @@ export function createAuthRouter({ config, users, sessions, loginHistory, audit,
       });
 
       await users.touchLogin(user.id);
+      // The password is known to be right: upgrade a hash made with older scrypt parameters.
+      if (needsRehash(user.password_hash)) await users.setPassword(user.id, password);
       await loginHistory.record({
         userId: user.id,
         userName: user.full_name,
@@ -142,6 +144,7 @@ export function createAuthRouter({ config, users, sessions, loginHistory, audit,
     res.json({
       password: true,
       google: Boolean(googleAuth?.configured),
+      registration: Boolean(config.allowRegistration && config.identity?.mode !== 'required'),
       // Whether the library Copilot can answer — AI_ENABLED with a key. The
       // client hides the Copilot otherwise instead of showing it "online".
       ai: Boolean(config.ai.enabled && ai?.available),
@@ -255,6 +258,13 @@ export function createAuthRouter({ config, users, sessions, loginHistory, audit,
     '/register',
     legacyOnly,
     asyncHandler(async (req, res) => {
+      if (!config.allowRegistration) {
+        res.status(403).json({
+          error: 'Registration is closed. Ask an administrator for an account.',
+          code: 'REGISTRATION_CLOSED',
+        });
+        return;
+      }
       const email = requireEmail(req.body?.email);
       const password = requireString(req.body?.password, 'password', { minLength: 10, maxLength: 200 });
       const fullName = optionalString(req.body?.full_name ?? req.body?.fullName, 'full_name', { maxLength: 120 });

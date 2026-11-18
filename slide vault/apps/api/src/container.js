@@ -123,7 +123,7 @@ export function createContainer({ config, db, logger, metrics, fetchImpl = fetch
         })
       : new NullAiProvider(config.ai.enabled ? 'ANTHROPIC_API_KEY is not set.' : 'AI is disabled.'));
 
-  const extraction = new ContentExtractionService({ logger: log });
+  const extraction = new ContentExtractionService({ logger: log, zipLimits: config.extraction });
   const titleResolver = new TitleResolver({
     ai,
     logger: log,
@@ -195,6 +195,11 @@ export function createContainer({ config, db, logger, metrics, fetchImpl = fetch
       sessions: await sessions.purgeExpired(),
       syncLogs: await syncLogs.purgeOlderThan(config.retention.syncLogDays),
       auditLogs: await auditRepository.purgeOlderThan(config.retention.auditLogDays),
+      // Opt-in: unset (0) keeps sign-in history indefinitely.
+      loginHistory:
+        config.retention.loginHistoryDays > 0
+          ? await loginHistory.purgeOlderThan(config.retention.loginHistoryDays)
+          : 0,
       cachedObjects: await objectStore.purgeOlderThan(config.objectStore.ttlHours),
     };
     log.info('Retention sweep complete', results);

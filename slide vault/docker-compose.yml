@@ -23,7 +23,11 @@ services:
     image: slidesvault-api
     restart: unless-stopped
     ports:
-      - '${PORT:-4000}:4000'
+      # Loopback only: the API is meant to sit behind the Apex gateway or a
+      # reverse proxy on this host, never to be reached directly from the
+      # network. To expose it deliberately, put a TLS proxy in front instead of
+      # widening this binding.
+      - '127.0.0.1:${PORT:-4000}:4000'
     environment:
       NODE_ENV: production
       PORT: 4000

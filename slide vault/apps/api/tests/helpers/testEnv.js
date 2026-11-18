@@ -112,8 +112,14 @@ export async function connectDropbox(stack, { rootFolder = '' } = {}) {
 
 /* -------------------------------------------------------------- HTTP ---- */
 
-/** Starts the app on an ephemeral port and returns a small HTTP client. */
-export async function startServer(app) {
+/**
+ * Starts the app on an ephemeral port and returns a small HTTP client.
+ *
+ * Like a browser, the client sends an Origin header on every write: the app's
+ * own origin (testConfig's APP_BASE_URL) unless `origin` says otherwise, or
+ * none at all with `origin: null`. A test can still override it per request.
+ */
+export async function startServer(app, { origin = 'http://localhost:5173' } = {}) {
   const server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   const { port } = server.address();
@@ -130,6 +136,7 @@ export async function startServer(app) {
       redirect,
       headers: {
         ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(origin && !['GET', 'HEAD'].includes(method) ? { Origin: origin } : {}),
         ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         ...headers,
       },
