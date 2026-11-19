@@ -9,7 +9,7 @@ export { default as onboardingRoutes } from './onboarding/routes.js';
 export { sweepOnboarding } from './onboarding/service.js';
 export { onboardingConfig } from './onboarding/config.js';
 export { coreIdentityBackfill } from './backfill.js';
-export { rollbackIdentity, CORE_IDENTITY_TABLES, CORE_IDENTITY_RECORDS } from './rollback.js';
+export { rollbackIdentity, rollbackRegistrationDocuments, CORE_IDENTITY_TABLES, CORE_IDENTITY_RECORDS } from './rollback.js';
 export { grantAdminBreakGlass } from './roles.js';
 export { ROLE_CATALOGUE, ROLES, can, loadActor, activeAssignments } from './identity.js';
 export { setGoogleVerifier } from './google.js';

@@ -19,6 +19,7 @@
     "preview": "npm run preview --workspace @slidesvault/web",
     "start": "npm run start --workspace @slidesvault/api",
     "migrate": "npm run migrate --workspace @slidesvault/api",
+    "rewrap-tokens": "npm run rewrap-tokens --workspace @slidesvault/api",
     "keygen": "npm run keygen --workspace @slidesvault/api",
     "test": "npm run test --workspace @slidesvault/api",
     "test:unit": "npm run test:unit --workspace @slidesvault/api",

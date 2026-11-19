@@ -204,6 +204,16 @@ export function createHttpDriver() {
       // Access requests (Use Case 007). Decisions are POSTs; the API re-checks every permission.
       registrations: (query = {}) => request('GET', '/core/registrations', { query }),
       registration: (id) => request('GET', `/core/registrations/${encodeURIComponent(id)}`),
+      // An attached document (the intern mark sheet) as a Blob, for the reviewer to save. Opening is audited.
+      registrationDocument: async (id, kind) => {
+        const res = await fetch(new URL(`${BASE}/api/core/registrations/${encodeURIComponent(id)}/documents/${encodeURIComponent(kind)}`, window.location.origin), { credentials: 'include', cache: 'no-store' });
+        if (!res.ok) {
+          let data = null;
+          try { data = await res.json(); } catch { /* not JSON */ }
+          throw new ApiError(res.status, data?.error || res.statusText || 'Request failed', data?.details);
+        }
+        return res.blob();
+      },
       approveRegistration: (id, body) => request('POST', `/core/registrations/${encodeURIComponent(id)}/approve`, { body }),
       rejectRegistration: (id, body) => request('POST', `/core/registrations/${encodeURIComponent(id)}/reject`, { body }),
       requestRegistrationInfo: (id, body) => request('POST', `/core/registrations/${encodeURIComponent(id)}/request-info`, { body }),

@@ -11,6 +11,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "migrate": "node scripts/migrate.js",
+    "rewrap-tokens": "node scripts/rewrap-tokens.js",
     "keygen": "node scripts/keygen.js",
     "test": "node --test --test-reporter=spec \"tests/**/*.test.js\"",
     "test:unit": "node --test --test-reporter=spec \"tests/unit/*.test.js\"",

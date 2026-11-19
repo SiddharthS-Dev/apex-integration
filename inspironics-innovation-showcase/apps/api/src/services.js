@@ -4,7 +4,7 @@
  * database, a fake fetch for Dropbox, a stub enricher).
  */
 import { createEnricher } from './ai/enricher.js'
-import { resolveEncryptionKey } from './lib/crypto.js'
+import { resolveEncryptionKeys } from './lib/crypto.js'
 import { createMetrics } from './lib/metrics.js'
 import { openDatabase } from './db/index.js'
 import { migrate } from './db/migrate.js'
@@ -39,7 +39,8 @@ export async function createServices(config, log, overrides = {}) {
   const db = overrides.db || (await openDatabase(config, log))
   await migrate(db, log)
   const repos = createRepos(db)
-  const key = overrides.key || resolveEncryptionKey(config, log)
+  // [current, ...ENCRYPTION_KEY_PREVIOUS]: encrypt uses the first, decrypt tries each in turn
+  const key = overrides.key || resolveEncryptionKeys(config, log)
   const fetchImpl = overrides.fetch || fetch
 
   const dropboxAuth = createDropboxAuth({ config, repos, key, log, metrics, fetchImpl })

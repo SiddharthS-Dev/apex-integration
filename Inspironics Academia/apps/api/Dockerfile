@@ -35,6 +35,10 @@ COPY packages/shared/src packages/shared/src
 COPY apps/api/src apps/api/src
 
 RUN mkdir -p /data /work && chown -R node:node /data /work
+# The runtime never calls npm, npx, corepack or yarn. Remove them: they carry their own
+# dependency trees (the image scan's only HIGH findings) and are tools an attacker could use.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
+    /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 
 USER node
 WORKDIR /app/apps/api

@@ -9,6 +9,13 @@
  *
  * The key never lives in the database or in source — it comes from the
  * environment, a secret manager, KMS or Vault (see docs/SECURITY.md).
+ *
+ * Rotation: encrypt() always uses the current key (DROPBOX_TOKEN_ENCRYPTION_KEY);
+ * decrypt() tries it first and then each retired key from
+ * DROPBOX_TOKEN_ENCRYPTION_KEY_PREVIOUS in order, moving on when GCM
+ * authentication fails. The envelope is unchanged, so rows written before a
+ * rotation keep decrypting; `npm run rewrap-tokens` re-encrypts them under the
+ * current key so the previous one can be removed.
  */
 import crypto from 'node:crypto';
 import { decodeKey } from '../config/index.js';
@@ -18,16 +25,25 @@ const ALGORITHM = 'aes-256-gcm';
 const IV_BYTES = 12; // 96-bit nonce, the size GCM is specified for
 const TAG_BYTES = 16;
 
+const toKey = (key) => {
+  const bytes = Buffer.isBuffer(key) ? key : decodeKey(key);
+  if (!bytes || bytes.length !== 32) {
+    throw new Error('TokenCipher requires a 32-byte key (AES-256-GCM).');
+  }
+  return bytes;
+};
+
 export class TokenCipher {
   #key;
+  #previous;
 
-  /** @param {string|Buffer} key 32 raw bytes, or a hex/base64 encoding of them */
-  constructor(key) {
-    const bytes = Buffer.isBuffer(key) ? key : decodeKey(key);
-    if (!bytes || bytes.length !== 32) {
-      throw new Error('TokenCipher requires a 32-byte key (AES-256-GCM).');
-    }
-    this.#key = bytes;
+  /**
+   * @param {string|Buffer} key 32 raw bytes, or a hex/base64 encoding of them
+   * @param {(string|Buffer)[]} [previousKeys] retired keys, tried for decryption only
+   */
+  constructor(key, previousKeys = []) {
+    this.#key = toKey(key);
+    this.#previous = previousKeys.map(toKey);
   }
 
   /** Encrypts a UTF-8 secret. Empty input encrypts to empty — nothing to hide. */
@@ -48,7 +64,15 @@ export class TokenCipher {
    * hiding the fact that stored data was corrupted.
    */
   decrypt(payload) {
-    if (payload == null || payload === '') return '';
+    return this.decryptWithIndex(payload).plaintext;
+  }
+
+  /**
+   * As decrypt(), also saying which key opened the value: keyIndex 0 is the
+   * current key, 1.. the previous keys in order, -1 an empty value.
+   */
+  decryptWithIndex(payload) {
+    if (payload == null || payload === '') return { plaintext: '', keyIndex: -1 };
     const parts = String(payload).split('.');
     if (parts.length !== 4 || parts[0] !== VERSION) {
       throw new Error('Encrypted credential is malformed or written by an unknown key version.');
@@ -59,17 +83,22 @@ export class TokenCipher {
     if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) {
       throw new Error('Encrypted credential is malformed.');
     }
-    const decipher = crypto.createDecipheriv(ALGORITHM, this.#key, iv);
-    decipher.setAuthTag(tag);
-    try {
-      return Buffer.concat([decipher.update(Buffer.from(dataB64, 'base64')), decipher.final()]).toString('utf8');
-    } catch {
-      // Wrong key, or the row was altered. Never echo the ciphertext.
-      throw new Error(
-        'Could not decrypt the stored Dropbox credential — the encryption key has changed or the ' +
-          'record was tampered with. Reconnect Dropbox to store a fresh credential.'
-      );
+    const data = Buffer.from(dataB64, 'base64');
+    const keys = [this.#key, ...this.#previous];
+    for (let i = 0; i < keys.length; i++) {
+      const decipher = crypto.createDecipheriv(ALGORITHM, keys[i], iv, { authTagLength: 16 });
+      decipher.setAuthTag(tag);
+      try {
+        return { plaintext: Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8'), keyIndex: i };
+      } catch {
+        // GCM authentication failed under this key: try the next one.
+      }
     }
+    // Wrong key(s), or the row was altered. Never echo the ciphertext.
+    throw new Error(
+      'Could not decrypt the stored Dropbox credential — the encryption key has changed or the ' +
+        'record was tampered with. Reconnect Dropbox to store a fresh credential.'
+    );
   }
 
   /** True when the value looks like something this cipher wrote. */

@@ -57,6 +57,9 @@ export function createApp() {
   // Raw-body upload route must be mounted before the JSON parser.
   app.use('/api', fileRoutes);
   app.use('/api', meetingRoutes);
+  // The onboarding document upload (a mark sheet of up to 5 MB, base64 in JSON) needs a little more room
+  // than the general limit; only that one route gets it. express.json skips a body already parsed.
+  app.use('/api/onboarding/document', express.json({ limit: '7mb' }));
   app.use(express.json({ limit: '5mb' }));
 
   app.use('/api/auth', authRoutes);

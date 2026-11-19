@@ -8,6 +8,7 @@
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.mjs\"",
     "migrate": "node --disable-warning=ExperimentalWarning src/db/migrate.js",
+    "rewrap-secrets": "node --disable-warning=ExperimentalWarning src/db/rewrap.js",
     "create-admin": "node --disable-warning=ExperimentalWarning scripts/createAdmin.js"
   },
   "dependencies": {

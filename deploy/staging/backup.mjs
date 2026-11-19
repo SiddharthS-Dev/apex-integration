@@ -19,6 +19,11 @@
  * (generate-secrets.mjs creates it; `--add-missing` adds it to an existing file). Keep a copy of the key
  * somewhere other than the backups: without it they cannot be read.
  *
+ * Key rotation (generate-secrets.mjs --rotate BACKUP_ENCRYPTION_KEY): new sets use the current key;
+ * `decrypt` and `verify` also try BACKUP_ENCRYPTION_KEY_PREVIOUS (comma-separated, newest first), so
+ * older sets stay restorable. Keep a previous key until the last set encrypted with it has aged out
+ * of retention (STAGING_RUNBOOK.md, "Key rotation").
+ *
  * Scheduling is the host's job (cron, Task Scheduler): see STAGING_RUNBOOK.md §7. Copy the sets off the
  * host as well; a backup on the same disk as the data does not survive losing that disk.
  */
@@ -41,12 +46,20 @@ export const DATABASES = ['core', 'showcase', 'slidesvault']
 export const VOLUMES = ['core-data', 'gateway-state']
 const SET_NAME = /^\d{8}T\d{6}Z$/
 
-/** The 32-byte key from base64, or a clear error. */
-export function parseKey(value) {
+/** The 32-byte key from base64, or a clear error (naming the variable, never the value). */
+export function parseKey(value, name = 'BACKUP_ENCRYPTION_KEY') {
   const key = Buffer.from(String(value || '').trim(), 'base64')
-  if (key.length !== 32) throw new Error('BACKUP_ENCRYPTION_KEY must be 32 random bytes, base64 (run generate-secrets.mjs --add-missing)')
+  if (key.length !== 32) throw new Error(`${name} must be 32 random bytes, base64 (run generate-secrets.mjs --add-missing)`)
   return key
 }
+
+/** BACKUP_ENCRYPTION_KEY_PREVIOUS: zero or more retired keys, comma-separated, each validated like the current one. */
+export function parsePreviousKeys(value, name = 'BACKUP_ENCRYPTION_KEY_PREVIOUS') {
+  const entries = String(value || '').split(',').map((s) => s.trim()).filter(Boolean)
+  return entries.map((entry, i) => parseKey(entry, entries.length > 1 ? `${name} entry ${i + 1}` : name))
+}
+
+const keyList = (keys) => (Array.isArray(keys) ? keys : [keys])
 
 /** A cipher stream that writes MAGIC + IV first and the GCM tag last. */
 export function encryptStream(key) {
@@ -81,8 +94,25 @@ export async function encryptTo(source, dest, key) {
   }
 }
 
-/** Decrypts `src` into `dest`. Fails (and leaves no output) if the key is wrong or the file was altered. */
-export async function decryptFile(src, dest, key) {
+/**
+ * Decrypts `src` into `dest` with the first of `keys` (a Buffer, or [current, ...previous]) that
+ * authenticates it. Fails (and leaves no output) if no key fits or the file was altered.
+ */
+export async function decryptFile(src, dest, keys) {
+  const list = keyList(keys)
+  let last
+  for (const key of list) {
+    try {
+      return await decryptFileWith(src, dest, key)
+    } catch (error) {
+      last = error
+      if (!error.authFailure) throw error
+    }
+  }
+  throw new Error(`${last.message}${list.length > 1 ? ` (tried ${list.length} keys)` : ''}`)
+}
+
+async function decryptFileWith(src, dest, key) {
   const size = fs.statSync(src).size
   if (size < HEADER_BYTES + TAG_BYTES) throw new Error(`${src}: too short to be a backup file`)
   const fd = fs.openSync(src, 'r')
@@ -95,7 +125,7 @@ export async function decryptFile(src, dest, key) {
     fs.closeSync(fd)
   }
   if (!header.subarray(0, MAGIC.length).equals(MAGIC)) throw new Error(`${src}: not an APEX backup file`)
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, header.subarray(MAGIC.length))
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, header.subarray(MAGIC.length), { authTagLength: 16 })
   decipher.setAuthTag(tag)
   const partial = `${dest}.partial`
   const body = size - HEADER_BYTES - TAG_BYTES
@@ -105,12 +135,17 @@ export async function decryptFile(src, dest, key) {
     fs.renameSync(partial, dest)
   } catch (error) {
     fs.rmSync(partial, { force: true })
-    throw new Error(`${src}: cannot decrypt (wrong key or altered file): ${error.message}`)
+    throw Object.assign(new Error(`${src}: cannot decrypt (wrong key or altered file): ${error.message}`), { authFailure: true })
   }
 }
 
-/** Streams a file through GCM without writing anything: true when key and tag match. */
-export async function verifyFile(src, key) {
+/** Streams a file through GCM without writing anything: true when one of `keys` and the tag match. */
+export async function verifyFile(src, keys) {
+  for (const key of keyList(keys)) if (await verifyFileWith(src, key)) return true
+  return false
+}
+
+async function verifyFileWith(src, key) {
   const size = fs.statSync(src).size
   if (size < HEADER_BYTES + TAG_BYTES) return false
   const fd = fs.openSync(src, 'r')
@@ -120,7 +155,7 @@ export async function verifyFile(src, key) {
   fs.readSync(fd, tag, 0, TAG_BYTES, size - TAG_BYTES)
   fs.closeSync(fd)
   if (!header.subarray(0, MAGIC.length).equals(MAGIC)) return false
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, header.subarray(MAGIC.length))
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, header.subarray(MAGIC.length), { authTagLength: 16 })
   decipher.setAuthTag(tag)
   const body = size - HEADER_BYTES - TAG_BYTES
   try {
@@ -187,6 +222,8 @@ function loadSettings(argv) {
   return {
     envFile,
     key: parseKey(process.env.BACKUP_ENCRYPTION_KEY || fileVars.BACKUP_ENCRYPTION_KEY),
+    // Retired keys, for decrypt and verify only; a malformed one is an error.
+    previousKeys: parsePreviousKeys(process.env.BACKUP_ENCRYPTION_KEY_PREVIOUS || fileVars.BACKUP_ENCRYPTION_KEY_PREVIOUS),
     out: path.resolve(arg('--out') || process.env.BACKUP_DIR || path.join(HERE, 'backups')),
     retentionDays,
     volumes: !argv.includes('--no-volumes'),
@@ -235,7 +272,7 @@ async function verify(argv) {
   let ok = true
   for (const f of manifest.files) {
     const file = path.join(target, f.file)
-    const good = fs.existsSync(file) && (await sha256File(file)) === f.sha256 && (await verifyFile(file, s.key))
+    const good = fs.existsSync(file) && (await sha256File(file)) === f.sha256 && (await verifyFile(file, [s.key, ...s.previousKeys]))
     console.log(`  ${good ? 'ok  ' : 'FAIL'} ${f.file}`)
     ok &&= good
   }
@@ -246,7 +283,8 @@ async function verify(argv) {
 export async function main(argv) {
   if (argv[0] === 'decrypt') {
     if (!argv[1] || !argv[2]) throw new Error('usage: backup.mjs decrypt <file.enc> <out>')
-    await decryptFile(argv[1], argv[2], loadSettings(argv.slice(3)).key)
+    const s = loadSettings(argv.slice(3))
+    await decryptFile(argv[1], argv[2], [s.key, ...s.previousKeys])
     console.log(`  Decrypted ${argv[1]} -> ${argv[2]}`)
     return
   }

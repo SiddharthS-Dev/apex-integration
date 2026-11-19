@@ -13,6 +13,7 @@ import { joinLink, sendOnboardingEmail } from './emails.js';
 
 const INVITE_TTL_MS = 7 * 24 * 3600_000; // the existing invitation link lifetime (auth/routes.js)
 import { tokenHash } from './service.js';
+import { documentsFor, readDocument } from './documents.js';
 
 // Administrator review of access requests (prompt §9; plan §4; Phase 3: six roles, invitation link). Permissions: can(actor,
 // 'registration.review' | 'registration.decide') — platform administrators in v1 — plus, for every role
@@ -119,6 +120,8 @@ export async function registrationDetail(db, actor, id) {
     profile,
     profile_fields: (role?.fields || []).filter((f) => fieldApplies(f, profile)).map((f) => ({ key: f.key, label: f.label, type: f.type, required: f.required })),
     verification_note: role?.verify || null,
+    // Optional supporting documents (metadata; the file itself is fetched with registrationDocument).
+    documents: await documentsFor(db, r.id),
     preferences: parse(r.preferences, {}),
     consent: { version: r.consent_version, accepted_at: r.consent_accepted_at, adult_confirmed_at: r.adult_confirmed_at },
     advice: { source: r.ai_recommendation_source, model: r.ai_model, schema_version: r.ai_schema_version, ...parse(r.ai_recommendation, {}) },
@@ -132,6 +135,25 @@ export async function registrationDetail(db, actor, id) {
     default_roles: ['learner'],
     history: (await listAuditEvents(db, { targetId: r.id, limit: 50 })).map((e) => ({ at: e.at, action: e.action, actor_user_id: e.actor_user_id, detail: e.detail })),
   };
+}
+
+/**
+ * GET /registrations/:id/documents/:kind — one attached document, decrypted, for a reviewer. Every opening
+ * is audited (who, which request, which kind; never the content or file name).
+ */
+export async function registrationDocument(db, actor, id, kind, { ip = null } = {}) {
+  requireReview(actor);
+  const [r] = await db.query('SELECT id FROM registration_requests WHERE id = ?', [String(id)]);
+  if (!r) throw notFound('Access request not found');
+  let doc;
+  try {
+    doc = await readDocument(db, r.id, String(kind));
+  } catch {
+    throw refuse(500, 'DOCUMENT_UNREADABLE', 'This file could not be opened. Ask the applicant to send it again.');
+  }
+  if (!doc) throw notFound('No such document on this request');
+  await insertAuditEvent(db, { actorUserId: actor.id, action: 'registration.document_viewed', targetType: 'registration_request', targetId: r.id, detail: { kind: doc.kind }, ip });
+  return doc;
 }
 
 function note(value, label = 'Internal note') {

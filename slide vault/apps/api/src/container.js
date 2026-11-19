@@ -12,6 +12,7 @@
  * is an edit to this file, not to the sync engine.
  */
 import { TokenCipher } from './crypto/tokenCipher.js';
+import { decodeKeyList } from './config/index.js';
 import { createLogger } from './util/logger.js';
 import { Metrics } from './services/metrics/metrics.js';
 
@@ -62,7 +63,8 @@ export function createContainer({ config, db, logger, metrics, fetchImpl = fetch
   const meter = metrics ?? new Metrics();
 
   /* ------------------------------------------------------- persistence */
-  const cipher = new TokenCipher(config.dropbox.tokenEncryptionKey);
+  // Encrypts with the current key; also decrypts with DROPBOX_TOKEN_ENCRYPTION_KEY_PREVIOUS (validateConfig rejects malformed ones).
+  const cipher = new TokenCipher(config.dropbox.tokenEncryptionKey, decodeKeyList(config.dropbox.tokenEncryptionKeyPrevious).keys);
   const connections = new ConnectionRepository(db, cipher);
   const oauthStates = new OAuthStateRepository(db);
   const files = new StoredFileRepository(db);

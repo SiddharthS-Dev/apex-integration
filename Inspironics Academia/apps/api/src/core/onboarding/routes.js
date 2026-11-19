@@ -7,7 +7,7 @@ import { asyncHandler, badRequest, notFound } from '../../lib/errors.js';
 import { suggestInterests, suggestRegion } from './ai.js';
 import { onboardingConfig } from './config.js';
 import { completeOrientation, orientationFor } from './orientation.js';
-import { complete, exchange, publicConfig, respond, resend, start, status, update, verify } from './service.js';
+import { complete, document, exchange, publicConfig, respond, resend, start, status, update, verify } from './service.js';
 
 // /api/onboarding — the public access-request flow (Use Case 007) and the signed-in orientation.
 // Browsers reach the public part through the gateway's /auth/onboarding/* (apex/onboarding.mjs), which
@@ -21,6 +21,7 @@ const HOUR = 3600_000;
 const ipLimiter = rateLimit({ windowMs: HOUR, max: () => onboardingConfig().ipLimitPerHour, message: 'Too many requests. Try again later.' });
 const stepLimiter = rateLimit({ windowMs: HOUR, max: () => onboardingConfig().ipLimitPerHour * 4, message: 'Too many requests. Try again later.' });
 const emailLimiter = rateLimit({ windowMs: HOUR, max: 5, key: (req) => `start:${normalizeEmail(req.body?.email)}`, message: 'Too many requests. Try again later.' });
+const uploadLimiter = rateLimit({ windowMs: HOUR, max: 20, message: 'Too many uploads. Try again later.' });
 const suggestLimiter = rateLimit({ windowMs: 10 * 60_000, max: 20, message: 'Too many suggestions asked for. Continue without them.' });
 
 const ctx = (req) => ({ ip: req.ip || null });
@@ -50,6 +51,8 @@ router.post('/resend', ipLimiter, asyncHandler(async (req, res) => res.status(20
 router.post('/verify', stepLimiter, asyncHandler(async (req, res) => res.json(await verify(db(), tokenOf(req), req.body, ctx(req)))));
 router.get('/status', stepLimiter, asyncHandler(async (req, res) => res.json(await status(db(), tokenOf(req)))));
 router.post('/update', stepLimiter, asyncHandler(async (req, res) => res.json(await update(db(), tokenOf(req), req.body, ctx(req)))));
+// An optional supporting document (intern mark sheet), base64 in JSON; its body limit is set in app.js.
+router.post('/document', uploadLimiter, asyncHandler(async (req, res) => res.json(await document(db(), tokenOf(req), req.body, ctx(req)))));
 router.post('/complete', stepLimiter, asyncHandler(async (req, res) => res.json(await complete(db(), tokenOf(req), req.body, ctx(req)))));
 router.post('/exchange', ipLimiter, asyncHandler(async (req, res) => res.json(await exchange(db(), req.body, ctx(req)))));
 router.post('/respond', stepLimiter, asyncHandler(async (req, res) => res.json(await respond(db(), tokenOf(req), req.body, ctx(req)))));

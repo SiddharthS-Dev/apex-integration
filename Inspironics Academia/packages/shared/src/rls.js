@@ -8,6 +8,7 @@
 //
 // ruleToQuery turns a rule into a record filter query:
 //   true  → no restriction, false → deny all, object → filter query (see query.js).
+//   A missing rule, an unknown key, or `$or` mixed with other keys → false (deny).
 
 function userMatches(user, condition) {
   if (!user) return false;
@@ -21,9 +22,17 @@ function resolveValue(value, user) {
   return user ? user[m[1]] : undefined;
 }
 
+// Default deny: a missing rule, a malformed rule, or a key the grammar does not know denies, so a
+// typo (`user_id` for `data.user_id`) or a forgotten action can never open access to everyone.
+// Only the explicit empty object `{}` means "everyone signed in".
+const KNOWN_KEY = (key) => key === 'user_condition' || key.startsWith('data.');
+
 export function ruleToQuery(rule, user) {
-  if (!rule || Object.keys(rule).length === 0) return true;
-  if (rule.$or) {
+  if (rule === null || typeof rule !== 'object' || Array.isArray(rule)) return false;
+  if (Object.keys(rule).length === 0) return true;
+  if ('$or' in rule) {
+    // `$or` stands alone: mixing it with other keys would silently drop them.
+    if (!Array.isArray(rule.$or) || Object.keys(rule).length !== 1) return false;
     const parts = rule.$or.map((r) => ruleToQuery(r, user));
     if (parts.some((p) => p === true)) return true;
     const queries = parts.filter((p) => p !== false);
@@ -32,7 +41,9 @@ export function ruleToQuery(rule, user) {
   }
   const query = {};
   for (const [key, value] of Object.entries(rule)) {
+    if (!KNOWN_KEY(key)) return false;
     if (key === 'user_condition') {
+      if (value === null || typeof value !== 'object') return false;
       if (!userMatches(user, value)) return false;
       continue;
     }

@@ -23,7 +23,7 @@ import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ONBOARDING_COOKIE, ONBOARDING_PREFIX, createOnboarding, stepOf } from './relay.mjs'
+import { ONBOARDING_COOKIE, ONBOARDING_PREFIX, bodyLimitFor, createOnboarding, stepOf } from './relay.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC = path.join(HERE, 'public')
@@ -98,7 +98,10 @@ function readJsonUpTo(req, limit) {
     req.on('data', (c) => {
       if (over) return
       text += c
-      if (text.length > limit) over = true
+      if (text.length > limit) {
+        over = true
+        text = '' // stop holding an oversized body
+      }
     })
     req.on('end', () => {
       if (over) return resolve(null)
@@ -161,7 +164,7 @@ export function createServer({ port, corePort, publicUrl = `http://localhost:${p
       if (req.method === 'POST') {
         if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused.', code: 'BAD_ORIGIN' })
         if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) return json(res, 415, { error: 'Send JSON.', code: 'JSON_ONLY' })
-        body = await readJsonUpTo(req, 32 * 1024)
+        body = await readJsonUpTo(req, bodyLimitFor(step))
         if (body === null) return json(res, 400, { error: 'The request was too large or not JSON.', code: 'BAD_BODY' })
       }
       const out = await flow.handle({

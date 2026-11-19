@@ -212,8 +212,10 @@ export const ONBOARDING_ROLES = Object.freeze([
       ask({ key: 'mentor_name', label: 'Assigned mentor', type: 'text', required: true, when: { key: 'has_mentor', equals: 'yes' }, ask: 'Great — what is your mentor’s name?' }),
       ask({ key: 'skills', label: 'Relevant skills', type: 'longtext', ask: 'Which skills would you like us to know about? (optional)', ideas: ['Python, SQL', 'React and Node.js', 'Machine learning basics', 'Cloud (AWS / Azure)'] }),
     ],
+    // Optional supporting documents the applicant may attach (ONBOARDING_DOCUMENTS); never required.
+    documents: ['MARK_SHEET'],
     grants: ['learner', 'intern'],
-    verify: 'Confirm the internship offer with the hiring team before granting the intern role; otherwise grant learner only.',
+    verify: 'Confirm the internship offer with the hiring team before granting the intern role; otherwise grant learner only. If a mark sheet is attached, check it matches the stated college and degree.',
   },
   {
     code: 'ALUMNI',
@@ -416,6 +418,55 @@ export const APEX_PLATFORMS = Object.freeze([
   { code: 'academia', label: 'Learning Hub', description: 'Take courses, pass tests and earn certificates.' },
 ]);
 export const APEX_PLATFORM_CODES = Object.freeze(APEX_PLATFORMS.map((p) => p.code));
+
+// ---- Optional supporting documents (intern mark sheet) ----------------------------------------------
+//
+// A role may list documents its applicants can attach (`documents` on the role). Always optional: a
+// request is complete without one. The file is checked by its content (magic bytes), never by its name
+// or the browser's claimed type, stored encrypted, shown only to reviewers, and deleted with the request.
+
+export const ONBOARDING_DOCUMENT_MAX_BYTES = 5 * 1024 * 1024;
+export const ONBOARDING_DOCUMENT_TYPES = Object.freeze([
+  { content_type: 'application/pdf', extension: 'pdf', label: 'PDF' },
+  { content_type: 'image/jpeg', extension: 'jpg', label: 'JPG' },
+  { content_type: 'image/png', extension: 'png', label: 'PNG' },
+]);
+export const ONBOARDING_DOCUMENTS = Object.freeze([
+  {
+    kind: 'MARK_SHEET',
+    label: 'Mark sheet',
+    description: 'Your latest semester or final-year mark sheet.',
+  },
+]);
+export const ONBOARDING_DOCUMENT_KINDS = Object.freeze(ONBOARDING_DOCUMENTS.map((d) => d.kind));
+export const onboardingDocument = (kind) => ONBOARDING_DOCUMENTS.find((d) => d.kind === kind) || null;
+/** The document kinds a role may attach (empty for roles without any). */
+export const roleDocumentKinds = (roleCode) => onboardingRole(roleCode)?.documents || [];
+
+/** The content type a file's first bytes prove (PDF, JPEG or PNG), or null. `bytes` is a Uint8Array/Buffer. */
+export function sniffDocumentType(bytes) {
+  if (!bytes || bytes.length < 8) return null;
+  const at = (i, ...xs) => xs.every((x, j) => bytes[i + j] === x);
+  if (at(0, 0x25, 0x50, 0x44, 0x46, 0x2d)) return 'application/pdf'; // %PDF-
+  if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg';
+  if (at(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return 'image/png';
+  return null;
+}
+
+/**
+ * A safe display name for an uploaded file: no path, no control or bidi characters, no characters that
+ * break a Content-Disposition header, at most 120 characters, and the extension of its proven type.
+ */
+export function cleanFileName(name, contentType) {
+  const ext = ONBOARDING_DOCUMENT_TYPES.find((t) => t.content_type === contentType)?.extension || 'bin';
+  let base = String(name ?? '').split(/[\\/]/).pop()
+    .replace(/[\u0000-\u001F\u007F‪-‮⁦-⁩"<>:|?*;]/g, '')
+    .replace(/\.[A-Za-z0-9]{1,5}$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!base || /^\.+$/.test(base)) base = 'mark-sheet';
+  return `${base.slice(0, 120 - ext.length - 1)}.${ext}`;
+}
 
 /** A clean, ordered list of known platform codes, or an error. */
 export function validatePlatforms(list) {

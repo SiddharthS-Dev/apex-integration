@@ -3,9 +3,10 @@
 | | |
 |---|---|
 | **Product** | APEX (Inspironics APEX platform) |
-| **Revision** | 2, 2026-11-18. It re-assesses the product after the remediation work (summary table at the end). Revision 1 was dated 2026-11-17. |
+| **Revision** | 3, 2026-11-18. It re-assesses the product after the second round of remediation (summary table at the end). Revision 2 was earlier the same day; revision 1 was dated 2026-11-17. |
 | **Repository** | `github.com/SiddharthS-Dev/apex-integration` |
-| **Branch / commit** | `Feature-base-removal` @ `2aee3b0`, plus **uncommitted** working-tree changes: the remediation in this revision, the onboarding module and `onboarding/`. Nothing has been pushed, so the new CI jobs have **not run yet**. |
+| **Branch / commit** | `security/scanners-blocking` @ `64f5f7d` (pushed), on top of `feature-Ai-Assistant` @ `f530ee3`. The revision 2 remediation is committed and merged to `develop`. |
+| **CI evidence** | The security scanners first ran on `develop` (run `44260126905`, 2026-11-18). The fixes for what they found are in `452c805`, but **CI has not run them yet**: the workflow triggers only on `main`, `develop`, `Feature-**` and `feature-**` (`.github/workflows/ci.yml:8-11`) or a pull request, and this branch name matches none of them. |
 | **Method** | Inspection of source, configuration, Dockerfiles, Compose files, CI workflow, dependency manifests and documentation, plus local test runs. No database under any `apps/api/data/` folder was opened. No secret values appear here. |
 | **Evidence convention** | Paths are relative to the repository root. Short forms: `Core` = `Inspironics Academia/apps/api/src`, `Showcase` = `inspironics-innovation-showcase/apps/api/src`, `Vault` = `slide vault/apps/api/src`. |
 
@@ -155,10 +156,9 @@ Ports in use:
 - **Showcase:** `admin`, `viewer`, `guest`.
 - **SlidesVault:** `admin`, `user`.
 
-**Remaining permission gaps.**
+**Row-level rules (fixed in revision 3).** A missing rule, a non-object rule, an unknown key (such as `user_id` without the `data.` prefix), or `$or` mixed with other keys now **denies** (`Inspironics Academia/packages/shared/src/rls.js:28-44`). Only the explicit `{}` means "every signed-in user". A test checks that all 25 entities define all four actions in the known grammar (`Inspironics Academia/apps/api/test/rlsDefaultDeny.test.js`).
 
-- **Two admin models in Academia:** most Academia admin routes check the legacy `users.role` admin.
-- **Latent default-allow:** an empty row-level rule allows access (`rls.js:25`).
+**Remaining permission gap.** Two admin models in Academia: most Academia admin routes check the legacy `users.role` admin.
 
 **Session details.**
 
@@ -175,9 +175,23 @@ Ports in use:
 | Sensitive Data Handled | See the field list below. | migrations in each API |
 | Data Encryption at Rest | **Partial:** OAuth refresh tokens and backup sets are encrypted; databases and object stores are not. | §3 |
 | Data Encryption in Transit | **Inbound: no TLS yet**, because a TLS-terminating proxy does not exist (see below). **Outbound:** HTTPS to every provider. **Database:** Postgres TLS is not configured by default. | `apex/server.mjs:103-130` |
-| Key Management | Identity-assertion keys: `kid` store with current and previous keys, at least 32 bytes each, rotated with a CLI and a runbook. Each service holds only its own audience's keys. Token-encryption keys must be 32 bytes and are validated at start-up (the Core now also validates `TOKEN_ENCRYPTION_KEY` at start-up). Keys live in environment variables or files, not in a KMS. | `docs/operations/IDENTITY_ASSERTION.md`, `Core/startupChecks.js` |
+| Key Management | **Every key can now be rotated.** Identity-assertion keys use a `kid` store with a rotation CLI. The four data-encryption keys each accept retired keys in `<NAME>_PREVIOUS`: encryption uses the current key, decryption falls back through the previous ones, and the envelope format is unchanged. Rewrap CLIs re-encrypt stored tokens. Malformed keys are rejected at start-up. The schedule and steps are in the runbook. Keys live in environment variables or files, not in a KMS. | See the key list below the table |
 | Data Retention Period | See the retention details below. | — |
 | Secure Data Deletion | **Core:** deleting a user now also removes their `login_history` and `email_outbox` rows (`Core/repo/users.js:71-90`); `audit_events` is kept deliberately. **Showcase and SlidesVault:** still no user-delete or export endpoint. No secure wipe of volumes. | — |
+
+**Keys and how each is rotated.**
+
+| Key | Previous-key variable | Rewrap or retirement | Evidence |
+|---|---|---|---|
+| Core `TOKEN_ENCRYPTION_KEY` | `TOKEN_ENCRYPTION_KEY_PREVIOUS` | `npm run rewrap-secrets` | `Core/config.js:76`, `Core/lib/crypto.js`, `Core/db/rewrap-cli.js`, `test/keyRotation.test.js` |
+| Showcase `ENCRYPTION_KEY` | `ENCRYPTION_KEY_PREVIOUS` | `npm run rewrap-secrets -w @inspironics/api` | `Showcase/config.js:108`, `Showcase/lib/crypto.js`, `Showcase/db/rewrap.js`, `test/keyRotation.test.mjs` |
+| SlidesVault `DROPBOX_TOKEN_ENCRYPTION_KEY` | `DROPBOX_TOKEN_ENCRYPTION_KEY_PREVIOUS` | `npm run rewrap-tokens` | `Vault/config/index.js:169,296-341`, `Vault/crypto/tokenCipher.js`, `tests/integration/keyRotation.test.js` |
+| `BACKUP_ENCRYPTION_KEY` | `BACKUP_ENCRYPTION_KEY_PREVIOUS` | Old sets age out of retention; `verify` and `decrypt` try previous keys | `deploy/staging/backup.mjs:23,56-57` |
+| Identity-assertion keys | `kid` store (current and previous) | Rotation CLI | `docs/operations/IDENTITY_ASSERTION.md` |
+
+- **Rotating a key:** `generate-secrets.mjs --rotate <NAME>` moves the current key to `_PREVIOUS` and writes a fresh one with file mode 0600.
+- **Schedule:** every 12 months, and immediately on suspected exposure (`docs/operations/STAGING_RUNBOOK.md:72`).
+- **Limits of the evidence:** the rewrap CLIs refuse the default `data/` folder. They were tested on disposable SQLite databases only, not yet on Postgres.
 
 **Sensitive data stored.**
 
@@ -254,24 +268,36 @@ Ports in use:
 |---|---|---|
 | Source Code Repository | GitHub `github.com/SiddharthS-Dev/apex-integration`. Branch protection and required reviews are **not verified**. `SECURITY.md` now gives the disclosure policy. | `SECURITY.md` |
 | CI/CD Pipeline | **GitHub Actions** `.github/workflows/ci.yml` on push and pull requests: tests, builds, Postgres migrations, staging smoke and bypass tests, and now the security scanners below. **No CD:** nothing deploys. | `ci.yml` |
-| SAST Implementation | **Configured, not yet run.** CI job `sast` runs Semgrep OSS rule packs (`p/javascript`, `p/nodejs`, `p/express`, `p/react`), failing on ERROR severity. It is non-blocking (`continue-on-error`) until the first run is triaged. Exclusions are in `.semgrepignore`. | `ci.yml` job `sast` |
-| DAST Implementation | **Configured, not yet run.** An OWASP ZAP baseline scan (passive, unauthenticated) runs against the gateway in the staging-smoke job and keeps the report as a CI artifact for 14 days. It is non-blocking. The existing forged-header and bypass smoke tests also run. | `ci.yml` staging-smoke job |
-| Software Composition Analysis (SCA) | `npm audit --omit=dev --audit-level=high` blocks CI for all three apps. **New:** a report-only audit of all dependencies at critical level, and weekly Dependabot updates for npm, GitHub Actions and Docker base images. Dependabot starts once the file is pushed and enabled. | `ci.yml`, `.github/dependabot.yml` |
-| Container Security | Every image runs as `USER node`, with multi-stage builds and production dependencies only. SlidesVault's `/app` is now **root-owned and read-only to the process**, with only `/data` writable (`slide vault/apps/api/Dockerfile:44`). Staging adds `read_only`, `cap_drop: [ALL]` and `no-new-privileges`. **New:** a Trivy scan of all four images for fixable HIGH and CRITICAL issues (non-blocking). Base images are pinned by tag, not digest. | Dockerfiles, `compose.yml:26-33`, `ci.yml` |
-| Infrastructure as Code (IaC) Security | IaC is Dockerfiles and Compose files. **New:** CI job `iac-scan` runs Trivy `config` for HIGH and CRITICAL findings (non-blocking). A compose-consistency unit test also runs. | `ci.yml` job `iac-scan`, `deploy/staging/staging.test.mjs` |
+| SAST Implementation | **Blocking, but no passing run yet.** CI job `sast` (`ci.yml:63`) runs Semgrep packs `p/javascript`, `p/nodejs`, `p/react` and `p/owasp-top-ten`, fails on ERROR severity, and keeps a SARIF report. **First run (`develop`):** the job **never scanned**, because the pack `p/express` does not exist (HTTP 404). It was replaced in `452c805`, which CI has not run yet. | `ci.yml:63-78`, `.semgrepignore` |
+| DAST Implementation | **Blocking, but no passing run yet.** An OWASP ZAP baseline (passive, unauthenticated) runs against the gateway in the staging-smoke job (`ci.yml:291`). It fails on the rules marked FAIL in `deploy/staging/zap-rules.tsv` (missing anti-framing, nosniff or CSP; cookies without HttpOnly or SameSite; wildcard CORS; error disclosure). **First run:** it **never ran**, because the image name `zaproxy/zaproxy` does not exist; it is now `zaproxy/zap-stable:2.15.0`. Forged-header and bypass smoke tests also run (they passed). | `ci.yml:291-305`, `deploy/staging/zap-rules.tsv` |
+| Software Composition Analysis (SCA) | `npm audit --omit=dev --audit-level=high` **blocks** CI for all three apps, and passed on the first run. A report-only audit of all dependencies at critical level also runs. Weekly Dependabot updates cover npm, GitHub Actions and Docker base images (enablement in repository settings is not verified). | `ci.yml`, `.github/dependabot.yml` |
+| Container Security | See the details below the table. | Dockerfiles, `deploy/staging/compose.yml:26-33`, `ci.yml:280` |
+| Infrastructure as Code (IaC) Security | IaC is Dockerfiles and Compose files. CI job `iac-scan` (`ci.yml:79`) runs Trivy `config` for HIGH and CRITICAL findings, and is blocking. **First run:** one CRITICAL, AVD-DS-0031 in `deploy/gateway/Dockerfile:68-73`. This is a **false positive**: the flagged variables hold secret file paths, and the secrets themselves are generated inside the container at first start (`apex/auth.mjs:60-90`). It is accepted, scoped to that file, in `.trivyignore.yaml`. A compose-consistency unit test also runs. | `ci.yml:79-87`, `.trivyignore.yaml` |
 | Deployment Process | **Manual, and not performed.** Deploying requires founder authorisation. | `AGENTS.md` |
-| Security Code Review Process | Binding rules are in `AGENTS.md`, the R1 contract and the ADRs. Internal audit reports and this audit exist. Automated scanners are now in CI. No CODEOWNERS file or required-review gate is verified. | — |
+| Security Code Review Process | Binding rules are in `AGENTS.md`, the R1 contract and the ADRs. Internal audit reports and this audit exist. Blocking scanners are in CI. `SECURITY.md:23-90` sets triage, fix timelines and accepted-risk rules. No CODEOWNERS file or required-review gate is verified. | `SECURITY.md` |
 | ISO 27001 Applicability | **Applicable.** No certification or ISMS evidence. **Confirmation required.** | — |
 | NIST CSF Applicability | **Applicable** as a reference framework. No mapping exists. | — |
 | CIS Controls Applicability | **Applicable**, in particular Controls 3, 4, 5, 6, 7, 11 and 16. | — |
 | OWASP Top 10 Applicability | **Directly applicable.** See the status below. | — |
 | GDPR / Privacy Requirements Applicability | **Applicable.** The product stores names, emails, IP addresses and login history. Onboarding records consent and is switched off in production without an approved notice. Deletion has improved in the Core. Still missing: export, and deletion in Showcase and SlidesVault. **The jurisdiction (GDPR, India DPDP Act or other) needs confirmation from Legal.** | `Core/core/onboarding/config.js:114-125` |
 
+**Container security details.**
+
+- **Non-root, minimal images:** every image runs as `USER node`, with multi-stage builds and production dependencies only.
+- **Read-only application code:** SlidesVault's `/app` is root-owned and read-only to the process; only `/data` is writable.
+- **Staging runtime hardening:** `read_only`, `cap_drop: [ALL]`, `no-new-privileges`.
+- **Image scan:** Trivy checks all four images for fixable HIGH and CRITICAL issues, and is now blocking (`ci.yml:280`).
+  - **First run:** no OS findings. 10 HIGH npm-package findings in each of gateway, core and showcase-api, and 6 in slidesvault-api: `brace-expansion`, `ip-address`, `pacote`, `undici`.
+  - **Source:** none of those packages is in any app lockfile. They are the npm CLI bundled with the Node base image.
+  - **Fix (`452c805`):** npm, npx, corepack and yarn are deleted from every runtime stage (`deploy/gateway/Dockerfile:88`, `Inspironics Academia/apps/api/Dockerfile:40`, `inspironics-innovation-showcase/apps/api/Dockerfile:42`, `slide vault/apps/api/Dockerfile:48`). The runtimes and health checks call only `node`.
+  - **Defect in that fix:** the `RUN rm -rf` line contains a literal `\n` instead of a line continuation, in all four files. It still removes every target (the shell turns `\n` into a harmless extra argument `n`), but it should be corrected.
+- **Not yet done:** base images are pinned by tag, not digest.
+
 **OWASP Top 10 status.**
 
 | Category | What is in place | What remains |
 |---|---|---|
-| A01 Broken Access Control | Default-deny `can()`, per-route gates, and CSRF origin checks in all apps | Two admin models in Academia; empty row-level rules allow |
+| A01 Broken Access Control | Default-deny `can()`, default-deny row-level rules, per-route gates, and CSRF origin checks in all apps | Two admin models in Academia |
 | A02 Cryptographic Failures | scrypt at N=2^17, AES-256-GCM | No TLS proxy yet |
 | A03 Injection | Parameterised queries throughout | — |
 | A04 Insecure Design | Gateway Host allow-list | — |
@@ -316,10 +342,11 @@ The Estimated Cost column says **Not Available** wherever the repository records
   - password reset is now atomic and single-use (`Core/auth/routes.js:138-152`; tested with three concurrent attempts)
   - scrypt raised to N=2^17 with rehash on login in Core (`Core/auth/passwords.js`) and SlidesVault (`Vault/db/repositories/userRepository.js:22,75`); Showcase already used it
   - open registration now defaults to **off in production** in all three apps (`Core/config.js:58-59`, `Showcase/config.js:114-115`, `Vault/config/index.js:135`)
-- **Gaps:**
+- **Revision 3:** row-level rules are now default-deny for missing, malformed or misspelled rules (`Inspironics Academia/packages/shared/src/rls.js:28-44`, `test/rlsDefaultDeny.test.js`).
+- **Gaps (why this stays Partially Implemented):**
+  - no MFA (separate row)
   - Use Case 004 is open: existing accounts are not linked
   - Academia has two admin models
-  - an empty row-level rule allows access
   - the password policy is length-based only
 
 ## 2.3 Data Security
@@ -328,17 +355,17 @@ The Estimated Cost column says **Not Available** wherever the repository records
 |---|---|---|---|---|---|---|---|---|
 | Data | Encryption at Rest | Node `crypto` AES-256-GCM (tokens, backup sets) | Yes | Partially Implemented | Open Source | Not Available | High | **New:** backups are encrypted (`deploy/staging/backup.mjs`), and a test checks no plaintext appears in the output (`staging.test.mjs`). **Gap:** database files, Postgres volumes and object stores are plaintext. Disk or volume encryption must come from the host. **Confirm with Infrastructure.** |
 | Data | Encryption in Transit | Outbound HTTPS; HSTS and fail-closed production start-up | Yes | Partially Implemented | Not Applicable | Not Available | **Critical** | **New:** HSTS is sent when `APEX_PUBLIC_URL` is https. All three apps now refuse to start in production with non-Secure cookies behind a non-loopback URL (`Core/startupChecks.js`, `Vault/config/index.js:367`, `Showcase/config.js:209-229`). **Gap:** no TLS-terminating proxy exists, and Postgres TLS is not configured. Both arrive with hosting (`STAGING_RUNBOOK.md` §9). |
-| Data | Key Management | `kid` key store with rotation CLI; per-audience distribution; start-up validation | Yes | Partially Implemented | Not Applicable (in-house) | Not Available | Medium | **New:** the Core validates `TOKEN_ENCRYPTION_KEY` at start-up. The backup key is generated with the other staging secrets. **Gaps:** no KMS or HSM; no rotation schedule for the token-encryption or backup keys; the gateway revocation list is local to one instance. |
-| Data | Secrets Management | Environment variables, gitignored files, `generate-secrets.mjs`, gitleaks in CI | Yes | Partially Implemented | Open Source | Not Available | High | **New:** in production, reset and invite links are no longer written to the log by the log mail transport unless `EMAIL_LOG_SECRETS=true` (`Core/notify/mailer.js:105-125`). They are blanked in the outbox by the hourly sweep once sent. The bootstrap admin password needs at least 12 characters in production. Secret scanning is configured in CI. **Gap:** no secrets vault or Docker secrets; a delivered link stays in the outbox for up to an hour. |
+| Data | Key Management | `kid` store and rotation CLI for identity keys; `<NAME>_PREVIOUS` key rings, rewrap CLIs and `generate-secrets.mjs --rotate` for the four data-encryption keys | Yes | **Implemented** | Not Applicable (in-house) | Not Available | Medium | **Revision 3:** every key is now rotatable without losing data. The repository evidence covers generation (random, 32 bytes), storage (file mode 0600, gitignored), per-audience distribution, start-up validation, rotation, re-encryption, retirement, and a schedule (key table in Section 1 §7; `STAGING_RUNBOOK.md:72`). Tests: Core 343/343, Showcase 89/89, SlidesVault 269/269, staging tools 13/13 (local). **Recommended improvements:** a KMS or HSM once hosted; test the rewrap CLIs on Postgres. |
+| Data | Secrets Management | Environment variables, gitignored files, `generate-secrets.mjs` (with `--rotate`), gitleaks in CI | Yes | Partially Implemented | Open Source | Not Available | High | **Revision 2:** in production, reset and invite links are not written to logs unless `EMAIL_LOG_SECRETS=true` (`Core/notify/mailer.js:105-125`), and they are blanked in the outbox once sent. The bootstrap admin password needs at least 12 characters in production. **Revision 3:** secrets can be rotated. **Gaps:** no secrets vault or Docker secrets (depends on hosting); a delivered link stays in the outbox for up to an hour; gitleaks reports one unresolved finding (DevSecOps section). |
 
 ## 2.4 Application Security
 
 | Security Domain | Security Solution / Control | Existing Tool / Service | Required | Current Status | Free / Paid | Estimated Cost | Implementation Priority | Remarks |
 |---|---|---|---|---|---|---|---|---|
 | Application | Web Application Firewall | None | Yes | Not Implemented | Not Applicable | Not Available | High | Same as the Network WAF row; the template lists it twice. In-application substitutes: origin checks, Host allow-list, body caps, rate limits. |
-| Application | Static Application Security Testing (SAST) | Semgrep OSS (`semgrep/semgrep:1.95.0`) | Yes | Partially Implemented | Open Source | Not Available | High | Configured in the `sast` job. It has **not run yet**, because nothing has been pushed. It is non-blocking until the first results are triaged; then remove `continue-on-error`. |
-| Application | Dynamic Application Security Testing (DAST) | OWASP ZAP baseline (`zaproxy/zaproxy:2.15.0`); staging smoke and bypass tests | Yes | Partially Implemented | Open Source | Not Available | Medium | Configured in staging-smoke, against the gateway's `/login`, with the report as an artifact. **Not run yet.** Passive and unauthenticated. **Next:** an authenticated ZAP scan, then make it blocking. |
-| Application | Software Composition Analysis (SCA) | `npm audit` in CI; Dependabot | Yes | Implemented | Free | Not Available | High | The production audit at high severity **blocks** CI for all three apps. **New:** a report-only audit of all dependencies at critical, and Dependabot (`.github/dependabot.yml`), active after push and when enabled in repository settings. **Remaining:** no SBOM; `pdf-parse 1.1.1` is old. |
+| Application | Static Application Security Testing (SAST) | Semgrep OSS (`semgrep/semgrep:1.95.0`) | Yes | Partially Implemented | Open Source | Not Available | High | Blocking job `sast` (`ci.yml:63-78`) with packs `p/javascript`, `p/nodejs`, `p/react` and `p/owasp-top-ten`, and a SARIF report. **No scan has completed:** the first run failed on a nonexistent pack (`p/express`, HTTP 404). The fix is in `452c805` and has not run yet (see the CI evidence row in the header). **Becomes Implemented** when a run passes, or when its findings are fixed or accepted under `SECURITY.md`. |
+| Application | Dynamic Application Security Testing (DAST) | OWASP ZAP baseline (`zaproxy/zap-stable:2.15.0`); staging smoke and bypass tests | Yes | Partially Implemented | Open Source | Not Available | Medium | Blocking, against the gateway, with FAIL rules in `deploy/staging/zap-rules.tsv` and the report as an artifact (`ci.yml:291-305`). **No scan has completed:** the first run used an image name that does not exist, now corrected. Passive and unauthenticated. **Becomes Implemented** when a run passes. **Recommended:** an authenticated ZAP scan. |
+| Application | Software Composition Analysis (SCA) | `npm audit` in CI; Dependabot | Yes | Implemented | Free | Not Available | High | The production audit at high severity **blocks** CI for all three apps and passed on the first `develop` run. A report-only audit of all dependencies at critical level also runs. Dependabot is configured (`.github/dependabot.yml`); enablement in repository settings is **not verified**. **Remaining:** no SBOM; `pdf-parse 1.1.1` is old. |
 | Application | API Security | In-house middleware: authentication and RBAC, HMAC assertions, header stripping, CORS allow-lists, CSRF origin checks, Host allow-list, rate limits, body caps, security headers, parameterised SQL, zip limits | Yes | Partially Implemented | Not Applicable (in-house) | Not Available | High | See the changes and remaining gaps below the table. |
 
 **API Security: new in this revision.**
@@ -381,16 +408,48 @@ The Estimated Cost column says **Not Available** wherever the repository records
 
 | Security Domain | Security Solution / Control | Existing Tool / Service | Required | Current Status | Free / Paid | Estimated Cost | Implementation Priority | Remarks |
 |---|---|---|---|---|---|---|---|---|
-| DevSecOps | Container Image Scanning | Trivy (`aquasec/trivy:0.57.1`) | Yes | Partially Implemented | Open Source | Not Available | High | The staging-smoke job scans gateway, core, showcase-api and slidesvault-api for fixable HIGH and CRITICAL issues. **Not run yet**, and non-blocking. Base images are not yet pinned by digest; Dependabot's docker ecosystem will propose updates. |
-| DevSecOps | Infrastructure as Code Scanning | Trivy `config` | Yes | Partially Implemented | Open Source | Not Available | Low | The `iac-scan` job covers every Dockerfile and Compose file, skipping the retired `legacy/`. **Not run yet**, and non-blocking. |
-| DevSecOps | Secret Scanning | gitleaks (`ghcr.io/gitleaks/gitleaks:v8.21.2`), full history | Yes | Partially Implemented | Open Source | Not Available | High | The `secret-scan` job scans full history with default rules. `.gitleaks.toml` allow-lists only fake test fixtures, placeholders in example files, and two documented throwaway CI values. **Not run yet**, and non-blocking. **Also recommended:** turn on GitHub secret scanning and push protection in repository settings. **Confirm.** |
+| DevSecOps | Container Image Scanning | Trivy (`aquasec/trivy:0.57.1`) | Yes | Partially Implemented | Open Source | Not Available | High | Blocking scan of all four images for fixable HIGH and CRITICAL issues (`ci.yml:280`). **First run:** 36 HIGH findings, all in the npm CLI bundled with the Node base image. They were fixed in `452c805` by removing npm from the runtime images (container security details, Section 1 §9). **The fix has not been re-scanned yet.** Base images are not pinned by digest. **Becomes Implemented** when a run passes. |
+| DevSecOps | Infrastructure as Code Scanning | Trivy `config` | Yes | Partially Implemented | Open Source | Not Available | Low | Blocking job `iac-scan` (`ci.yml:79-87`) over every Dockerfile and Compose file, skipping the retired `legacy/`. **First run:** one false positive (AVD-DS-0031), now accepted, scoped to its file, in `.trivyignore.yaml`. **Has not been re-run since.** **Becomes Implemented** when a run passes. |
+| DevSecOps | Secret Scanning | gitleaks (`ghcr.io/gitleaks/gitleaks:v8.21.2`), full history | Yes | Partially Implemented | Open Source | Not Available | High | See the notes below the table. |
+
+**Secret Scanning notes.**
+
+- **What runs:** blocking job `secret-scan` (`ci.yml:47-62`) scans full git history with gitleaks' default rules. It prints findings with values redacted and keeps a SARIF report.
+- **Allow-list:** `.gitleaks.toml` allows only fake test fixtures, placeholders in example files, and two documented throwaway CI values.
+- **First run (`develop`):** `leaks found: 1`. The job did not yet print which file or rule; the next run will.
+  - A manual search of history for common credential formats found no match: Anthropic, Google, GitHub, Slack, AWS, Resend, Dropbox and private keys.
+  - The finding is therefore **unresolved and unidentified**.
+  - **Handle it as Critical under `SECURITY.md`:** if it is real, rotate the secret first.
+- **Becomes Implemented** when the finding is resolved and a run passes.
+- **Also recommended:** turn on GitHub secret scanning and push protection in repository settings. **Confirm.**
 
 ## 2.7 Incident Response
 
 | Security Domain | Security Solution / Control | Existing Tool / Service | Required | Current Status | Free / Paid | Estimated Cost | Implementation Priority | Remarks |
 |---|---|---|---|---|---|---|---|---|
-| Incident Response | Vulnerability Management | `SECURITY.md`; CI scanners; `npm audit`; Dependabot; audit reports | Yes | Partially Implemented | Free / Open Source | Not Available | High | **New:** a disclosure policy (`SECURITY.md`) that points to GitHub private vulnerability reporting, which must be switched on in settings, plus automated scanners in CI. **Gaps:** no remediation timelines (SLA), no tracker, no penetration test. |
+| Incident Response | Vulnerability Management | `SECURITY.md` (policy and process); CI scanners; `npm audit`; Dependabot; GitHub security advisories and `security` issues | Yes | **Implemented** | Free / Open Source | Not Available | High | See the notes below the table. |
 | Incident Response | Backup and Disaster Recovery | `deploy/staging/backup.mjs` (encrypted, verified, retention); runbook restore drill; image rollback; identity rollback CLI | Yes | Partially Implemented | Open Source | Not Available | **Critical** | See the details below the table. |
+
+**Vulnerability Management notes.**
+
+- **Intake:** private reporting through GitHub, with acknowledgement within 2 working days and assessment within 5 (`SECURITY.md:3-21`).
+- **Sources:** every finding source is listed: reports, the five CI scanners, `npm audit`, Dependabot, audits and penetration tests (`SECURITY.md:25-38`).
+- **Fix timelines:**
+
+  | Severity | Fix within |
+  |---|---|
+  | Critical | 2 days |
+  | High | 7 days |
+  | Medium | 30 days |
+  | Low | 90 days |
+
+  Severity goes up one level for anything touching identity, authorisation or personal data. A leaked secret is always Critical, and is rotated first (`SECURITY.md:40-54`).
+- **Tracking:** private advisories for exploitable issues, `security`-labelled issues otherwise, and a commit reference for each fix (`SECURITY.md:56-64`).
+- **Accepted risks:** only in the four ignore files, narrowly scoped and with a reason. A real vulnerability is never accepted to make CI green (`SECURITY.md:66-82`).
+- **Review cadence:** monthly review, plus a penetration test before the R6 pilot and yearly after that (`SECURITY.md:84-89`).
+- **Evidence it is working:** the first scanner run on `develop` was triaged under this process (see the DevSecOps rows).
+- **Not verified:** whether private vulnerability reporting is enabled in GitHub settings. The timelines are set in the repository and should be **confirmed by the Security owner**.
+- **Recommended:** commission the first penetration test.
 
 **Backup and Disaster Recovery details.**
 
@@ -411,75 +470,105 @@ The Estimated Cost column says **Not Available** wherever the repository records
 
 # Security Assessment Summary
 
-| Metric | Revision 1 (2026-11-17) | **Revision 2 (now)** |
+| Metric | Revision 1 (2026-11-17) | Revision 2 | **Revision 3 (now)** |
+|---|---|---|---|
+| **Total Security Controls Identified** | 26 | 26 | **26** |
+| **Fully Implemented Controls** | 0 | 2 | **4:** Network Segmentation, SCA, Key Management, Vulnerability Management |
+| **Partially Implemented Controls** | 13 | 16 | **14:** IAM, SSO, PAM, Encryption at Rest, Encryption in Transit, Secrets Management, SAST, DAST, API Security, Cloud Workload Protection, Container Image Scanning, IaC Scanning, Secret Scanning, Backup and DR |
+| **Not Implemented Controls** | 12 | 7 | **7:** WAF (Network), IDS/IPS, VPN, MFA, WAF (Application), CSPM, Cloud Audit Logging |
+| **Not Verified Controls** | 1 | 1 | **1:** Firewall |
+
+**Five rows wait only on a CI run:** SAST, DAST, Container Image Scanning, IaC Scanning and Secret Scanning.
+
+- **What's done:** each is configured and blocking, and its first-run findings were triaged and fixed in `452c805`.
+- **What's missing:** no run has passed with those fixes. This branch does not trigger the workflow (see the header).
+- **Effect:** if a run passes, and the gitleaks finding is resolved, the count becomes **9 Implemented / 9 Partially Implemented / 7 Not Implemented / 1 Not Verified**.
+
+**The other nine Partial rows need decisions outside the repository:**
+
+| Rows | What they need |
+|---|---|
+| IAM, SSO, PAM | MFA, which needs a design decision under the binding R1 identity contract |
+| Encryption at Rest, Encryption in Transit, Secrets Management, Cloud Workload Protection, Backup and DR | A hosting provider (DEC-010) |
+| API Security | Shared infrastructure for rate limits, and an ADR for an assertion replay cache |
+
+Six of the seven Not Implemented controls also need hosting; the seventh is MFA.
+
+## Remediated
+
+**Revision 3**
+
+| Gap | Fix | Evidence |
 |---|---|---|
-| **Total Security Controls Identified** | 26 | **26** |
-| **Fully Implemented Controls** | 0 | **2:** Network Segmentation, SCA |
-| **Partially Implemented Controls** | 13 | **16:** IAM, SSO, PAM, Encryption at Rest, Encryption in Transit, Key Management, Secrets Management, SAST, DAST, API Security, Cloud Workload Protection, Container Image Scanning, IaC Scanning, Secret Scanning, Vulnerability Management, Backup and DR |
-| **Not Implemented Controls** | 12 | **7:** WAF (Network), IDS/IPS, VPN, MFA, WAF (Application), CSPM, Cloud Audit Logging |
-| **Not Verified Controls** | 1 | **1:** Firewall |
+| Data-encryption keys could not be rotated without losing data | `<NAME>_PREVIOUS` key rings, rewrap CLIs, `--rotate`, runbook schedule | Section 1 §7 key table; `STAGING_RUNBOOK.md:72` |
+| No remediation timelines, tracking or accepted-risk rules | Vulnerability-management process | `SECURITY.md:23-90` |
+| Scanners were non-blocking; Semgrep and ZAP never ran (bad pack, bad image) | All blocking; configs corrected; SARIF and ZAP reports kept | `ci.yml:47-87,280-305` |
+| HIGH findings in all images, from the npm CLI bundled with Node | npm, npx, corepack and yarn removed from runtime images | the four Dockerfiles (Section 1 §9) |
+| Trivy config false positive | Path-scoped acceptance with a reason | `.trivyignore.yaml` |
+| Missing, malformed or misspelled row-level rules allowed everyone | Default deny | `rls.js:28-44`; `test/rlsDefaultDeny.test.js` |
+| Gateway session secret could be overwritten by a parallel start (caused a random CI test failure) | Exclusive create; the loser adopts the winner's secret | `apex/auth.mjs:60-90` |
 
-Six of the seven controls still Not Implemented need a hosting or cloud decision (DEC-010), so they cannot be built in the repository. The seventh, MFA, needs a design decision first. SAST, DAST, image scanning, IaC scanning and secret scanning are rated *Partially Implemented* only because their CI jobs have not run yet and are deliberately non-blocking. They become *Implemented* once the branch is pushed, the first results are triaged, and `continue-on-error` is removed.
+**Revisions 1 → 2**
 
-## Remediated in this revision
+| Gap | Fix |
+|---|---|
+| Password-reset token race | Atomic claim before the password changes |
+| Reset and invite links in logs and the outbox | Withheld from production logs; blanked once sent |
+| CSRF gaps in the Core and SlidesVault | Origin or Referer checks on writes that carry a cookie |
+| No gateway security headers or Host checks | Baseline headers, HSTS, CSP, Host allow-list, body cap |
+| SlidesVault zip bomb; no file-signature check | Directory pre-check, streaming budget, signature check |
+| SlidesVault API exposed; writable `/app` | Loopback-only publish; root-owned code |
+| Insecure production configurations could start | Fail-closed start-up checks |
+| Open registration by default | Off in production |
+| Low scrypt cost | N=2^17 with rehash on login |
+| Retention and deletion gaps | Retention purges; Core user deletion |
+| No backup tool | Encrypted, verified backups with retention |
 
-| Gap (revision 1) | Fix | Evidence |
-|---|---|---|
-| Password-reset token reusable under a race | Atomic claim before the password changes; the weak-password check happens first | `Core/auth/routes.js:138-152`; `test/securityAudit.test.js` |
-| Reset and invite links in logs and the outbox | Withheld from production logs (opt-in `EMAIL_LOG_SECRETS`); blanked by the hourly sweep once sent | `Core/notify/mailer.js:105-125`; `Core/core/onboarding/service.js:575-582` |
-| CSRF gaps in the Core and SlidesVault | Origin or Referer required on writes that carry a cookie; Host-derived origin trusted only on loopback (Core) or never (Vault) | `Core/http/middleware.js:36-64`; `Vault/http/security.js:86` |
-| No security headers or Host checks at the gateway | Baseline headers, HSTS on https, default CSP on HTML, Host allow-list (421), body cap (413) | `apex/server.mjs:103-178`; `apex/gateway.test.mjs` (+5 tests) |
-| SlidesVault zip bomb; no file-signature check | Directory pre-check, streaming byte budget, signature check | `Vault/services/content-extraction/pptx.js:73,123`; `ContentExtractionService.js:38` |
-| SlidesVault API exposed on all interfaces; writable `/app` | Loopback-only publish; root-owned code | `slide vault/docker-compose.yml:30`; `slide vault/apps/api/Dockerfile:44` |
-| Insecure production configurations could start | Non-Secure cookies on a public URL, a malformed key, or a short bootstrap password are fatal in production | `Core/startupChecks.js`; `Vault/config/index.js:367` |
-| Open registration by default | Off in production in all three apps | `Core/config.js:58-59`; `Showcase/config.js:114-115`; `Vault/config/index.js:135` |
-| Low scrypt cost (Core, Vault) | N=2^17 with transparent rehash on login | `Core/auth/passwords.js`; `Vault/db/repositories/userRepository.js:22,75` |
-| Retention and deletion gaps | Opt-in login-history purges in all apps (plus `plate_events` in Showcase); Core user deletion removes login history and outbox rows | `Core/repo/users.js:71-90`; `Showcase/services.js`; `Vault/container.js:200` |
-| No backup tool | Encrypted, verified backups with retention; CI restore check; runbook | `deploy/staging/backup.mjs`; `ci.yml`; `STAGING_RUNBOOK.md` §7 |
-| No SAST, DAST, secret, image or IaC scanning | Semgrep, ZAP baseline, gitleaks, and Trivy (image and config) in CI; Dependabot; `SECURITY.md` | `ci.yml`; `.gitleaks.toml`; `.semgrepignore`; `.github/dependabot.yml` |
+Full revision 2 evidence is in git history (`b9f5dae`).
 
-**Local verification on 2026-11-18:**
+**Local verification on 2026-11-18**
 
 | Suite | Result |
 |---|---|
-| Core API | 334 / 334 pass |
-| SlidesVault | 264 / 264 pass; web build OK |
-| Showcase API | 84 / 84 pass |
-| Showcase shared | 3 / 3 pass |
-| Showcase web | build OK, including its tests and bundle budget |
-| Staging tooling | 10 / 10 pass |
-| Gateway | 52 / 53 pass |
+| Core API | 343 / 343 pass, including key rotation and row-level rules |
+| Showcase API | 89 / 89 pass |
+| SlidesVault | 269 / 269 pass |
+| Staging tooling | 13 / 13 pass |
+| Gateway | 53 / 53 pass, three consecutive runs from a clean state |
 
-The one gateway failure (`link.test.mjs`, CSP hash) is **pre-existing**: the committed code fails it the same way on this Windows machine, because `apex/public/link.html` is checked out with CRLF line endings. It is expected to pass on Linux CI. The new CI jobs and the Docker image builds were not run locally, because drive C: is full and Docker cannot start.
+- **Not run locally:** Docker image builds and the CI scanners. Docker cannot start because drive C: is full, and downloading scanner binaries was not permitted.
+- **CI evidence:** the first-run results above come from GitHub Actions run `44260126905`.
 
 ## Critical Security Gaps (remaining)
 
-1. **No TLS in front of the product yet.** Production start-up now fails closed and HSTS is ready, but a TLS-terminating proxy and Postgres TLS are needed before any non-local exposure. Both depend on hosting.
-2. **No MFA**, including for `platform_admin`. It needs a design decision under the binding R1 identity contract.
-3. **No scheduled or off-site backups, and no RPO or RTO.** The tool exists; a host and scheduler do not. Databases are not encrypted at rest.
+1. **No TLS in front of the product.** Production start-up fails closed and HSTS is ready, but a TLS-terminating proxy and Postgres TLS depend on hosting.
+2. **No MFA**, including for `platform_admin`.
+3. **One unresolved gitleaks finding in git history.** It is unidentified so far. Treat it as Critical until it is shown to be a false positive; if real, rotate the secret first.
+4. **No scheduled or off-site backups, and no RPO or RTO.** The tool exists; a host and scheduler do not. Databases are not encrypted at rest.
 
 ## High-priority gaps (remaining)
 
-4. **New CI scanners have not run.** Push (with authorisation), triage the first results, then make them blocking.
-5. **In-memory rate limits and local revocation:** these do not hold across replicas. Fixing them needs shared infrastructure such as Redis.
-6. **No assertion replay cache.** Adding one changes the identity contract, so it needs an ADR.
-7. **No strict `script-src` CSP** for the app bundles.
-8. **Incomplete privacy controls:** Showcase and SlidesVault have no deletion or export; no data-classification or retention policy exists.
-9. **No enterprise identity-provider federation, PAM tooling or access reviews.**
+5. **The scanner fixes have not passed CI yet.** Run them (push to a `feature-**` branch or open a pull request), then resolve what they report.
+6. **In-memory rate limits and local revocation:** these do not hold across replicas.
+7. **No assertion replay cache.** Adding one changes the identity contract, so it needs an ADR.
+8. **No strict `script-src` CSP** for the app bundles.
+9. **Incomplete privacy controls:** Showcase and SlidesVault have no deletion or export; no data classification or retention policy exists.
+10. **No enterprise identity-provider federation, PAM tooling or access reviews.**
 
 ## Recommended Improvements
 
 | # | Recommendation | Priority |
 |---|---|---|
-| 1 | Decide hosting (DEC-010). Then add a TLS proxy (https `APEX_PUBLIC_URL`, `APEX_TRUST_PROXY`, Secure flags), Postgres `sslmode=require`, host firewall or security groups, a WAF, and volume encryption. | Critical |
-| 2 | Design and build MFA (TOTP or WebAuthn) in the Core, mandatory for privileged roles. Record it in an ADR. | Critical |
-| 3 | Schedule `backup.mjs` daily, copy sets off-host, keep the backup key separately, set an RPO and RTO, and run the restore drill monthly. | Critical |
-| 4 | Push the branch (with authorisation). Triage the Semgrep, gitleaks, Trivy and ZAP results, then remove `continue-on-error`. Enable Dependabot, secret scanning, push protection and private vulnerability reporting in GitHub settings. Add branch protection and CODEOWNERS. | High |
-| 5 | Move rate limits, lockouts and gateway revocation to a shared store before scaling out. Add an assertion `jti` replay cache through an ADR. | High |
-| 6 | Add a strict CSP per app bundle, tested in each app. Pin base images and Actions by digest or SHA. | High |
-| 7 | Add user deletion and export to Showcase and SlidesVault. Define data classification and retention, then set the opt-in retention variables. | High |
-| 8 | Retire the legacy Academia admin model; make empty row-level rules deny; add an idle session timeout; strengthen the password policy. | Medium |
-| 9 | Commission a penetration test before the R6 pilot. Add an authenticated ZAP scan. Remove `legacy/nextjs-app`. | Medium |
+| 1 | Run CI on the scanner fixes and identify the gitleaks finding (rotate first if real). Fix the literal `\n` in the four Dockerfiles' `RUN rm -rf` line. Add `security/**` to the workflow's branch triggers, or use pull requests. | Critical |
+| 2 | Decide hosting (DEC-010). Then add a TLS proxy (https `APEX_PUBLIC_URL`, `APEX_TRUST_PROXY`, Secure flags), Postgres `sslmode=require`, host firewall or security groups, a WAF, volume encryption, and a KMS for the data-encryption keys. | Critical |
+| 3 | Design and build MFA (TOTP or WebAuthn) in the Core, mandatory for privileged roles. Record it in an ADR. | Critical |
+| 4 | Schedule `backup.mjs` daily, copy sets off-host, keep the backup key separately, set an RPO and RTO, and run the restore drill monthly. | Critical |
+| 5 | Enable Dependabot, secret scanning, push protection and private vulnerability reporting in GitHub settings. Add branch protection and CODEOWNERS. | High |
+| 6 | Move rate limits, lockouts and gateway revocation to a shared store before scaling out. Add an assertion `jti` replay cache through an ADR. | High |
+| 7 | Add a strict CSP per app bundle. Pin base images and Actions by digest or SHA. Add an authenticated ZAP scan. | High |
+| 8 | Add user deletion and export to Showcase and SlidesVault. Define data classification and retention, then set the retention variables. | High |
+| 9 | Retire the legacy Academia admin model; add an idle session timeout; strengthen the password policy. Test the rewrap CLIs on Postgres. | Medium |
+| 10 | Commission a penetration test before the R6 pilot. Remove `legacy/nextjs-app`. | Medium |
 
 ## Information Requiring Confirmation
 
@@ -490,10 +579,11 @@ The one gateway failure (`link.test.mjs`, CSP hash) is **pre-existing**: the com
 | Firewall, WAF, IDS/IPS, VPN or bastion for future hosts | Infrastructure / Security |
 | Disk and volume encryption on the development machine and future hosts | Infrastructure / IT |
 | Backup schedule, off-site location, RPO and RTO | DevOps / Business owner |
+| The gitleaks finding: what it is, and whether a real secret needs rotating | Security / Repository owner |
 | GitHub settings: visibility, branch protection, required reviews, secret scanning, push protection, Dependabot, private vulnerability reporting | DevOps / Repository owner |
-| Authorisation to push this branch so the new CI jobs run | Founder |
-| Data classification scheme and retention periods (to set the new retention variables) | Data Protection / Security |
+| Approval of the fix timelines in `SECURITY.md` | Security owner |
+| Data classification scheme and retention periods | Data Protection / Security |
 | Applicable privacy law and the approved consent notice | Legal / DPO |
 | ISO 27001, NIST CSF or CIS programme status | Security / Compliance |
-| Costs for any paid tooling chosen later (WAF, CSPM, GitHub Advanced Security) | Security / Finance |
+| Costs for any paid tooling chosen later (WAF, CSPM, KMS, GitHub Advanced Security) | Security / Finance |
 | Whether the uncommitted onboarding module is in release scope | Product owner |

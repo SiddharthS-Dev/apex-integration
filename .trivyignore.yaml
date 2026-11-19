@@ -1,0 +1,10 @@
+# Accepted Trivy findings (CI jobs `iac-scan` and the image scan). Each entry is scoped to the
+# exact file and says why. Never ignore a finding to make CI green: fix it, or justify it here.
+misconfigurations:
+  - id: AVD-DS-0031
+    paths:
+      - deploy/gateway/Dockerfile
+    statement: >-
+      False positive. APEX_SESSION_SECRET_FILE and APEX_IDENTITY_KEYS_FILE hold file paths on the
+      gateway-state volume, not secret values. The secrets are generated at first start inside the
+      container (mode 0600) and never pass through build args or the image.

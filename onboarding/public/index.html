@@ -866,6 +866,117 @@
         color: var(--muted);
         font-size: 0.75rem;
       }
+      /* Optional document upload (intern mark sheet) */
+      .drop {
+        display: grid;
+        justify-items: center;
+        gap: 6px;
+        padding: 22px 16px;
+        border-radius: 12px;
+        border: 1.5px dashed rgba(34, 211, 238, 0.45);
+        background: rgba(34, 211, 238, 0.04);
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+      }
+      .drop:hover,
+      .drop:focus-within,
+      .drop.over {
+        border-color: var(--cyan);
+        background: rgba(34, 211, 238, 0.09);
+        box-shadow: 0 0 18px rgba(34, 211, 238, 0.25);
+      }
+      .drop svg {
+        width: 34px;
+        height: 34px;
+      }
+      .drop strong {
+        font-size: 0.95rem;
+      }
+      .drop .browse {
+        color: var(--cyan);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .drop small {
+        color: var(--muted);
+        font-size: 0.76rem;
+      }
+      .drop input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .file-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--cyan);
+        background: linear-gradient(135deg, rgba(34, 211, 238, 0.12), rgba(139, 92, 246, 0.12));
+      }
+      .file-row .badge {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 9px;
+        background: linear-gradient(135deg, var(--cyan), var(--violet));
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+      }
+      .file-row .meta {
+        flex: 1;
+        min-width: 0;
+      }
+      .file-row .meta strong {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.9rem;
+      }
+      .file-row .meta span {
+        color: var(--muted);
+        font-size: 0.76rem;
+      }
+      .file-row .ok {
+        color: var(--ok);
+      }
+      .doc-note {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        margin: 12px 0 4px;
+        color: var(--muted);
+        font-size: 0.76rem;
+        line-height: 1.45;
+      }
+      .doc-note svg {
+        flex: none;
+        width: 15px;
+        height: 15px;
+        margin-top: 1px;
+      }
+      .doc-actions {
+        display: flex;
+        gap: 8px;
+      }
+      @media (max-width: 520px) {
+        .file-row {
+          flex-wrap: wrap;
+        }
+        .doc-actions {
+          width: 100%;
+          justify-content: flex-end;
+        }
+      }
       .primary {
         border: none;
         background: linear-gradient(90deg, #06b6d4, #6366f1 55%, #a855f7);
@@ -1476,6 +1587,23 @@
           svg.append(path)
           return svg
         }
+        /** A small inline icon built with DOM calls (no markup strings): parts are [tag, attributes]. */
+        function svgIcon(parts, attrs = {}) {
+          const ns = 'http://www.w3.org/2000/svg'
+          const svg = document.createElementNS(ns, 'svg')
+          const base = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', ...attrs }
+          for (const [k, v] of Object.entries(base)) svg.setAttribute(k, v)
+          for (const [tag, a] of parts) {
+            const n = document.createElementNS(ns, tag)
+            for (const [k, v] of Object.entries(a)) n.setAttribute(k, v)
+            svg.append(n)
+          }
+          return svg
+        }
+        const EYE_OPEN = [['path', { d: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z' }], ['circle', { cx: '12', cy: '12', r: '3' }]]
+        const EYE_SHUT = [['path', { d: 'M3 3l18 18M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17.3 17.3 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2' }]]
+        const DOC_ICON = [['path', { d: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z' }], ['path', { d: 'M14 3v5h5M12 17v-6M9.5 13.5 12 11l2.5 2.5' }]]
+        const LOCK_ICON = [['rect', { x: '4', y: '11', width: '16', height: '10', rx: '2' }], ['path', { d: 'M8 11V7a4 4 0 0 1 8 0v4' }]]
         const STAGES = ['Role', 'You', 'Details', 'Goals', 'Review', 'Verify']
 
         function el(tag, props, ...kids) {
@@ -1541,6 +1669,11 @@
           code: null,
           stage: 0,
           returnToReview: false,
+          // Optional mark sheet (interns): `doc` is a file chosen on this page, held in memory only and
+          // uploaded once the email is verified; `docs` is what the server already holds (metadata).
+          doc: null,
+          docSkipped: false,
+          docs: [],
           draft: { full_name: '', email: '', onboarding_role: '', claimed_organization: '', category_profile: {}, platforms: [] },
         }
         const platformNames = (codes) => (codes || []).map((c) => (cfg?.platforms || []).find((p) => p.code === c)?.label || c).join(', ')
@@ -1548,6 +1681,18 @@
         const firstName = () => (S.draft.full_name || '').split(/\s+/)[0]
         const fieldOf = (key) => role()?.fields.find((f) => f.key === key)
         const applies = (f, answers = S.draft.category_profile) => !f.when || answers[f.when.key] === f.when.equals
+        /** True when the chosen role may attach a mark sheet and the server can store it. */
+        const asksDoc = () => !!(cfg?.documents?.enabled && (role()?.documents || []).includes('MARK_SHEET'))
+        const attachedDoc = () => S.docs.find((x) => x.kind === 'MARK_SHEET') || null
+        const fmtSize = (b) => (b >= 1024 * 1024 ? `${(b / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`)
+        const typeLabel = (t) => ({ 'application/pdf': 'PDF', 'image/jpeg': 'JPG', 'image/png': 'PNG' })[t] || 'FILE'
+        /** What the review and the live panel say about the mark sheet. */
+        function docText() {
+          if (S.doc) return `${S.doc.name} · ${fmtSize(S.doc.size)}`
+          const a = attachedDoc()
+          if (a) return `${a.file_name} · ${fmtSize(a.size_bytes)} ✓ attached`
+          return S.docSkipped ? 'Skipped (optional)' : ''
+        }
 
         /* --------------------------------------------------------- stepper -- */
         function stepper() {
@@ -1574,6 +1719,7 @@
               const v = d.category_profile[f.key]
               if (v !== undefined && v !== '' && applies(f) && f.type !== 'longtext') rows.push([f.label, f.type === 'enum' ? human(v) : String(v)])
             }
+            if (asksDoc()) rows.push(['Mark sheet', docText()])
           }
           const shown = rows.filter(([, v]) => v)
           $('live-empty').hidden = shown.length > 0
@@ -1753,17 +1899,15 @@
             // Password: the box carries a show/hide eye (an icon button, so no button text to collide with).
             let box = input
             if (f.type === 'password') {
-              const eyeOpen = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>'
-              const eyeShut = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17.3 17.3 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>'
               const eye = el('button', { type: 'button', class: 'eye', 'aria-label': 'Show password', 'aria-pressed': 'false', title: 'Show password' })
-              eye.innerHTML = eyeOpen // static, trusted markup (no user data)
+              eye.append(svgIcon(EYE_OPEN))
               eye.addEventListener('click', () => {
                 const show = input.type === 'password'
                 input.type = show ? 'text' : 'password'
                 eye.setAttribute('aria-pressed', String(show))
                 eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password')
                 eye.title = show ? 'Hide password' : 'Show password'
-                eye.innerHTML = show ? eyeShut : eyeOpen
+                eye.replaceChildren(svgIcon(show ? EYE_SHUT : EYE_OPEN))
                 input.focus()
               })
               box = el('div', { class: 'pw' }, input, eye)
@@ -1937,6 +2081,208 @@
           return `Thank you, ${p.official_designation} at ${org}. One more card and we're done.`
         }
 
+        /* ------------------------------------------------ mark sheet (intern) -- */
+        /** A local check before anything is sent: allowed type (by its first bytes), not empty, not too big. */
+        async function checkFile(file) {
+          const max = cfg.documents?.max_bytes || 5 * 1024 * 1024
+          if (!file.size) return 'That file is empty. Choose another one.'
+          if (file.size > max) return `That file is ${fmtSize(file.size)}. The limit is ${fmtSize(max)}; try a smaller scan or a PDF.`
+          let head
+          try {
+            head = new Uint8Array(await file.slice(0, 8).arrayBuffer())
+          } catch {
+            return 'That file could not be read. Choose it again.'
+          }
+          const is = (...xs) => xs.every((x, i) => head[i] === x)
+          if (!(is(0x25, 0x50, 0x44, 0x46, 0x2d) || is(0xff, 0xd8, 0xff) || is(0x89, 0x50, 0x4e, 0x47))) return 'Please choose a PDF, JPG or PNG file.'
+          return ''
+        }
+
+        /**
+         * The upload card. Resolves { file } when a file is chosen, 'skip' when skipped, 'keep' when the
+         * already-attached file is kept, or BACK.
+         */
+        function pickDocument() {
+          return widget('Academic record', (done) => {
+            const types = (cfg.documents?.types || []).map((t) => t.label).join(', ') || 'PDF, JPG, PNG'
+            let chosen = S.doc ? S.doc.file : null
+            let keepAttached = !chosen && !!attachedDoc()
+            const err = el('div', { class: 'err', role: 'alert' })
+            const input = el('input', { type: 'file', accept: '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png', 'aria-label': 'Choose your mark sheet', 'data-focus': true })
+            const icon = el('span', { 'aria-hidden': 'true' }, svgIcon(DOC_ICON, { stroke: '#a5f3fc', 'stroke-width': '1.6' }))
+            const drop = el('label', { class: 'drop' },
+              icon,
+              el('strong', { text: 'Drop your mark sheet here' }),
+              el('span', {}, 'or ', el('span', { class: 'browse', text: 'browse your files' })),
+              el('small', { text: `${types} · up to ${fmtSize(cfg.documents?.max_bytes || 5 * 1024 * 1024)}` }),
+              input)
+            const slot = el('div')
+            const attach = el('button', { type: 'button', class: 'primary', text: 'Attach and continue' })
+            const render = () => {
+              const a = attachedDoc()
+              if (chosen || keepAttached) {
+                const name = chosen ? chosen.name : a.file_name
+                const size = chosen ? chosen.size : a.size_bytes
+                const type = chosen ? (chosen.type || '') : a.content_type
+                const replace = el('button', { type: 'button', class: 'ghost tiny', text: 'Replace', onclick: () => input.click() })
+                const remove = el('button', {
+                  type: 'button', class: 'ghost tiny', text: 'Remove', 'aria-label': `Remove ${name}`,
+                  onclick: async () => {
+                    if (!chosen && a && S.verified) {
+                      // Already on the server: remove it there too.
+                      const r = await api('document', { kind: 'MARK_SHEET', action: 'remove' })
+                      if (r.status !== 200) return (err.textContent = r.data?.error || 'Could not remove the file. Try again.')
+                      S.docs = r.data.documents || []
+                    }
+                    chosen = null
+                    keepAttached = false
+                    input.value = ''
+                    render()
+                  },
+                })
+                slot.replaceChildren(el('div', { class: 'file-row' },
+                  el('span', { class: 'badge', text: typeLabel(type || (/\.pdf$/i.test(name) ? 'application/pdf' : '')) }),
+                  el('div', { class: 'meta' }, el('strong', { text: name }), el('span', {}, fmtSize(size), chosen ? ' · ready to attach' : el('span', { class: 'ok', text: ' · ✓ attached' }))),
+                  el('div', { class: 'doc-actions' }, replace, remove)))
+                drop.hidden = true
+                attach.disabled = false
+                attach.textContent = chosen ? 'Attach and continue' : 'Keep and continue'
+              } else {
+                slot.replaceChildren()
+                drop.hidden = false
+                attach.disabled = true
+                attach.textContent = 'Attach and continue'
+              }
+            }
+            const take = async (file) => {
+              if (!file) return
+              err.textContent = ''
+              const problem = await checkFile(file)
+              if (problem) {
+                err.textContent = problem
+                input.value = ''
+                return
+              }
+              chosen = file
+              keepAttached = false
+              render()
+              attach.focus()
+            }
+            input.addEventListener('change', () => take(input.files?.[0]))
+            drop.addEventListener('dragover', (e) => {
+              e.preventDefault()
+              drop.classList.add('over')
+            })
+            drop.addEventListener('dragleave', () => drop.classList.remove('over'))
+            drop.addEventListener('drop', (e) => {
+              e.preventDefault()
+              drop.classList.remove('over')
+              take(e.dataTransfer?.files?.[0])
+            })
+            attach.addEventListener('click', () => done(chosen ? { file: chosen } : 'keep'))
+            const lock = el('span', { 'aria-hidden': 'true' }, svgIcon(LOCK_ICON))
+            render()
+            return [
+              el('p', { class: 'consent-note', style: 'margin:0 0 12px', text: 'Optional · a clear copy of your latest semester or final-year mark sheet.' }),
+              drop,
+              slot,
+              err,
+              el('p', { class: 'doc-note' }, lock, el('span', { text: 'Stored encrypted and seen only by the administrator who reviews your request. It is uploaded after you confirm your email. If it shows your date of birth or a photo, you may cover them before uploading.' })),
+              el('div', { class: 'actions' }, el('button', { type: 'button', class: 'ghost', text: 'Skip for now', onclick: () => done('skip') }), attach),
+            ]
+          })
+        }
+
+        async function stepDocument() {
+          if (!asksDoc()) return
+          setStage(3)
+          await say(attachedDoc()
+            ? 'Your mark sheet is already attached. You can keep it, replace it or remove it.'
+            : `One last optional step, ${firstName()}: you can attach your latest mark sheet. It helps the reviewing team confirm your academic record and can speed up approval. You can also skip it.`)
+          const v = await pickDocument()
+          if (v === BACK) return BACK
+          if (v === 'skip') {
+            if (attachedDoc() && S.verified) {
+              const r = await api('document', { kind: 'MARK_SHEET', action: 'remove' })
+              if (r.status === 200) S.docs = r.data.documents || []
+            }
+            S.doc = null
+            S.docSkipped = true
+            reply('Skip the mark sheet', 'Optional — you can still submit')
+            await say("No problem — it's optional. Your request is complete without it.")
+            return
+          }
+          S.docSkipped = false
+          if (v === 'keep') {
+            reply('Keep the attached mark sheet', attachedDoc()?.file_name)
+            return
+          }
+          S.doc = { file: v.file, name: v.file.name, size: v.file.size }
+          reply('Mark sheet selected', `${v.file.name} · ${fmtSize(v.file.size)}`)
+          await say("Thank you — I'll attach it securely right after you confirm your email.")
+        }
+
+        const readBase64 = (file) =>
+          new Promise((resolve, reject) => {
+            const r = new FileReader()
+            r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''))
+            r.onerror = () => reject(r.error)
+            r.readAsDataURL(file)
+          })
+
+        /**
+         * Uploads the chosen mark sheet to the verified request. Resolves true when attached (or nothing to
+         * do), false when the applicant decided to submit without it, 'stop' when the request is gone.
+         */
+        async function uploadDocument() {
+          while (S.doc) {
+            note('Attaching your mark sheet securely…')
+            thinking(true)
+            let r
+            try {
+              r = await api('document', { kind: 'MARK_SHEET', file_name: S.doc.name, data_base64: await readBase64(S.doc.file) })
+            } catch {
+              r = { status: 400, data: { error: 'The file could not be read from your device.' } }
+            }
+            thinking(false)
+            if (r.status === 200) {
+              S.docs = r.data.documents || []
+              S.doc = null
+              reply('Mark sheet attached ✓', docText().replace(' ✓ attached', ''))
+              return true
+            }
+            if (r.data?.details?.code === 'RESTART') {
+              handleError(r) // shows "Start again"; not awaited (its card stays open)
+              return 'stop'
+            }
+            const retryable = r.status === 0 || r.status === 429 || r.status >= 500
+            await say(`I couldn't attach your mark sheet: ${r.data?.error || 'something went wrong.'} You can ${retryable ? 'try again, ' : ''}choose another file, or submit without it.`)
+            const choice = await widget('Mark sheet not attached', (done) => [
+              el('div', { class: 'actions' },
+                el('button', { type: 'button', class: 'ghost', text: 'Submit without it', onclick: () => done('without') }),
+                el('span', { class: 'doc-actions' },
+                  el('button', { type: 'button', class: retryable ? 'ghost' : 'primary', text: 'Choose another file', onclick: () => done('choose') }),
+                  retryable ? el('button', { type: 'button', class: 'primary', 'data-focus': true, text: 'Try again', onclick: () => done('retry') }) : null)),
+            ])
+            if (choice === 'without') {
+              S.doc = null
+              S.docSkipped = true
+              reply('Submit without the mark sheet')
+              return false
+            }
+            if (choice === 'choose') {
+              const v = await pickDocument()
+              if (v === 'skip' || v === BACK || v === 'keep') {
+                S.doc = null
+                S.docSkipped = v === 'skip'
+                return false
+              }
+              S.doc = { file: v.file, name: v.file.name, size: v.file.size }
+            }
+          }
+          return true
+        }
+
         function isComplete() {
           const r = role()
           const d = S.draft
@@ -1945,14 +2291,14 @@
           return r.fields.every((f) => !f.required || !applies(f) || (d.category_profile[f.key] !== undefined && d.category_profile[f.key] !== ''))
         }
 
-        const FLOW = [stepRole, stepYou, () => stepCard(0), () => stepCard(1)]
+        const FLOW = [stepRole, stepYou, () => stepCard(0), () => stepCard(1), stepDocument]
         async function run(from = 0) {
           let i = from
           while (i < FLOW.length) {
             const out = await FLOW[i]()
             if (out === BACK) {
               i = Math.max(0, i - 1)
-              note(`Going back to: ${['your role', 'about you', role()?.steps[0].title, role()?.steps[1].title][i]}`)
+              note(`Going back to: ${['your role', 'about you', role()?.steps[0].title, role()?.steps[1].title, 'your mark sheet'][i]}`)
               continue
             }
             // After an edit from the review, go back to it once everything required is answered (a new
@@ -1989,15 +2335,16 @@
                 section('Selected role', 0, [['Role', `${ICONS[r.code] || ''} ${r.label}`]]),
                 section('Personal information', 1, [['Full name', d.full_name], ['Email', d.email + (S.verified ? ' ✓ verified' : '')], ['Password', S.password || S.verified ? '•••••••• (set)' : ''], ['APEX platforms', platformNames(d.platforms)]]),
                 section(r.steps[0].title, 2, cardRows(r.steps[0])),
-                section(r.steps[1].title, 3, cardRows(r.steps[1]))),
+                section(r.steps[1].title, 3, cardRows(r.steps[1])),
+                asksDoc() ? section('Academic record', 4, [['Mark sheet', docText() || 'Not added (optional)']]) : null),
               err,
               el('div', { class: 'actions' }, el('span', { class: 'hint', text: 'Nothing is granted until an administrator approves your request.' }), go),
             ]
           })
           if (v === BACK) {
-            note(`Going back to: ${r.steps[1].title}`)
+            note(`Going back to: ${asksDoc() ? 'your mark sheet' : r.steps[1].title}`)
             S.returnToReview = false
-            return run(3)
+            return run(asksDoc() ? 4 : 3)
           }
           if (v.edit !== undefined) {
             if (v.edit === 1 && S.verified) note('Your email is already verified; to change it, restart onboarding.')
@@ -2121,6 +2468,8 @@
         }
 
         async function submit() {
+          // The optional mark sheet goes to the verified request first; the request is complete without it.
+          if (S.doc && (await uploadDocument()) === 'stop') return
           thinking(true)
           const r = await api('complete', {})
           thinking(false)
@@ -2253,6 +2602,7 @@
           if (s.state === 'EMAIL_VERIFIED') {
             S.verified = true
             S.agreed = true
+            S.docs = s.documents || []
             applyDraft(s.draft)
             return review()
           }

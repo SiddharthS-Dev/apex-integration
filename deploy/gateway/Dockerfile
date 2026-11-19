@@ -83,6 +83,10 @@ COPY --from=academia-web ["/src/apps/web/dist", "Inspironics Academia/apps/web/d
 # Session secret and revocation list must outlive the container (a restart must not sign everyone
 # in again, nor un-revoke a signed-out session).
 RUN mkdir -p /var/lib/apex && chown node:node /var/lib/apex && chmod 700 /var/lib/apex
+# The runtime never calls npm, npx, corepack or yarn. Remove them: they carry their own
+# dependency trees (the image scan's only HIGH findings) and are tools an attacker could use.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
+    /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 VOLUME ["/var/lib/apex"]
 
 USER node

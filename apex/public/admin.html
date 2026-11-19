@@ -735,6 +735,46 @@
         return [el('h3', { text: title }), el('dl', {}, ...shown.map(([k, v]) => el('div', {}, el('dt', { text: k }), el('dd', { text: String(v) }))))]
       }
       const platformLabel = (code) => state.platformCatalogue.find((p) => p.code === code)?.label || code
+      const fileSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`)
+
+      /** Attached documents (the intern mark sheet): name, size and a download button. Opening one is audited. */
+      function documentsSection(d) {
+        const docs = d.documents || []
+        if (!docs.length) return null
+        return [
+          el('h3', { text: 'Documents' }),
+          el('dl', {}, ...docs.map((doc) => {
+            const err = el('small', { class: 'err' })
+            const btn = el('button', { type: 'button', class: 'btn', text: 'Download' })
+            btn.addEventListener('click', async () => {
+              btn.disabled = true
+              err.textContent = ''
+              try {
+                const res = await fetch(`${API}/registrations/${encodeURIComponent(d.id)}/documents/${encodeURIComponent(doc.kind)}`, { credentials: 'same-origin', cache: 'no-store' })
+                if (!res.ok) {
+                  let data = null
+                  try {
+                    data = await res.json()
+                  } catch {}
+                  throw new Error(data?.error || 'Could not download the file.')
+                }
+                const url = URL.createObjectURL(await res.blob())
+                const a = el('a', { href: url, download: doc.file_name })
+                document.body.append(a)
+                a.click()
+                a.remove()
+                setTimeout(() => URL.revokeObjectURL(url), 60_000)
+              } catch (e) {
+                err.textContent = e.message
+              } finally {
+                btn.disabled = false
+              }
+            })
+            return el('div', {}, el('dt', { text: doc.label || doc.kind }),
+              el('dd', {}, `${doc.file_name} · ${fileSize(doc.size_bytes)} · uploaded ${when(doc.uploaded_at)}  `, btn, ' ', err))
+          })),
+        ]
+      }
 
       async function select(id) {
         state.selected = id
@@ -774,6 +814,7 @@
             ['APEX platforms', (d.requested?.platforms || []).map(platformLabel).join(', ') || '—'],
             ...profileRows,
           ]),
+          documentsSection(d),
           d.verification_note ? el('p', { class: 'note' }, el('strong', { text: 'Verify before approving: ' }), d.verification_note) : null,
           advice.summary || advice.observations?.length
             ? el('div', { class: 'advice' },

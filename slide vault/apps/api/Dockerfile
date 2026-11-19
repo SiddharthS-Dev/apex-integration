@@ -43,6 +43,10 @@ COPY apps/api/scripts ./apps/api/scripts
 # time, so only /data is handed to `node`.
 RUN chown -R root:root /app && chmod -R a-w,a+rX /app \
  && mkdir -p /data && chown node:node /data && chmod 700 /data
+# The runtime never calls npm, npx, corepack or yarn. Remove them: they carry their own
+# dependency trees (the image scan's only HIGH findings) and are tools an attacker could use.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
+    /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 VOLUME ["/data"]
 
 # Never run as root: a compromised process should not be able to rewrite the

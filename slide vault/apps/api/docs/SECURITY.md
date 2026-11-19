@@ -32,14 +32,22 @@ KMS or Vault over an environment variable in a file.
 
 ### Rotating the encryption key
 
-Rotating makes every stored refresh token unreadable. That is visible, not
-silent: the connection reports an error and the message says to reconnect.
+Rotation keeps the stored refresh token readable: the cipher encrypts with
+`DROPBOX_TOKEN_ENCRYPTION_KEY` and, for decryption, also tries each retired key
+listed (comma-separated) in `DROPBOX_TOKEN_ENCRYPTION_KEY_PREVIOUS`.
 
-1. Set the new key.
+1. Move the current key to the front of `DROPBOX_TOKEN_ENCRYPTION_KEY_PREVIOUS`
+   and set a new `DROPBOX_TOKEN_ENCRYPTION_KEY` (`npm run keygen`).
 2. Restart.
-3. An administrator opens Dropbox Settings and presses **Reconnect**.
+3. `npm run rewrap-tokens` re-encrypts the stored token under the new key
+   (`-- --dry-run` reports first; like `migrate`, it refuses the default
+   `data/` database unless `--allow-default-db` is given).
+4. Once it reports `"ok":true`, remove the previous key and restart.
 
-The indexed catalog is untouched throughout.
+A malformed previous key stops start-up. If the old key is lost, the token
+cannot be recovered: the connection reports an error and an administrator
+presses **Reconnect** in Dropbox Settings. The indexed catalog is untouched
+throughout. Staging procedure: docs/operations/STAGING_RUNBOOK.md (repository root).
 
 ## What is never logged
 

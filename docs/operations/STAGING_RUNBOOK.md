@@ -69,6 +69,68 @@ node deploy/staging/generate-secrets.mjs            # writes deploy/staging/.env
 - The bootstrap admin password is in the file (`BOOTSTRAP_ADMIN_PASSWORD`). It is never printed.
 - The values are throwaway. Never copy them into chat, tickets or commits.
 
+### Key rotation
+
+**Which keys exist**
+
+| Key (`.env.staging`) | App variable | Protects | Re-encrypt with |
+|---|---|---|---|
+| `CORE_TOKEN_ENCRYPTION_KEY` | `TOKEN_ENCRYPTION_KEY` (Core) | Dropbox refresh tokens in `settings` (`dropbox.*connection`, field `refresh_token_enc`) | `stg exec core node src/db/rewrap-cli.js` |
+| `SHOWCASE_ENCRYPTION_KEY` | `ENCRYPTION_KEY` (Showcase) | `dropbox_connection.refresh_token_enc` | `stg exec showcase-api node --disable-warning=ExperimentalWarning src/db/rewrap.js` |
+| `SLIDESVAULT_TOKEN_ENCRYPTION_KEY` | `DROPBOX_TOKEN_ENCRYPTION_KEY` (SlidesVault) | `storage_connection.refresh_token_encrypted` | `stg exec slidesvault-api node scripts/rewrap-tokens.js` |
+| `BACKUP_ENCRYPTION_KEY` | read by `backup.mjs` only | every backup set (§7) | none: sets age out |
+| `APEX_IDENTITY_KEYS_*` | `APEX_IDENTITY_KEYS` | identity assertions (signing, not data) | own procedure: §5 and [IDENTITY_ASSERTION.md](IDENTITY_ASSERTION.md) |
+
+Each data-encryption key has an optional `<NAME>_PREVIOUS`: retired keys, comma-separated, newest
+first, each 32 bytes in the same encodings as the main key. Encryption always uses the current key.
+Decryption tries the current key, then each previous key in order (AES-GCM authentication decides),
+so stored ciphertext keeps working through a rotation with no migration. A malformed previous key
+stops the Core and the Showcase in production (a warning in development) and always stops
+SlidesVault, as a malformed main key does. Keys are never logged or printed.
+
+Outside staging (local development), the same variables go in each app's `apps/api/.env`; the
+rewrap CLIs are `npm run rewrap-secrets` (Core, Showcase: `-w @inspironics/api`) and `npm run
+rewrap-tokens` (SlidesVault). Like `migrate`, they print their target and refuse the default
+`apps/api/data/` database unless `--allow-default-db` is given. Add `--dry-run` to see the counts first.
+
+**Schedule.** Rotate every data-encryption key every **12 months**, and **immediately** on suspected
+exposure (a leaked `.env.staging`, host compromise, a departing operator with access). Nothing
+rotates automatically.
+
+**Steps (one app key)**
+
+1. Rotate. The current value moves to the front of `<NAME>_PREVIOUS` and a fresh key is written
+   (file mode 0600; the old file is kept as `.env.staging.bak-<time>`):
+
+   ```sh
+   node deploy/staging/generate-secrets.mjs --rotate CORE_TOKEN_ENCRYPTION_KEY   # or SHOWCASE_ENCRYPTION_KEY, SLIDESVAULT_TOKEN_ENCRYPTION_KEY
+   ```
+
+2. Restart that service so it reads both keys: `stg up -d --force-recreate --wait core` (or
+   `showcase-api`, `slidesvault-api`). Existing tokens still open under the previous key.
+3. Rewrap: run the CLI from the table. It re-encrypts every stored value under the current key (a
+   compare-and-set per row, safe while the app runs) and prints `{"ok":true,...,"rewrapped":n}`.
+   It exits 1 and lists the row (never the value) if some ciphertext opens with no configured key.
+4. After it reports `"ok":true` and the app works (for example the Dropbox status page), remove the
+   value of `<NAME>_PREVIOUS` from `.env.staging`, recreate the service again, and delete the
+   `.env.staging.bak-*` files: they still hold the old key.
+
+On suspected exposure, do steps 1–4 back to back. Rotation protects data written from now on and
+re-encrypts the stored copy; it cannot make an already-copied database plus the leaked key safe, so
+also revoke the Dropbox connection (reconnect) if the database may have leaked with the key.
+
+**Backup key.** `node deploy/staging/generate-secrets.mjs --rotate BACKUP_ENCRYPTION_KEY`. New sets
+use the new key at once; `backup.mjs decrypt` and `verify` also try `BACKUP_ENCRYPTION_KEY_PREVIOUS`,
+so older sets stay restorable. Sets are not re-encrypted: **keep the previous key until the last set
+encrypted with it has aged out of retention** (§7: 14 days by default, but the newest three sets are
+always kept, and copies taken off the host may live longer), then remove it.
+
+**Where keys are stored.** Staging: `deploy/staging/.env.staging` only (gitignored, mode 0600), handed
+to compose with `--env-file`; each container receives only its own key and previous keys. Keep an
+offline copy of the backup key (current and previous) **away from the backups**. Development: each
+app's gitignored `apps/api/.env` (the Showcase falls back to `apps/api/data/.dev-encryption-key`).
+Keys never go into the repository, the database, logs, chat or tickets.
+
 ## 3. Bring-up and shut-down
 
 ```sh
@@ -221,7 +283,8 @@ node deploy/staging/backup.mjs verify                    # newest set: SHA-256 a
 - **Contents:** `pg_dump -Fc` of `core`, `showcase` and `slidesvault`, the roles (`pg_dumpall
   --globals-only`), the `core-data` and `gateway-state` volumes, and a `manifest.json`.
 - **Key:** `BACKUP_ENCRYPTION_KEY` in `.env.staging` (or the environment). Keep a copy of it **away
-  from the backups**; without it they cannot be restored.
+  from the backups**; without it they cannot be restored. After a rotation, `decrypt` and `verify`
+  also try `BACKUP_ENCRYPTION_KEY_PREVIOUS` (§2, "Key rotation").
 - **Retention:** 14 days by default (`--retention-days` or `BACKUP_RETENTION_DAYS`). The newest three
   sets are always kept, so a stopped schedule never ages every backup away.
 - **Location:** `--out` or `BACKUP_DIR`; the default folder is gitignored. Copy sets off the host

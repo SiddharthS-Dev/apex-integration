@@ -9,6 +9,7 @@
 // optional), a reviewer approves with only the allowed grants and the applicant signs in with the password
 // chosen during onboarding (no invitation link). Env: CHROME_PATH, WEB_DIST (default E:/apex-review-tmp/academia-web-build).
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -37,7 +38,7 @@ const children = [];
 children.push(spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/server.js'], {
   cwd: path.join(REPO, 'Inspironics Academia/apps/api'), stdio: 'ignore', windowsHide: true,
   env: { ...process.env, NODE_ENV: 'development', PORT: String(corePort), HOST: '127.0.0.1', DATA_DIR: TMP, SQLITE_PATH: DB_FILE, DATABASE_URL: '', EMAIL_PROVIDER: 'log', AI_ENABLED: 'false',
-    JOBS_ENABLED: 'false', LOG_LEVEL: 'warn', ONBOARDING_ENABLED: 'true', SELF_REGISTRATION_ENABLED: 'true', BOOTSTRAP_ADMIN_EMAIL: ADMIN.email, BOOTSTRAP_ADMIN_PASSWORD: ADMIN.password },
+    JOBS_ENABLED: 'false', LOG_LEVEL: 'warn', ONBOARDING_ENABLED: 'true', SELF_REGISTRATION_ENABLED: 'true', TOKEN_ENCRYPTION_KEY: crypto.randomBytes(32).toString('base64'), BOOTSTRAP_ADMIN_EMAIL: ADMIN.email, BOOTSTRAP_ADMIN_PASSWORD: ADMIN.password },
 }));
 for (let i = 0; i < 150; i += 1) { try { if ((await fetch(`http://127.0.0.1:${corePort}/api/health`)).ok) break; } catch { /* starting */ } await pause(200); }
 
@@ -132,11 +133,22 @@ try {
   await page.screenshot({ path: path.join(SHOTS, '02-card.png') });
   await fill('Assigned mentor', 'R. Kumar');
   await press('Continue');
+  // Optional mark sheet (interns): choose a PDF, see it listed, attach. It is uploaded after verification.
+  await card('Academic record');
+  check('mark sheet card offers Skip', (await page.$eval(W, (w) => w.innerText)).includes('Skip for now'));
+  const sheet = path.join(TMP, 'mark-sheet-sem6.pdf');
+  fs.writeFileSync(sheet, Buffer.concat([Buffer.from('%PDF-1.4 '), crypto.randomBytes(3000), Buffer.from(' %%EOF')]));
+  await (await page.$(`${W} input[type=file]`)).uploadFile(sheet);
+  await page.waitForFunction((w) => document.querySelector(`${w} .file-row`)?.textContent.includes('mark-sheet-sem6.pdf'), { timeout: 5000 }, W);
+  check('chosen file is listed with its size', true);
+  await page.screenshot({ path: path.join(SHOTS, '02b-mark-sheet.png') });
+  await press('Attach and continue');
   await card('Review and confirm');
   await page.screenshot({ path: path.join(SHOTS, '03-review.png') });
   const summary = await page.$eval(W, (w) => w.innerText);
   check('review shows role, personal and professional details', ['Intern', 'Priya Sundar', 'priya.intern@example.org', 'Anna University', 'R. Kumar', 'Final year'].every((t) => summary.includes(t)));
   check('review shows the chosen APEX platforms', summary.includes('Presentation Library, Learning Hub'));
+  check('review shows the mark sheet', /academic record/i.test(summary) && summary.includes('mark-sheet-sem6.pdf'));
   check('no phone or address collected; the password is never shown', !/phone|address/i.test(summary) && !summary.includes('Priya-pass-2026') && summary.includes('(set)'));
   await page.$eval(`${W} button[aria-label="Edit personal information"]`, (b) => b.click());
   await card('About you');
@@ -162,6 +174,8 @@ try {
   const profile = JSON.parse(req?.category_profile || '{}');
   check('request stored for review with the role and follow-up', req?.status === 'PENDING_APPROVAL' && req.full_name === 'Priya S. Sundar' && profile.onboarding_role === 'INTERN' && profile.mentor_name === 'R. Kumar');
   check('no account before approval', rows("SELECT id FROM users WHERE email = 'priya.intern@example.org'").length === 0);
+  const docs = rows("SELECT d.file_name, d.content_encrypted FROM registration_documents d JOIN registration_requests r ON r.id = d.request_id WHERE r.email = 'priya.intern@example.org'");
+  check('mark sheet attached after verification, stored encrypted', docs.length === 1 && docs[0].file_name === 'mark-sheet-sem6.pdf' && docs[0].content_encrypted.startsWith('v1.'));
   check('no browser storage', await page.evaluate(() => localStorage.length === 0 && sessionStorage.length === 0));
   await page.reload({ waitUntil: 'networkidle0' });
   await bot('waiting for review');
@@ -195,6 +209,7 @@ try {
     await admin.waitForFunction(() => document.body.innerText.includes('Priya S. Sundar'), { timeout: 15000 });
     await (await admin.waitForSelector('::-p-xpath(//button[normalize-space(.)="Open"])')).click();
     await admin.waitForFunction(() => document.body.innerText.includes('Verify before approving'), { timeout: 10000 });
+    check('reviewer: the mark sheet is listed with a download button', await admin.evaluate(() => document.body.innerText.includes('mark-sheet-sem6.pdf') && [...document.querySelectorAll('button')].some((b) => b.textContent.includes('Download'))));
     await (await admin.waitForSelector('::-p-xpath(//button[contains(normalize-space(.), "Approve")])')).click();
     await admin.waitForSelector('[role=dialog]');
     const offered = await admin.$$eval('[role=dialog] fieldset:nth-of-type(1) label', (l) => l.map((x) => x.textContent.split('—')[0].trim()));

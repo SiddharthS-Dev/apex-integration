@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, HelpCircle, Inbox, ShieldAlert, X } from 'lucide-react';
+import { Check, Download, FileText, HelpCircle, Inbox, ShieldAlert, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { APEX_PLATFORMS, ONBOARDING_INTERESTS, ONBOARDING_ROLES, onboardingCategory, onboardingRole } from '@academy/shared';
 import { api } from '@/api/client';
@@ -154,6 +154,43 @@ function Row({ label, children }) {
   );
 }
 
+const fileSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
+/** One attached document (the intern mark sheet) with a download button; each opening is audited by the API. */
+function DocumentRow({ requestId, doc }) {
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      const blob = await api.core.registrationDocument(requestId, doc.kind);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.file_name;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      toast.error(err.message || 'Could not download the file.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Row label={doc.label || doc.kind}>
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <FileText className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+        <span className="break-all">{doc.file_name}</span>
+        <span className="text-muted-foreground">· {fileSize(doc.size_bytes)} · {formatWhen(doc.uploaded_at)}</span>
+        <Button type="button" size="sm" variant="outline" onClick={download} disabled={busy} aria-label={`Download ${doc.file_name}`}>
+          <Download className="w-4 h-4 mr-1" aria-hidden="true" />{busy ? 'Downloading…' : 'Download'}
+        </Button>
+      </span>
+    </Row>
+  );
+}
+
 function Detail({ id, onDecided }) {
   const [dialog, setDialog] = useState(null);
   const q = useQuery({ queryKey: ['core', 'registration', id], queryFn: () => api.core.registration(id) });
@@ -201,6 +238,14 @@ function Detail({ id, onDecided }) {
         </dl>
         <p className="text-xs text-muted-foreground mt-1">Links are shown as text and were never opened automatically.</p>
       </section>
+
+      {(d.documents || []).length > 0 && (
+        <section aria-labelledby={`docs-${id}`}>
+          <h4 id={`docs-${id}`} className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Documents</h4>
+          <dl>{d.documents.map((doc) => <DocumentRow key={doc.kind} requestId={d.id} doc={doc} />)}</dl>
+          <p className="text-xs text-muted-foreground mt-1">Uploaded by the applicant; check it matches the stated college and degree. Downloads are recorded in the request history.</p>
+        </section>
+      )}
 
       {d.verification_note && (
         <p className="text-sm rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-3"><strong>Verify before approving: </strong>{d.verification_note}</p>
