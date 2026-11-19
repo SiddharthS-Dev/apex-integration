@@ -13,7 +13,7 @@ import { activeAssignments, nowIso } from '../identity.js';
 
 const STEP = {
   profile: { id: 'profile', title: 'Complete your profile', description: 'Add a photo and check your name.', path: '/profile' },
-  courses: { id: 'courses', title: 'Explore the course catalogue', description: 'Browse the Academy courses open to your account.', path: '/courses' },
+  courses: { id: 'courses', title: 'Explore the course catalogue', description: 'Browse the Learning Hub courses open to your account.', path: '/courses' },
   learning: { id: 'learning', title: 'Start a course', description: 'Work through lessons, quizzes and a final test; finished courses earn a certificate.', path: '/my-learning' },
   review: { id: 'review', title: 'Try daily review', description: 'Short flashcard reviews of key points, scheduled for you.', path: '/review' },
 };
