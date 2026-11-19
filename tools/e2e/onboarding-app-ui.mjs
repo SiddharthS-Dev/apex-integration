@@ -78,7 +78,7 @@ try {
   await bot("I'll only ask what's relevant");
   await card('About you');
   check('name, email, password and confirmation asked together in one step', (await page.$$(`${W} input`)).length === 4 && (await page.$$(`${W} input[type=password]`)).length === 2);
-  check('APEX platform question with the three platforms', JSON.stringify(await page.$$eval(`${W} .platform strong`, (l) => l.map((x) => x.textContent))) === JSON.stringify(['Innovation Showcase', 'SlidesVault', 'Inspironics Academia']));
+  check('APEX platform question with the three platforms', JSON.stringify(await page.$$eval(`${W} .platform strong`, (l) => l.map((x) => x.textContent))) === JSON.stringify(['Solution Explorer', 'Presentation Library', 'Learning Hub']));
   check('no stray "null" text under the fields', !/null/.test(await page.$eval(W, (w) => w.innerText)));
   await fill('Full name', 'Priya Sundar');
   await fill('Email', 'not-an-email');
@@ -95,11 +95,11 @@ try {
   check('the eye shows the password and hides it again', (await page.$eval(`${W} .pw input`, (i) => i.type)) === 'text');
   await page.click(`${W} .pw .eye`);
   check('password hidden again', (await page.$eval(`${W} .pw input`, (i) => i.type)) === 'password');
-  await press('SlidesVault');
-  await press('Inspironics Academia');
-  await press('Innovation Showcase');
-  await press('Innovation Showcase'); // tapping again removes it: two platforms chosen
-  check('several platforms can be chosen and one removed', (await page.$$eval(`${W} .platform[aria-pressed="true"] strong`, (l) => l.map((x) => x.textContent))).join() === 'SlidesVault,Inspironics Academia');
+  await press('Presentation Library');
+  await press('Learning Hub');
+  await press('Solution Explorer');
+  await press('Solution Explorer'); // tapping again removes it: two platforms chosen
+  check('several platforms can be chosen and one removed', (await page.$$eval(`${W} .platform[aria-pressed="true"] strong`, (l) => l.map((x) => x.textContent))).join() === 'Presentation Library,Learning Hub');
   await (await page.$(W)).screenshot({ path: path.join(SHOTS, '01b-about-you.png') });
   await press('Continue');
   await card('Your studies');
@@ -136,7 +136,7 @@ try {
   await page.screenshot({ path: path.join(SHOTS, '03-review.png') });
   const summary = await page.$eval(W, (w) => w.innerText);
   check('review shows role, personal and professional details', ['Intern', 'Priya Sundar', 'priya.intern@example.org', 'Anna University', 'R. Kumar', 'Final year'].every((t) => summary.includes(t)));
-  check('review shows the chosen APEX platforms', summary.includes('SlidesVault, Inspironics Academia'));
+  check('review shows the chosen APEX platforms', summary.includes('Presentation Library, Learning Hub'));
   check('no phone or address collected; the password is never shown', !/phone|address/i.test(summary) && !summary.includes('Priya-pass-2026') && summary.includes('(set)'));
   await page.$eval(`${W} button[aria-label="Edit personal information"]`, (b) => b.click());
   await card('About you');
@@ -201,7 +201,7 @@ try {
     const preticked = await admin.$$eval('[role=dialog] fieldset:nth-of-type(1) input[type=checkbox]:checked', (l) => l.length);
     check('reviewer: only Learner and Intern offered, nothing preselected', JSON.stringify(offered) === JSON.stringify(['Learner', 'Intern']) && preticked === 0, offered.join(', '));
     const platformTicks = await admin.$$eval('[role=dialog] fieldset:nth-of-type(2) label', (l) => l.filter((x) => x.querySelector('input').checked).map((x) => x.textContent.split('—')[0].trim()));
-    check('reviewer: the requested platforms are pre-ticked', platformTicks.join() === 'SlidesVault,Inspironics Academia', platformTicks.join(', '));
+    check('reviewer: the requested platforms are pre-ticked', platformTicks.join() === 'Presentation Library,Learning Hub', platformTicks.join(', '));
     await (await admin.waitForSelector('::-p-xpath(//*[@role="dialog"]//label[contains(., "Learner")]/input)')).click();
     await (await admin.waitForSelector('::-p-xpath(//*[@role="dialog"]//label[contains(., "I have checked")]/input)')).click();
     await (await admin.waitForSelector('::-p-xpath(//button[normalize-space(.)="Approve and create account"])')).click();
