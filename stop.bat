@@ -27,7 +27,8 @@ echo.
 echo   Stopping Apex...
 echo.
 
-node "%~dp0apex\stop.mjs" %*
+rem  5180 is the AI Onboarding Assistant (onboarding\), which runs beside the gateway.
+node "%~dp0apex\stop.mjs" 5180 %*
 
 echo.
 pause

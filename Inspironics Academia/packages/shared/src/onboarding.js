@@ -69,7 +69,7 @@ export const ONBOARDING_CATEGORIES = Object.freeze([
       url('portfolio_url', 'Portfolio or profile link'),
     ],
     purposes: [
-      card('LEARN_COURSES', 'Take structured courses', 'Work through Academy courses with lessons, quizzes and a final test.'),
+      card('LEARN_COURSES', 'Take structured courses', 'Work through Learning Hub courses with lessons, quizzes and a final test.'),
       card('TRACK_PROGRESS', 'Track progress and certificates', 'See completed lessons and earn certificates for finished courses.'),
       card('SPACED_REVIEW', 'Practise with spaced review', 'Review key points with flashcards scheduled for you.'),
       card('APPLIED_PROJECTS', 'Applied projects', 'Hands-on project work is not available on the platform yet.', NOT_YET),
@@ -90,7 +90,7 @@ export const ONBOARDING_CATEGORIES = Object.freeze([
       url('portfolio_url', 'Portfolio or profile link'),
     ],
     purposes: [
-      card('PREPARE_COURSES', 'Prepare with Academy courses', 'Build skills with the courses available to learners.'),
+      card('PREPARE_COURSES', 'Prepare with Learning Hub courses', 'Build skills with the courses available to learners.'),
       card('INTERNSHIP_OFFERS', 'Internship opportunities', 'Internship offers are not handled on the platform yet; our team will contact you.', NOT_YET),
       card('MENTORING', 'Mentoring', 'Mentoring is not available on the platform yet.', NOT_YET),
     ],
@@ -110,8 +110,8 @@ export const ONBOARDING_CATEGORIES = Object.freeze([
       url('profile_url', 'Professional profile link'),
     ],
     purposes: [
-      card('CONTINUE_LEARNING', 'Keep learning', 'Take Academy courses and refresh certificates.'),
-      card('EXPLORE_SHOWCASE', 'See the Innovation Showcase', 'Browse projects in the Innovation Showcase.'),
+      card('CONTINUE_LEARNING', 'Keep learning', 'Take Learning Hub courses and refresh certificates.'),
+      card('EXPLORE_SHOWCASE', 'Explore solutions', 'Browse solution blueprints in the Solution Explorer.'),
       card('MENTOR_OTHERS', 'Mentor others', 'Mentoring is not available on the platform yet.', NOT_YET),
       card('ALUMNI_NETWORK', 'Alumni network', 'An alumni network is not available on the platform yet.', NOT_YET),
     ],
@@ -131,8 +131,8 @@ export const ONBOARDING_CATEGORIES = Object.freeze([
       url('organization_website', 'Organisation website'),
     ],
     purposes: [
-      card('UPSKILL', 'Upskill with courses', 'Take Academy courses relevant to your work.'),
-      card('EXPLORE_SHOWCASE', 'See the Innovation Showcase', 'Browse projects in the Innovation Showcase.'),
+      card('UPSKILL', 'Upskill with courses', 'Take Learning Hub courses relevant to your work.'),
+      card('EXPLORE_SHOWCASE', 'Explore solutions', 'Browse solution blueprints in the Solution Explorer.'),
       card('INDUSTRY_CHALLENGES', 'Industry challenges', 'Posting industry challenges is not available on the platform yet.', NOT_YET),
       card('PARTNERSHIPS', 'Partnerships', 'Partnership workflows are not available on the platform yet; our team will contact you.', NOT_YET),
     ],
@@ -152,8 +152,8 @@ export const ONBOARDING_CATEGORIES = Object.freeze([
       url('profile_url', 'Professional profile link'),
     ],
     purposes: [
-      card('EXPLORE_SHOWCASE', 'See the Innovation Showcase', 'Browse projects in the Innovation Showcase.'),
-      card('SAMPLE_LEARNING', 'Try the learning experience', 'Take Academy courses as a learner.'),
+      card('EXPLORE_SHOWCASE', 'Explore solutions', 'Browse solution blueprints in the Solution Explorer.'),
+      card('SAMPLE_LEARNING', 'Try the learning experience', 'Take Learning Hub courses as a learner.'),
       card('EXECUTIVE_DASHBOARDS', 'Executive dashboards', 'Executive dashboards are not available on the platform yet.', NOT_YET),
       card('PARTNERSHIPS', 'Partnerships and talent', 'Partnership and talent workflows are not available yet; our team will contact you.', NOT_YET),
     ],
@@ -408,11 +408,12 @@ export const ONBOARDING_INTEREST_CODES = Object.freeze(ONBOARDING_INTERESTS.map(
  * The APEX platforms an applicant can ask to use. The choice is a request: the approver confirms which
  * platforms the person sees on the APEX home. It is a display setting, not an authorization: opening
  * Showcase or SlidesVault still needs an account there, created and linked by an administrator (ADR 0003).
+ * Labels are the outside-facing names (Solution Explorer, Presentation Library, Learning Hub); codes stay internal.
  */
 export const APEX_PLATFORMS = Object.freeze([
-  { code: 'showcase', label: 'Innovation Showcase', description: 'Solution blueprints, the 3D ecosystem explorer and monthly reports.' },
-  { code: 'slidesvault', label: 'SlidesVault', description: 'The presentation library: find, view and read decks, also offline.' },
-  { code: 'academia', label: 'Inspironics Academia', description: 'Courses from engineering playbooks, tests and certificates.' },
+  { code: 'showcase', label: 'Solution Explorer', description: 'See the solutions we have built and how they work together.' },
+  { code: 'slidesvault', label: 'Presentation Library', description: 'Find and read our presentations, even when offline.' },
+  { code: 'academia', label: 'Learning Hub', description: 'Take courses, pass tests and earn certificates.' },
 ]);
 export const APEX_PLATFORM_CODES = Object.freeze(APEX_PLATFORMS.map((p) => p.code));
 

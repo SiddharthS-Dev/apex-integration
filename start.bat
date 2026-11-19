@@ -36,6 +36,15 @@ set "VAULT_API_PORT=4175"
 set "ACADEMIA_API_PORT=4177"
 set "RUN=%~dp0apex\run.mjs"
 
+rem  The AI Onboarding Assistant (onboarding\) is a separate app on its own port,
+rem  not behind the gateway. It relays to the Academia Core API above. Its
+rem  settings all start with ONBOARDING_, so setting them here cannot leak into
+rem  another project; they override onboarding\.env (node --env-file never
+rem  replaces a variable that is already set).
+set "ONBOARDING_DIR=%~dp0onboarding"
+set "ONBOARDING_PORT=5180"
+set "ONBOARDING_CORE_PORT=%ACADEMIA_API_PORT%"
+
 set "MODE=dev"
 if /i "%~1"=="prod" (
     set "MODE=prod"
@@ -45,6 +54,10 @@ if /i "%~1"=="prod" (
     if not "%~2"=="" set "GATEWAY_PORT=%~2"
 )
 set "APEX_PORT=%GATEWAY_PORT%"
+rem  The assistant links back to the portal, so it must know the gateway's port
+rem  (5173 in dev, 4173 or your own in prod).
+set "ONBOARDING_PORTAL_URL=http://localhost:%GATEWAY_PORT%"
+set "ONBOARDING_PUBLIC_URL=http://localhost:%ONBOARDING_PORT%"
 
 where node >nul 2>&1
 if errorlevel 1 (
@@ -65,12 +78,12 @@ rem  ports were busy - with our own orphans. stop.mjs only ever touches
 rem  processes belonging to this folder, so this is safe to run every time.
 rem  The gateway port is named too, so a custom prod port (start.bat prod 4180)
 rem  left over from last time is cleared as well as the standard ones.
-node "%~dp0apex\stop.mjs" --quiet %GATEWAY_PORT%
+node "%~dp0apex\stop.mjs" --quiet %GATEWAY_PORT% %ONBOARDING_PORT%
 
 rem  Anything still holding a port now belongs to someone else, so say whose it
 rem  is rather than killing it.
-set "CHECK_PORTS=%GATEWAY_PORT% %SHOWCASE_PORT% %VAULT_PORT% %ACADEMIA_PORT% %SHOWCASE_API_PORT% %VAULT_API_PORT% %ACADEMIA_API_PORT%"
-if /i "%MODE%"=="prod" set "CHECK_PORTS=%GATEWAY_PORT% %SHOWCASE_API_PORT% %VAULT_API_PORT% %ACADEMIA_API_PORT%"
+set "CHECK_PORTS=%GATEWAY_PORT% %SHOWCASE_PORT% %VAULT_PORT% %ACADEMIA_PORT% %SHOWCASE_API_PORT% %VAULT_API_PORT% %ACADEMIA_API_PORT% %ONBOARDING_PORT%"
+if /i "%MODE%"=="prod" set "CHECK_PORTS=%GATEWAY_PORT% %SHOWCASE_API_PORT% %VAULT_API_PORT% %ACADEMIA_API_PORT% %ONBOARDING_PORT%"
 
 for %%P in (%CHECK_PORTS%) do (
     call :port_pid %%P
@@ -116,6 +129,7 @@ echo     vault          http://localhost:%GATEWAY_PORT%/vault/
 echo     vault api      http://localhost:%GATEWAY_PORT%/vault/api/
 echo     academia       http://localhost:%GATEWAY_PORT%/academia/
 echo     academia api   http://localhost:%GATEWAY_PORT%/academia/api/
+echo     ai onboarding  http://localhost:%ONBOARDING_PORT%/
 echo.
 echo   Dropbox redirect URIs - register each exactly in the Dropbox App Console:
 node "%RUN%" redirects %GATEWAY_PORT%
@@ -138,6 +152,8 @@ start "Apex - SlidesVault API" /min cmd /c node "%RUN%" vault api dev %GATEWAY_P
 echo   Starting the Inspironics Academia dev server and API...
 start "Apex - Inspironics Academia" /min cmd /c node "%RUN%" academia web dev %GATEWAY_PORT%
 start "Apex - Inspironics Academia API" /min cmd /c node "%RUN%" academia api dev %GATEWAY_PORT%
+
+call :start_onboarding
 
 echo.
 echo   The dashboard opens as soon as the gateway is up. Every project finishes
@@ -189,6 +205,8 @@ start "Apex - Innovation Showcase API" /min cmd /c node "%RUN%" showcase api pro
 start "Apex - SlidesVault API" /min cmd /c node "%RUN%" vault api prod %GATEWAY_PORT%
 start "Apex - Inspironics Academia API" /min cmd /c node "%RUN%" academia api prod %GATEWAY_PORT%
 
+call :start_onboarding
+
 echo.
 node "%~dp0apex\server.mjs" prod --open
 
@@ -197,6 +215,19 @@ echo.
 echo   Apex stopped.
 echo.
 pause
+exit /b 0
+
+rem  Starts the AI Onboarding Assistant in its own window. It has no
+rem  dependencies to install. It runs from its own folder so it finds
+rem  onboarding\.env, and by full path so stop.mjs recognises it as this
+rem  folder's process and can stop it.
+:start_onboarding
+if not exist "%ONBOARDING_DIR%\server.mjs" (
+    echo   AI Onboarding Assistant not found in onboarding\ - skipped.
+    exit /b 0
+)
+echo   Starting the AI Onboarding Assistant on http://localhost:%ONBOARDING_PORT%/ ...
+start "Apex - AI Onboarding Assistant" /D "%ONBOARDING_DIR%" /min cmd /c node --env-file-if-exists=.env "%ONBOARDING_DIR%\server.mjs"
 exit /b 0
 
 rem  Installs a project's dependencies on first run.

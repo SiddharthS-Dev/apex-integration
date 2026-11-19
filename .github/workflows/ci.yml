@@ -293,9 +293,17 @@ jobs:
         run: |
           PORT="$(grep '^APEX_STAGING_PORT=' deploy/staging/.env.staging | cut -d= -f2)"
           mkdir -p zap && chmod 777 zap && cp deploy/staging/zap-rules.tsv zap/
-          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" zaproxy/zap-stable:2.15.0 \
-            zap-baseline.py -t "http://127.0.0.1:${PORT:-4173}/login" -c zap-rules.tsv -I \
-            -r zap-report.html -J zap-report.json
+          # Exit 1 = a FAIL rule matched (fails at once). Exit 3 = ZAP itself errored (seen once in
+          # CI with no finding): retry that, once, so a ZAP glitch cannot block or hide a real result.
+          for attempt in 1 2; do
+            status=0
+            docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" zaproxy/zap-stable:2.15.0 \
+              zap-baseline.py -t "http://127.0.0.1:${PORT:-4173}/login" -c zap-rules.tsv -I \
+              -r zap-report.html -J zap-report.json || status=$?
+            [ "$status" -ne 3 ] && break
+            echo "ZAP internal error (exit 3) on attempt $attempt"
+          done
+          exit $status
       - name: Keep the ZAP report
         if: always()
         uses: actions/upload-artifact@v4
