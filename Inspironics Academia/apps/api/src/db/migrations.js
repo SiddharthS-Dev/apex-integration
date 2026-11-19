@@ -396,6 +396,28 @@ const CORE_MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_registration_decoys_email ON registration_decoys(email_digest, created_at)
     `,
   },
+  {
+    // Optional supporting documents for an access request (the intern mark sheet). Additive: a new table
+    // only, nothing existing is altered. One document per kind per request (a new upload replaces it).
+    // The file is AES-256-GCM encrypted under TOKEN_ENCRYPTION_KEY (src/lib/crypto.js envelope, text) and
+    // removed with its request (ON DELETE CASCADE) or when the request closes without being submitted.
+    // Rolled back with the identity tables (core/rollback.js).
+    id: '012_registration_documents',
+    sql: () => `
+      CREATE TABLE IF NOT EXISTS registration_documents (
+        id TEXT PRIMARY KEY,
+        request_id TEXT NOT NULL REFERENCES registration_requests(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('MARK_SHEET')),
+        file_name TEXT NOT NULL CHECK (length(file_name) BETWEEN 1 AND 120),
+        content_type TEXT NOT NULL CHECK (content_type IN ('application/pdf', 'image/jpeg', 'image/png')),
+        size_bytes INTEGER NOT NULL CHECK (size_bytes BETWEEN 1 AND 5242880),
+        sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+        content_encrypted TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_registration_documents_kind ON registration_documents(request_id, kind)
+    `,
+  },
 ];
 
 async function existingColumns(db, table) {

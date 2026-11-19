@@ -16,7 +16,7 @@ import { externalIdentityProviders, linkGoogleIdentity, userForGoogleSubject, ve
 import { verifyServiceRequest } from './service.js';
 import { confirmLinkByPossession, createLinkChallenge } from './linking.js';
 import { userPlatforms } from './platforms.js';
-import { approveRegistration, listRegistrations, registrationDetail, rejectRegistration, requestInfo } from './onboarding/admin.js';
+import { approveRegistration, listRegistrations, registrationDetail, registrationDocument, rejectRegistration, requestInfo } from './onboarding/admin.js';
 
 // /api/core — APEX Core identity endpoints (contract §3). Default deny: everything except the Google
 // sign-in routes and the gateway's resolve call needs a signed-in user, and each handler then checks
@@ -195,6 +195,20 @@ router.post('/identity-links/:id/reject', asyncHandler(async (req, res) => res.j
 // Access requests (Use Case 007): platform administrators review and decide; never GET for a decision.
 router.get('/registrations', asyncHandler(async (req, res) => res.json(await listRegistrations(db(), req.actor, req.query))));
 router.get('/registrations/:id', asyncHandler(async (req, res) => res.json(await registrationDetail(db(), req.actor, req.params.id))));
+router.get('/registrations/:id/documents/:kind', asyncHandler(async (req, res) => {
+  const doc = await registrationDocument(db(), req.actor, req.params.id, req.params.kind, ctx(req));
+  // Always a download, never rendered in the portal's origin; the name is already cleaned (ASCII fallback too).
+  const ascii = doc.file_name.replace(/[^\x20-\x7E]/g, '_');
+  res.set({
+    'Content-Type': doc.content_type,
+    'Content-Length': String(doc.bytes.length),
+    'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(doc.file_name)}`,
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; sandbox",
+    'Cache-Control': 'no-store',
+  });
+  res.end(doc.bytes);
+}));
 router.post('/registrations/:id/approve', asyncHandler(async (req, res) => res.json(await approveRegistration(db(), req.actor, req.params.id, req.body, ctx(req)))));
 router.post('/registrations/:id/reject', asyncHandler(async (req, res) => res.json(await rejectRegistration(db(), req.actor, req.params.id, req.body, ctx(req)))));
 router.post('/registrations/:id/request-info', asyncHandler(async (req, res) => res.json(await requestInfo(db(), req.actor, req.params.id, req.body, ctx(req)))));

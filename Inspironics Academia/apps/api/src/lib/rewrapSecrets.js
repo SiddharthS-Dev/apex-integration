@@ -1,6 +1,6 @@
 import { decryptWithIndex, encrypt } from './crypto.js';
 
-// Re-encrypts every secret stored at rest under the current TOKEN_ENCRYPTION_KEY, so a previous key
+// Re-encrypts every secret stored at rest (and every onboarding document) under the current TOKEN_ENCRYPTION_KEY, so a previous key
 // (TOKEN_ENCRYPTION_KEY_PREVIOUS) can be retired. No schema change: the secrets live in the `settings`
 // table as JSON (dropbox.connection, dropbox.meetings.connection, dropbox.source.<key>.connection), each
 // in a top-level field named *_enc (refresh_token_enc). Every such field is checked.
@@ -60,5 +60,47 @@ export async function rewrapStoredSecrets(db, keys, { dryRun = false } = {}) {
     }
     result.rewrapped += pending;
   }
+  await rewrapDocuments(db, keys, result, { dryRun });
   return result;
+}
+
+/**
+ * Onboarding documents (registration_documents.content_encrypted, migration 012): each file is one
+ * envelope, rewrapped the same way (compare-and-set on the old ciphertext). Failures are reported as
+ * `registration_documents.<id>`, never with the file's name or content. Skipped when the table does
+ * not exist (a database rolled back to before 012).
+ */
+async function rewrapDocuments(db, keys, result, { dryRun }) {
+  let ids;
+  try {
+    ids = await db.query('SELECT id FROM registration_documents');
+  } catch {
+    return;
+  }
+  for (const { id } of ids) {
+    // One row at a time: each file can be a few megabytes.
+    const [row] = await db.query('SELECT content_encrypted FROM registration_documents WHERE id = ?', [id]);
+    if (!row || !isEnvelope(row.content_encrypted)) continue;
+    result.checked++;
+    let opened;
+    try {
+      opened = decryptWithIndex(row.content_encrypted, keys);
+    } catch {
+      result.failed.push(`registration_documents.${id}`);
+      continue;
+    }
+    if (opened.keyIndex === 0) {
+      result.current++;
+      continue;
+    }
+    if (!dryRun) {
+      const r = await db.run('UPDATE registration_documents SET content_encrypted = ? WHERE id = ? AND content_encrypted = ?',
+        [encrypt(opened.plaintext, keys), id, row.content_encrypted]);
+      if (!r.changes) {
+        result.changedMeanwhile++;
+        continue;
+      }
+    }
+    result.rewrapped++;
+  }
 }

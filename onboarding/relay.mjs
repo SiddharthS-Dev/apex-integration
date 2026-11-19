@@ -3,7 +3,7 @@
  * onboarding server (onboarding/server.mjs, port 5180) — not the portal's gateway, which is unchanged.
  *
  *   GET  /auth/onboarding/config | status
- *   POST /auth/onboarding/start | resend | verify | update | complete | exchange | respond | restart
+ *   POST /auth/onboarding/start | resend | verify | update | document | complete | exchange | respond | restart
  *
  * The browser never sees the resume token: the Core returns it in the body, and this relay moves it into
  * an HttpOnly, SameSite=Strict cookie scoped to /auth/onboarding and passes it back to the Core as
@@ -48,14 +48,20 @@ export const STEPS = Object.freeze({
   resend: 'POST',
   verify: 'POST',
   update: 'POST',
+  document: 'POST',
   complete: 'POST',
   exchange: 'POST',
   respond: 'POST',
   restart: 'POST',
 })
 
-/** Steps that send email or touch the AI: tighter per-address limits at the gateway too. */
-const COSTLY = new Set(['start', 'resend', 'exchange', 'suggest'])
+/** Steps that send email, touch the AI or carry a file: tighter per-address limits at the gateway too. */
+const COSTLY = new Set(['start', 'resend', 'exchange', 'suggest', 'document'])
+
+/** Request body limit per step: a document upload (up to 5 MB, base64 in JSON) needs more than the rest. */
+export const BODY_LIMIT = 32 * 1024
+export const DOCUMENT_BODY_LIMIT = 7 * 1024 * 1024
+export const bodyLimitFor = (step) => (step === 'document' ? DOCUMENT_BODY_LIMIT : BODY_LIMIT)
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{20,200}$/
 

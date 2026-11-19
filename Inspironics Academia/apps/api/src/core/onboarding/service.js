@@ -13,6 +13,7 @@ import { onboardingConfig } from './config.js';
 import { sendOnboardingEmail } from './emails.js';
 import { ACCOUNT_SECRET_KINDS } from '../../notify/mailer.js';
 import { scheduleReview, rulesRecommendation } from './review.js';
+import { documentsAvailable, documentsConfig, documentsFor, dropDocumentsNotFor, parseUpload, storeDocument } from './documents.js';
 
 // Public stakeholder-onboarding flow (Use Case 007; plan §4, prompt §7–§8). Server-enforced states:
 //
@@ -194,11 +195,13 @@ export function publicConfig() {
     role_groups: ONBOARDING_ROLE_GROUPS,
     roles: ONBOARDING_ROLES.map((r) => ({
       code: r.code, label: r.label, group: r.group, description: r.description, email_label: r.emailLabel, organization: r.organization, fields: r.fields,
-      steps: ONBOARDING_ROLE_STEPS[r.code],
+      steps: ONBOARDING_ROLE_STEPS[r.code], documents: r.documents || [],
     })),
     preferences: { countries: ISO_COUNTRY_CODES, locales: ONBOARDING_LOCALES, date_formats: DATE_FORMATS, unit_systems: UNIT_SYSTEMS },
     // The APEX platforms the applicant may ask to use (a request; the approver confirms).
     platforms: APEX_PLATFORMS,
+    // Optional supporting documents (the intern mark sheet): offered only when they can be stored encrypted.
+    documents: documentsConfig(),
     limits: {
       code_ttl_minutes: Math.round(cfg.codeTtlMs / 60_000), max_attempts: cfg.maxAttempts, resend_seconds: Math.round(cfg.resendSpacingMs / 1000),
       max_sends: cfg.maxSends, ...ONBOARDING_LIMITS,
@@ -303,7 +306,7 @@ export async function status(db, token) {
   if (!found) throw restart();
   const { kind, row } = found;
   if (kind === 'decoy' || row.status === 'CODE_SENT') return codeView(row, cfg);
-  if (row.status === 'EMAIL_VERIFIED') return { state: 'EMAIL_VERIFIED', draft: publicDraft(row) };
+  if (row.status === 'EMAIL_VERIFIED') return { state: 'EMAIL_VERIFIED', draft: publicDraft(row), documents: await documentsFor(db, row.id) };
   if (row.status === 'INFO_REQUESTED') return { state: 'INFO_REQUESTED', info_request: row.info_request };
   return { state: 'PENDING_APPROVAL', submitted_at: row.submitted_at };
 }
@@ -443,6 +446,9 @@ export async function update(db, token, body, { ip = null } = {}) {
         d.interest_other, JSON.stringify(d.preferences), nowIso(), row.id],
     );
     if (!r.changes) throw restart();
+    // A changed role keeps only the documents it may attach (an ex-intern's mark sheet is removed).
+    const dropped = changed.includes('onboarding_role') ? await dropDocumentsNotFor(tx, row.id, d.onboarding_role) : 0;
+    if (dropped) await insertAuditEvent(tx, { actorKind: 'system', action: 'registration.document_removed', targetType: 'registration_request', targetId: row.id, detail: { reason: 'role_changed', count: dropped }, ip });
     await insertAuditEvent(tx, {
       actorKind: 'system', action: 'registration.updated', targetType: 'registration_request', targetId: row.id, ip,
       detail: { fields: changed, ...(changed.includes('onboarding_role') ? { role_from: publicDraft(row).onboarding_role, role_to: d.onboarding_role } : {}) },
@@ -450,6 +456,39 @@ export async function update(db, token, body, { ip = null } = {}) {
     const [fresh] = await tx.query('SELECT * FROM registration_requests WHERE id = ?', [row.id]);
     return { state: 'EMAIL_VERIFIED', draft: publicDraft(fresh) };
   });
+}
+
+/**
+ * POST /document — attaches an optional supporting document to a verified draft (the intern mark sheet),
+ * or removes it with { kind, action: 'remove' }. Body: { kind, file_name, data_base64 }. A new upload of
+ * the same kind replaces the old one. Answers with the attached documents' metadata (never the content).
+ */
+export async function document(db, token, body, { ip = null } = {}) {
+  requireFlow();
+  const row = await requireState(db, token, ['EMAIL_VERIFIED']);
+  const roleCode = parse(row.category_profile, {}).onboarding_role;
+  const input = body && typeof body === 'object' ? body : {};
+  if (input.action === 'remove') {
+    const kind = typeof input.kind === 'string' ? input.kind : '';
+    await db.transaction(async (tx) => {
+      const r = await tx.run('DELETE FROM registration_documents WHERE request_id = ? AND kind = ?', [row.id, kind]);
+      if (r.changes) await insertAuditEvent(tx, { actorKind: 'system', action: 'registration.document_removed', targetType: 'registration_request', targetId: row.id, detail: { kind, reason: 'applicant' }, ip });
+    });
+    return { state: 'EMAIL_VERIFIED', documents: await documentsFor(db, row.id) };
+  }
+  if (!documentsAvailable()) throw refuse(503, 'DOCUMENTS_UNAVAILABLE', 'File upload is not available right now. You can submit your request without it.');
+  const doc = parseUpload(input, roleCode);
+  await db.transaction(async (tx) => {
+    // The request may have been submitted or closed meanwhile: attach only to a draft that is still open.
+    const [now] = await tx.query('SELECT status FROM registration_requests WHERE id = ?', [row.id]);
+    if (now?.status !== 'EMAIL_VERIFIED') throw restart();
+    await storeDocument(tx, row.id, doc);
+    await insertAuditEvent(tx, {
+      actorKind: 'system', action: 'registration.document_attached', targetType: 'registration_request', targetId: row.id,
+      detail: { kind: doc.kind, content_type: doc.contentType, size_bytes: doc.bytes.length }, ip,
+    });
+  });
+  return { state: 'EMAIL_VERIFIED', documents: await documentsFor(db, row.id) };
 }
 
 /**
@@ -566,6 +605,10 @@ export async function sweepOnboarding(db, cfg = onboardingConfig()) {
   );
   await db.run('UPDATE registration_requests SET respond_token_hash = NULL, respond_token_expires_at = NULL WHERE respond_token_expires_at < ?', [at]);
   const decoys = await db.run('DELETE FROM registration_decoys WHERE expires_at < ?', [at]);
+  // Files attached to drafts that were never submitted (expired or superseded) are not kept.
+  const documents = await db.run(
+    "DELETE FROM registration_documents WHERE request_id IN (SELECT id FROM registration_requests WHERE status IN ('EXPIRED', 'SUPERSEDED'))",
+  );
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
   const blanked = await db.run(
     `UPDATE email_outbox SET text_body = '[removed: one-time secret]', html_body = NULL
@@ -586,7 +629,7 @@ export async function sweepOnboarding(db, cfg = onboardingConfig()) {
       [at],
     )).changes;
   }
-  const result = { expired: expired.changes, decoys_removed: decoys.changes, secret_emails_blanked: blanked.changes + accountBlanked, purged };
+  const result = { expired: expired.changes, decoys_removed: decoys.changes, documents_removed: documents.changes, secret_emails_blanked: blanked.changes + accountBlanked, purged };
   if (Object.values(result).some(Boolean)) log.info('onboarding.sweep', result);
   return result;
 }
